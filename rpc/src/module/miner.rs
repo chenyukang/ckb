@@ -8,9 +8,11 @@ use ckb_systemtime::unix_time_as_millis;
 use ckb_types::{core, packed, prelude::*, H256};
 use ckb_verification::HeaderVerifier;
 use ckb_verification_traits::Verifier;
-use jsonrpc_core::{Error, Result};
-use jsonrpc_derive::rpc;
+use jsonrpsee::core::RpcResult;
+use jsonrpsee::proc_macros::rpc;
+use jsonrpsee_types::error::ErrorObject;
 use std::collections::HashSet;
+
 use std::fmt::Debug;
 use std::sync::Arc;
 
@@ -130,13 +132,13 @@ pub trait MinerRpc {
     ///   }
     /// }
     /// ```
-    #[rpc(name = "get_block_template")]
+    #[method(name = "get_block_template")]
     fn get_block_template(
         &self,
         bytes_limit: Option<Uint64>,
         proposals_limit: Option<Uint64>,
         max_version: Option<Version>,
-    ) -> Result<BlockTemplate>;
+    ) -> RpcResult<BlockTemplate>;
 
     /// Submit new block to the network.
     ///
@@ -219,8 +221,8 @@ pub trait MinerRpc {
     ///   "result": "0xa5f5c85987a15de25661e5a214f2c1449cd803f071acc7999820f25246471f40"
     /// }
     /// ```
-    #[rpc(name = "submit_block")]
-    fn submit_block(&self, work_id: String, block: Block) -> Result<H256>;
+    #[method(name = "submit_block")]
+    fn submit_block(&self, work_id: String, block: Block) -> RpcResult<H256>;
 }
 
 pub(crate) struct MinerRpcImpl {
@@ -229,13 +231,13 @@ pub(crate) struct MinerRpcImpl {
     pub chain: ChainController,
 }
 
-impl MinerRpc for MinerRpcImpl {
+impl MinerRpcServer for MinerRpcImpl {
     fn get_block_template(
         &self,
         bytes_limit: Option<Uint64>,
         proposals_limit: Option<Uint64>,
         max_version: Option<Version>,
-    ) -> Result<BlockTemplate> {
+    ) -> RpcResult<BlockTemplate> {
         let bytes_limit = bytes_limit.map(|b| b.into());
 
         let proposals_limit = proposals_limit.map(|b| b.into());
@@ -252,7 +254,7 @@ impl MinerRpc for MinerRpcImpl {
             })
     }
 
-    fn submit_block(&self, work_id: String, block: Block) -> Result<H256> {
+    fn submit_block(&self, work_id: String, block: Block) -> RpcResult<H256> {
         let block: packed::Block = block.into();
         let block: Arc<core::BlockView> = Arc::new(block.into_view());
         let header = block.header();
@@ -347,7 +349,14 @@ impl MinerRpc for MinerRpcImpl {
     }
 }
 
-fn handle_submit_error<E: std::fmt::Display + Debug>(work_id: &str, err: &E) -> Error {
+fn handle_submit_error<E: std::fmt::Display + Debug>(
+    work_id: &str,
+    err: &E,
+) -> ErrorObject<'static> {
     error!("[{}] submit_block error: {:?}", work_id, err);
-    RPCError::custom_with_error(RPCError::Invalid, err)
+    ErrorObject {
+        code: RPCError::Invalid,
+        message: format!("submit_block error"),
+        data: None,
+    }
 }

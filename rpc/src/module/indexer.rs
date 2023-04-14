@@ -4,8 +4,7 @@ use ckb_jsonrpc_types::{
     IndexerCell, IndexerCellsCapacity, IndexerOrder, IndexerPagination, IndexerSearchKey,
     IndexerTip, IndexerTx, JsonBytes, Uint32,
 };
-use jsonrpc_core::Result;
-use jsonrpc_derive::rpc;
+use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 
 /// RPC Module Indexer.
 #[rpc(server)]
@@ -40,8 +39,8 @@ pub trait IndexerRpc {
     ///   "id": 2
     /// }
     /// ```
-    #[rpc(name = "get_indexer_tip")]
-    fn get_indexer_tip(&self) -> Result<Option<IndexerTip>>;
+    #[method(name = "get_indexer_tip")]
+    fn get_indexer_tip(&self) -> RpcResult<Option<IndexerTip>>;
 
     /// Returns the live cells collection by the lock or type script.
     ///
@@ -386,14 +385,14 @@ pub trait IndexerRpc {
     ///     "id": 2
     /// }
     /// ```
-    #[rpc(name = "get_cells")]
+    #[method(name = "get_cells")]
     fn get_cells(
         &self,
         search_key: IndexerSearchKey,
         order: IndexerOrder,
         limit: Uint32,
         after: Option<JsonBytes>,
-    ) -> Result<IndexerPagination<IndexerCell>>;
+    ) -> RpcResult<IndexerPagination<IndexerCell>>;
 
     /// Returns the transactions collection by the lock or type script.
     ///
@@ -798,14 +797,14 @@ pub trait IndexerRpc {
     ///     "id": 2
     /// }
     /// ```
-    #[rpc(name = "get_transactions")]
+    #[method(name = "get_transactions")]
     fn get_transactions(
         &self,
         search_key: IndexerSearchKey,
         order: IndexerOrder,
         limit: Uint32,
         after: Option<JsonBytes>,
-    ) -> Result<IndexerPagination<IndexerTx>>;
+    ) -> RpcResult<IndexerPagination<IndexerTx>>;
 
     /// Returns the live cells capacity by the lock or type script.
     ///
@@ -861,11 +860,11 @@ pub trait IndexerRpc {
     ///     "id": 2
     /// }
     /// ```
-    #[rpc(name = "get_cells_capacity")]
+    #[method(name = "get_cells_capacity")]
     fn get_cells_capacity(
         &self,
         search_key: IndexerSearchKey,
-    ) -> Result<Option<IndexerCellsCapacity>>;
+    ) -> RpcResult<Option<IndexerCellsCapacity>>;
 }
 
 pub(crate) struct IndexerRpcImpl {
@@ -878,8 +877,8 @@ impl IndexerRpcImpl {
     }
 }
 
-impl IndexerRpc for IndexerRpcImpl {
-    fn get_indexer_tip(&self) -> Result<Option<IndexerTip>> {
+impl IndexerRpcServer for IndexerRpcImpl {
+    fn get_indexer_tip(&self) -> RpcResult<Option<IndexerTip>> {
         self.handle
             .get_indexer_tip()
             .map_err(|e| RPCError::custom(RPCError::Indexer, e))
@@ -891,7 +890,7 @@ impl IndexerRpc for IndexerRpcImpl {
         order: IndexerOrder,
         limit: Uint32,
         after: Option<JsonBytes>,
-    ) -> Result<IndexerPagination<IndexerCell>> {
+    ) -> RpcResult<IndexerPagination<IndexerCell>> {
         self.handle
             .get_cells(search_key, order, limit, after)
             .map_err(|e| RPCError::custom(RPCError::Indexer, e))
@@ -903,7 +902,7 @@ impl IndexerRpc for IndexerRpcImpl {
         order: IndexerOrder,
         limit: Uint32,
         after: Option<JsonBytes>,
-    ) -> Result<IndexerPagination<IndexerTx>> {
+    ) -> RpcResult<IndexerPagination<IndexerTx>> {
         self.handle
             .get_transactions(search_key, order, limit, after)
             .map_err(|e| RPCError::custom(RPCError::Indexer, e))
@@ -912,7 +911,7 @@ impl IndexerRpc for IndexerRpcImpl {
     fn get_cells_capacity(
         &self,
         search_key: IndexerSearchKey,
-    ) -> Result<Option<IndexerCellsCapacity>> {
+    ) -> RpcResult<Option<IndexerCellsCapacity>> {
         self.handle
             .get_cells_capacity(search_key)
             .map_err(|e| RPCError::custom(RPCError::Indexer, e))

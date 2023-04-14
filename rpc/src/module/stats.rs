@@ -4,8 +4,9 @@ use ckb_shared::shared::Shared;
 use ckb_traits::HeaderProvider;
 use ckb_types::prelude::Unpack;
 use ckb_util::Mutex;
-use jsonrpc_core::Result;
-use jsonrpc_derive::rpc;
+use jsonrpsee::core::RpcResult;
+use jsonrpsee::proc_macros::rpc;
+
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -50,8 +51,8 @@ pub trait StatsRpc {
     ///   }
     /// }
     /// ```
-    #[rpc(name = "get_blockchain_info")]
-    fn get_blockchain_info(&self) -> Result<ChainInfo>;
+    #[method(name = "get_blockchain_info")]
+    fn get_blockchain_info(&self) -> RpcResult<ChainInfo>;
 
     /// Returns statistics about the chain.
     ///
@@ -95,8 +96,8 @@ pub trait StatsRpc {
     ///   }
     /// }
     /// ```
-    #[rpc(name = "get_deployments_info")]
-    fn get_deployments_info(&self) -> Result<DeploymentsInfo>;
+    #[method(name = "get_deployments_info")]
+    fn get_deployments_info(&self) -> RpcResult<DeploymentsInfo>;
 }
 
 pub(crate) struct StatsRpcImpl {
@@ -104,8 +105,8 @@ pub(crate) struct StatsRpcImpl {
     pub alert_notifier: Arc<Mutex<AlertNotifier>>,
 }
 
-impl StatsRpc for StatsRpcImpl {
-    fn get_blockchain_info(&self) -> Result<ChainInfo> {
+impl StatsRpcServer for StatsRpcImpl {
+    fn get_blockchain_info(&self) -> RpcResult<ChainInfo> {
         let chain = self.shared.consensus().id.clone();
         let (tip_header, median_time) = {
             let snapshot = self.shared.snapshot();
@@ -147,7 +148,7 @@ impl StatsRpc for StatsRpcImpl {
         })
     }
 
-    fn get_deployments_info(&self) -> Result<DeploymentsInfo> {
+    fn get_deployments_info(&self) -> RpcResult<DeploymentsInfo> {
         let snapshot = self.shared.snapshot();
         let deployments: BTreeMap<DeploymentPos, DeploymentInfo> = self
             .shared

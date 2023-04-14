@@ -19,8 +19,7 @@ use ckb_types::{
     H256,
 };
 use ckb_verification_traits::Switch;
-use jsonrpc_core::Result;
-use jsonrpc_derive::rpc;
+use jsonrpsee::proc_macros::rpc;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -104,7 +103,7 @@ pub trait IntegrationTestRpc {
     ///   "error": null
     /// }
     /// ```
-    #[rpc(name = "process_block_without_verify")]
+    #[method(name = "process_block_without_verify")]
     fn process_block_without_verify(&self, data: Block, broadcast: bool) -> Result<Option<H256>>;
 
     /// Truncate chain to specified tip hash.
@@ -137,7 +136,7 @@ pub trait IntegrationTestRpc {
     ///   "result": null
     /// }
     /// ```
-    #[rpc(name = "truncate")]
+    #[method(name = "truncate")]
     fn truncate(&self, target_tip_hash: H256) -> Result<()>;
 
     /// Generate block with block_assembler_config, process the block(with verification)
@@ -173,7 +172,7 @@ pub trait IntegrationTestRpc {
     ///   "error": null
     /// }
     /// ```
-    #[rpc(name = "generate_block")]
+    #[method(name = "generate_block")]
     fn generate_block(&self) -> Result<H256>;
 
     /// Add transaction to tx-pool.
@@ -240,7 +239,7 @@ pub trait IntegrationTestRpc {
     ///   "error": null
     /// }
     /// ```
-    #[rpc(name = "notify_transaction")]
+    #[method(name = "notify_transaction")]
     fn notify_transaction(&self, transaction: Transaction) -> Result<H256>;
 
     /// Generate block with block template, attach calculated dao field to build new block,
@@ -346,7 +345,7 @@ pub trait IntegrationTestRpc {
     ///   "error": null
     /// }
     /// ```
-    #[rpc(name = "generate_block_with_template")]
+    #[method(name = "generate_block_with_template")]
     fn generate_block_with_template(&self, block_template: BlockTemplate) -> Result<H256>;
 
     /// Return calculated dao field according to specified block template.
@@ -450,7 +449,7 @@ pub trait IntegrationTestRpc {
     ///   "error": null
     /// }
     /// ```
-    #[rpc(name = "calculate_dao_field")]
+    #[method(name = "calculate_dao_field")]
     fn calculate_dao_field(&self, block_template: BlockTemplate) -> Result<Byte32>;
 }
 

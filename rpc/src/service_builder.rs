@@ -2,9 +2,10 @@
 use crate::error::RPCError;
 use crate::module::SubscriptionSession;
 use crate::module::{
-    AlertRpc, AlertRpcImpl, ChainRpc, ChainRpcImpl, DebugRpc, DebugRpcImpl, ExperimentRpc,
-    ExperimentRpcImpl, IndexerRpc, IndexerRpcImpl, IntegrationTestRpc, IntegrationTestRpcImpl,
-    MinerRpc, MinerRpcImpl, NetRpc, NetRpcImpl, PoolRpc, PoolRpcImpl, StatsRpc, StatsRpcImpl,
+    AlertRpcImpl, AlertRpcServer, ChainRpcImpl, ChainRpcServer, DebugRpcImpl, DebugRpcServer,
+    ExperimentRpcImpl, ExperimentRpcServer, IndexerRpcImpl, IndexerRpcServer,
+    IntegrationTestRpcImpl, IntegrationTestRpcServer, MinerRpcImpl, MinerRpcServer, NetRpcImpl,
+    NetRpcServer, PoolRpcImpl, PoolRpcServer, StatsRpcImpl, StatsRpcServer,
 };
 use crate::IoHandler;
 use ckb_app_config::{DBConfig, IndexerConfig, RpcConfig};
@@ -17,7 +18,6 @@ use ckb_shared::shared::Shared;
 use ckb_sync::SyncShared;
 use ckb_types::packed::Script;
 use ckb_util::Mutex;
-use jsonrpc_core::RemoteProcedure;
 use std::sync::Arc;
 
 const DEPRECATED_RPC_PREFIX: &str = "deprecated.";

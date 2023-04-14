@@ -7,8 +7,8 @@ use ckb_jsonrpc_types::{
 use ckb_shared::{shared::Shared, Snapshot};
 use ckb_store::ChainStore;
 use ckb_types::{core, packed, prelude::*};
-use jsonrpc_core::Result;
-use jsonrpc_derive::rpc;
+use jsonrpsee::core::RpcResult;
+use jsonrpsee::proc_macros::rpc;
 
 /// RPC Module Experiment for experimenting methods.
 ///
@@ -97,8 +97,8 @@ pub trait ExperimentRpc {
         since = "0.105.1",
         note = "Please use the RPC method [`estimate_cycles`](#tymethod.estimate_cycles) instead"
     )]
-    #[rpc(name = "dry_run_transaction")]
-    fn dry_run_transaction(&self, tx: Transaction) -> Result<EstimateCycles>;
+    #[method(name = "dry_run_transaction")]
+    fn dry_run_transaction(&self, tx: Transaction) -> RpcResult<EstimateCycles>;
 
     /// Calculates the maximum withdrawal one can get, given a referenced DAO cell, and
     /// a withdrawing block hash.
@@ -154,20 +154,20 @@ pub trait ExperimentRpc {
     ///   "result": "0x4a8b4e8a4"
     /// }
     /// ```
-    #[rpc(name = "calculate_dao_maximum_withdraw")]
+    #[method(name = "calculate_dao_maximum_withdraw")]
     fn calculate_dao_maximum_withdraw(
         &self,
         out_point: OutPoint,
         kind: DaoWithdrawingCalculationKind,
-    ) -> Result<Capacity>;
+    ) -> RpcResult<Capacity>;
 }
 
 pub(crate) struct ExperimentRpcImpl {
     pub shared: Shared,
 }
 
-impl ExperimentRpc for ExperimentRpcImpl {
-    fn dry_run_transaction(&self, tx: Transaction) -> Result<EstimateCycles> {
+impl ExperimentRpcServer for ExperimentRpcImpl {
+    fn dry_run_transaction(&self, tx: Transaction) -> RpcResult<EstimateCycles> {
         let tx: packed::Transaction = tx.into();
         CyclesEstimator::new(&self.shared).run(tx)
     }
@@ -176,7 +176,7 @@ impl ExperimentRpc for ExperimentRpcImpl {
         &self,
         out_point: OutPoint,
         kind: DaoWithdrawingCalculationKind,
-    ) -> Result<Capacity> {
+    ) -> RpcResult<Capacity> {
         let snapshot: &Snapshot = &self.shared.snapshot();
         let consensus = snapshot.consensus();
         let out_point: packed::OutPoint = out_point.into();

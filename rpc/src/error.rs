@@ -1,7 +1,9 @@
 use ckb_error::{AnyError, Error as CKBError, ErrorKind, InternalError, InternalErrorKind};
 use ckb_tx_pool::error::Reject;
-use jsonrpc_core::{Error, ErrorCode, Value};
 use std::fmt::{Debug, Display};
+
+use jsonrpsee_types::error::ErrorCode;
+use jsonrpsee_types::error::ErrorObject;
 
 /// CKB RPC error codes.
 ///
@@ -118,8 +120,8 @@ pub enum RPCError {
 
 impl RPCError {
     /// Invalid method parameter(s).
-    pub fn invalid_params<T: Display>(message: T) -> Error {
-        Error {
+    pub fn invalid_params<T: Display>(message: T) -> ErrorObject<'static> {
+        ErrorObject {
             code: ErrorCode::InvalidParams,
             message: format!("InvalidParams: {message}"),
             data: None,
@@ -127,8 +129,8 @@ impl RPCError {
     }
 
     /// Creates an RPC error with custom error code and message.
-    pub fn custom<T: Display>(error_code: RPCError, message: T) -> Error {
-        Error {
+    pub fn custom<T: Display>(error_code: RPCError, message: T) -> ErrorObject<'static> {
+        ErrorObject {
             code: ErrorCode::ServerError(error_code as i64),
             message: format!("{error_code:?}: {message}"),
             data: None,
@@ -140,11 +142,11 @@ impl RPCError {
         error_code: RPCError,
         message: T,
         data: F,
-    ) -> Error {
-        Error {
+    ) -> ErrorObject<'static> {
+        ErrorObject {
             code: ErrorCode::ServerError(error_code as i64),
             message: format!("{error_code:?}: {message}"),
-            data: Some(Value::String(format!("{data:?}"))),
+            data: Some(serde_json::value::RawValue::from(format!("{data:?}"))),
         }
     }
 
@@ -152,16 +154,19 @@ impl RPCError {
     ///
     /// The parameter `err` is usually an std error. The Display form is used as the error message,
     /// and the Debug form is used as the data.
-    pub fn custom_with_error<T: Display + Debug>(error_code: RPCError, err: T) -> Error {
-        Error {
+    pub fn custom_with_error<T: Display + Debug>(
+        error_code: RPCError,
+        err: T,
+    ) -> ErrorObject<'static> {
+        ErrorObject {
             code: ErrorCode::ServerError(error_code as i64),
             message: format!("{error_code:?}: {err}"),
-            data: Some(Value::String(format!("{err:?}"))),
+            data: Some(serde_json::value::RawValue::from(format!("{err:?}"))),
         }
     }
 
     /// Creates an RPC error from the reason that a transaction is rejected to be submitted.
-    pub fn from_submit_transaction_reject(reject: &Reject) -> Error {
+    pub fn from_submit_transaction_reject(reject: &Reject) -> ErrorObject<'static> {
         let code = match reject {
             Reject::LowFeeRate(_, _, _) => RPCError::PoolRejectedTransactionByMinFeeRate,
             Reject::ExceededMaximumAncestorsCount => {
@@ -182,7 +187,7 @@ impl RPCError {
     }
 
     /// Creates an CKB error from `CKBError`.
-    pub fn from_ckb_error(err: CKBError) -> Error {
+    pub fn from_ckb_error(err: CKBError) -> ErrorObject<'static> {
         match err.kind() {
             ErrorKind::Dao => Self::custom_with_error(RPCError::DaoError, err.root_cause()),
             ErrorKind::OutPoint => {
@@ -212,7 +217,7 @@ impl RPCError {
     }
 
     /// Creates an RPC error from `AnyError`.
-    pub fn from_any_error(err: AnyError) -> Error {
+    pub fn from_any_error(err: AnyError) -> ErrorObject<'static> {
         match err.downcast_ref::<CKBError>() {
             Some(ckb_error) => Self::from_ckb_error(ckb_error.clone()),
             None => Self::ckb_internal_error(err.clone()),
@@ -223,7 +228,7 @@ impl RPCError {
     ///
     /// CKB internal errors are considered to never happen or only happen when the system
     /// resources are exhausted.
-    pub fn ckb_internal_error<T: Display + Debug>(err: T) -> Error {
+    pub fn ckb_internal_error<T: Display + Debug>(err: T) -> ErrorObject<'static> {
         Self::custom_with_error(RPCError::CKBInternalError, err)
     }
 
@@ -231,7 +236,7 @@ impl RPCError {
     ///
     /// RPC methods belong to modules and they are only enabled when the belonging module is
     /// included in the config.
-    pub fn rpc_module_is_disabled(module: &str) -> Error {
+    pub fn rpc_module_is_disabled(module: &str) -> ErrorObject<'static> {
         Self::custom(
             RPCError::RPCModuleIsDisabled,
             format!(
@@ -246,7 +251,7 @@ impl RPCError {
     ///
     /// Deprecated methods are disabled by default unless they are enabled via the config options
     /// `enable_deprecated_rpc`.
-    pub fn rpc_method_is_deprecated() -> Error {
+    pub fn rpc_method_is_deprecated() -> ErrorObject<'static> {
         Self::custom(
             RPCError::Deprecated,
             "This RPC method is deprecated, it will be removed in future release. \

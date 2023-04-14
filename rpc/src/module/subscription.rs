@@ -1,11 +1,15 @@
 use ckb_jsonrpc_types::Topic;
 use ckb_notify::NotifyController;
-use jsonrpc_core::{Metadata, Result};
-use jsonrpc_derive::rpc;
-use jsonrpc_pubsub::{
+/* use jsonrpc_pubsub::{
     typed::{Sink, Subscriber},
     PubSubMetadata, Session, SubscriptionId,
 };
+ */
+//use jsonrpsee::core::{async_trait, client::Subscription, Error, SubscriptionResult};
+//use jsonrpsee::server::{PendingSubscriptionSink, ServerBuilder, SubscriptionMessage};
+
+use jsonrpsee::proc_macros::rpc;
+use jsonrpsee_types::SubscriptionId;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -31,8 +35,6 @@ impl SubscriptionSession {
         }
     }
 }
-
-impl Metadata for SubscriptionSession {}
 
 impl PubSubMetadata for SubscriptionSession {
     fn session(&self) -> Option<Arc<Session>> {
@@ -78,9 +80,9 @@ impl PubSubMetadata for SubscriptionSession {
 /// ```
 #[allow(clippy::needless_return)]
 #[rpc(server)]
-pub trait SubscriptionRpc {
+pub trait SubscriptionRpc<SubscriptionSession> {
     /// Context to implement the subscription RPC.
-    type Metadata;
+    /// type Metadata;
 
     /// Subscribes to a topic.
     ///
@@ -170,8 +172,8 @@ pub trait SubscriptionRpc {
     ///   "result": "0x2a"
     /// }
     /// ```
-    #[pubsub(subscription = "subscribe", subscribe, name = "subscribe")]
-    fn subscribe(&self, meta: Self::Metadata, subscriber: Subscriber<String>, topic: Topic);
+    #[subscription(item = subscribe, name = "subscribe")]
+    fn subscribe(&self, meta: SubscriptionSession, subscriber: Subscriber<String>, topic: Topic);
 
     /// Unsubscribes from a subscribed topic.
     ///
@@ -203,8 +205,8 @@ pub trait SubscriptionRpc {
     ///   "result": true
     /// }
     /// ```
-    #[pubsub(subscription = "subscribe", unsubscribe, name = "unsubscribe")]
-    fn unsubscribe(&self, meta: Option<Self::Metadata>, id: SubscriptionId) -> Result<bool>;
+    #[subscription(item = u32, name = "unsubscribeEcho")]
+    fn unsubscribe(&self, meta: Option<SubscriptionSession>, id: SubscriptionId);
 }
 
 type Subscribers = HashMap<SubscriptionId, Sink<String>>;
@@ -215,7 +217,7 @@ pub struct SubscriptionRpcImpl {
     pub(crate) subscribers: Arc<RwLock<HashMap<Topic, Subscribers>>>,
 }
 
-impl SubscriptionRpc for SubscriptionRpcImpl {
+impl SubscriptionRpcServer for SubscriptionRpcImpl {
     type Metadata = Option<SubscriptionSession>;
 
     fn subscribe(&self, meta: Self::Metadata, subscriber: Subscriber<String>, topic: Topic) {

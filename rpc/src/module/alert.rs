@@ -5,8 +5,8 @@ use ckb_network::{NetworkController, SupportProtocols};
 use ckb_network_alert::{notifier::Notifier as AlertNotifier, verifier::Verifier as AlertVerifier};
 use ckb_types::{packed, prelude::*};
 use ckb_util::Mutex;
-use jsonrpc_core::Result;
-use jsonrpc_derive::rpc;
+use jsonrpsee::core::RpcResult;
+use jsonrpsee::proc_macros::rpc;
 use std::sync::Arc;
 
 /// RPC Module Alert for network alerts.
@@ -66,8 +66,8 @@ pub trait AlertRpc {
     ///   "id": 42
     /// }
     /// ```
-    #[rpc(name = "send_alert")]
-    fn send_alert(&self, alert: Alert) -> Result<()>;
+    #[method(name = "send_alert")]
+    fn send_alert(&self, alert: Alert) -> RpcResult<()>;
 }
 
 pub(crate) struct AlertRpcImpl {
@@ -90,8 +90,8 @@ impl AlertRpcImpl {
     }
 }
 
-impl AlertRpc for AlertRpcImpl {
-    fn send_alert(&self, alert: Alert) -> Result<()> {
+impl AlertRpcServer for AlertRpcImpl {
+    fn send_alert(&self, alert: Alert) -> RpcResult<()> {
         let alert: packed::Alert = alert.into();
         let now_ms = ckb_systemtime::unix_time_as_millis();
         let notice_until: u64 = alert.raw().notice_until().unpack();

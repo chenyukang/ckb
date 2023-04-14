@@ -1,7 +1,9 @@
 use ckb_jsonrpc_types::{ExtraLoggerConfig, MainLoggerConfig};
 use ckb_logger_service::Logger;
-use jsonrpc_core::{Error, ErrorCode::InternalError, Result};
-use jsonrpc_derive::rpc;
+use jsonrpsee::core::RpcResult;
+use jsonrpsee::proc_macros::rpc;
+use jsonrpsee_types::error::ErrorCode::InternalError;
+use jsonrpsee_types::error::ErrorObject;
 use std::time;
 
 /// RPC Module Debug for internal RPC methods.
@@ -16,11 +18,11 @@ pub trait DebugRpc {
     /// The file is stored in the server running the CKB node.
     ///
     /// The RPC returns the path to the dumped file on success or returns an error on failure.
-    #[rpc(name = "jemalloc_profiling_dump")]
-    fn jemalloc_profiling_dump(&self) -> Result<String>;
+    #[method(name = "jemalloc_profiling_dump")]
+    fn jemalloc_profiling_dump(&self) -> RpcResult<String>;
     /// Changes main logger config options while CKB is running.
-    #[rpc(name = "update_main_logger")]
-    fn update_main_logger(&self, config: MainLoggerConfig) -> Result<()>;
+    #[method(name = "update_main_logger")]
+    fn update_main_logger(&self, config: MainLoggerConfig) -> RpcResult<()>;
     /// Sets logger config options for extra loggers.
     ///
     /// CKB nodes allow setting up extra loggers. These loggers will have their own log files and
@@ -31,14 +33,18 @@ pub trait DebugRpc {
     /// * `name` - Extra logger name
     /// * `config_opt` - Adds a new logger or update an existing logger when this is not null.
     /// Removes the logger when this is null.
-    #[rpc(name = "set_extra_logger")]
-    fn set_extra_logger(&self, name: String, config_opt: Option<ExtraLoggerConfig>) -> Result<()>;
+    #[method(name = "set_extra_logger")]
+    fn set_extra_logger(
+        &self,
+        name: String,
+        config_opt: Option<ExtraLoggerConfig>,
+    ) -> RpcResult<()>;
 }
 
 pub(crate) struct DebugRpcImpl {}
 
-impl DebugRpc for DebugRpcImpl {
-    fn jemalloc_profiling_dump(&self) -> Result<String> {
+impl DebugRpcServer for DebugRpcImpl {
+    fn jemalloc_profiling_dump(&self) -> RpcResult<String> {
         let timestamp = time::SystemTime::now()
             .duration_since(time::SystemTime::UNIX_EPOCH)
             .unwrap()
@@ -46,7 +52,7 @@ impl DebugRpc for DebugRpcImpl {
         let filename = format!("ckb-jeprof.{timestamp}.heap");
         match ckb_memory_tracker::jemalloc_profiling_dump(&filename) {
             Ok(()) => Ok(filename),
-            Err(err) => Err(Error {
+            Err(err) => Err(ErrorObject {
                 code: InternalError,
                 message: err,
                 data: None,
@@ -54,7 +60,7 @@ impl DebugRpc for DebugRpcImpl {
         }
     }
 
-    fn update_main_logger(&self, config: MainLoggerConfig) -> Result<()> {
+    fn update_main_logger(&self, config: MainLoggerConfig) -> RpcResult<()> {
         let MainLoggerConfig {
             filter,
             to_stdout,
@@ -64,16 +70,20 @@ impl DebugRpc for DebugRpcImpl {
         if filter.is_none() && to_stdout.is_none() && to_file.is_none() && color.is_none() {
             return Ok(());
         }
-        Logger::update_main_logger(filter, to_stdout, to_file, color).map_err(|err| Error {
+        Logger::update_main_logger(filter, to_stdout, to_file, color).map_err(|err| ErrorObject {
             code: InternalError,
             message: err,
             data: None,
         })
     }
 
-    fn set_extra_logger(&self, name: String, config_opt: Option<ExtraLoggerConfig>) -> Result<()> {
+    fn set_extra_logger(
+        &self,
+        name: String,
+        config_opt: Option<ExtraLoggerConfig>,
+    ) -> RpcResult<()> {
         if let Err(err) = Logger::check_extra_logger_name(&name) {
-            return Err(Error {
+            return Err(ErrorObject {
                 code: InternalError,
                 message: err,
                 data: None,
@@ -84,7 +94,7 @@ impl DebugRpc for DebugRpcImpl {
         } else {
             Logger::remove_extra_logger(name)
         }
-        .map_err(|err| Error {
+        .map_err(|err| ErrorObject {
             code: InternalError,
             message: err,
             data: None,
