@@ -99,7 +99,7 @@ fn calc_relation_ids(
         relation_ids.insert(id.clone());
         stage.remove(&id);
 
-        //recursively
+        // recursively
         for id in map
             .inner
             .get(&id)
