@@ -1,3 +1,5 @@
+extern crate test;
+
 use crate::component::tests::util::{
     build_tx, build_tx_with_dep, build_tx_with_header_dep, DEFAULT_MAX_ANCESTORS_COUNT,
     MOCK_CYCLES, MOCK_FEE, MOCK_SIZE,
@@ -699,3 +701,4 @@ fn test_max_ancestors_with_dep() {
     assert_eq!(pool.edges.inputs_len(), 1);
     assert_eq!(pool.edges.outputs_len(), 1);
 }
+
