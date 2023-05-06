@@ -87,6 +87,34 @@ impl TxLinks {
     }
 }
 
+fn calc_relation_ids(
+    stage: Cow<HashSet<ProposalShortId>>,
+    map: &TxLinksMap,
+    relation: Relation,
+) -> HashSet<ProposalShortId> {
+    let mut stage = stage.into_owned();
+    let mut relation_ids = HashSet::with_capacity(stage.len());
+
+    while let Some(id) = stage.iter().next().cloned() {
+        relation_ids.insert(id.clone());
+        stage.remove(&id);
+
+        //recursively
+        for id in map
+            .inner
+            .get(&id)
+            .map(|link| link.get_direct_ids(relation))
+            .cloned()
+            .unwrap_or_default()
+        {
+            if !relation_ids.contains(&id) {
+                stage.insert(id);
+            }
+        }
+    }
+    relation_ids
+}
+
 #[derive(Default, Debug, Clone)]
 pub struct TxLinksMap {
     pub(crate) inner: HashMap<ProposalShortId, TxLinks>,
@@ -111,35 +139,7 @@ impl TxLinksMap {
             .cloned()
             .unwrap_or_default();
 
-        self.calc_relation_ids(Cow::Owned(direct), relation)
-    }
-
-    fn calc_relation_ids(
-        &self,
-        stage: Cow<HashSet<ProposalShortId>>,
-        relation: Relation,
-    ) -> HashSet<ProposalShortId> {
-        let mut stage = stage.into_owned();
-        let mut relation_ids = HashSet::with_capacity(stage.len());
-
-        while let Some(id) = stage.iter().next().cloned() {
-            relation_ids.insert(id.clone());
-            stage.remove(&id);
-
-            //recursively
-            for id in self
-                .inner
-                .get(&id)
-                .map(|link| link.get_direct_ids(relation))
-                .cloned()
-                .unwrap_or_default()
-            {
-                if !relation_ids.contains(&id) {
-                    stage.insert(id);
-                }
-            }
-        }
-        relation_ids
+        calc_relation_ids(Cow::Owned(direct), self, relation)
     }
 
     fn calc_ancestors(&self, short_id: &ProposalShortId) -> HashSet<ProposalShortId> {
@@ -309,10 +309,7 @@ impl SortedTxMap {
             }
         }
 
-        let ancestors = self
-            .links
-            .calc_relation_ids(Cow::Borrowed(&parents), Relation::Parents);
-
+        let ancestors = calc_relation_ids(Cow::Borrowed(&parents), &self.links, Relation::Parents);
         // update parents references
         for ancestor_id in &ancestors {
             let ancestor = self.entries.get(ancestor_id).expect("pool consistent");
