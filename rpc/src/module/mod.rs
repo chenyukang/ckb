@@ -135,7 +135,9 @@ pub(crate) use self::subscription::{SubscriptionRpcImpl, SubscriptionSession};
 pub(crate) use self::test::IntegrationTestRpcImpl;
 
 pub use self::alert::AlertRpc;
+pub use self::alert::add_alert_rpc_methods;
 pub use self::chain::ChainRpc;
+pub use self::chain::add_chain_rpc_methods;
 pub use self::debug::DebugRpc;
 pub use self::experiment::ExperimentRpc;
 pub use self::indexer::IndexerRpc;
