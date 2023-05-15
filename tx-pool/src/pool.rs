@@ -1,6 +1,9 @@
 //! Top-level Pool type, methods, and tests
+extern crate rustc_hash;
+extern crate slab;
 use super::component::{commit_txs_scanner::CommitTxsScanner, TxEntry};
 use crate::callback::Callbacks;
+use crate::component::container::AncestorsScoreSortKey;
 use crate::component::pending::PendingQueue;
 use crate::component::proposed::ProposedPool;
 use crate::component::recent_reject::RecentReject;
@@ -10,6 +13,12 @@ use ckb_app_config::TxPoolConfig;
 use ckb_logger::{debug, error, trace, warn};
 use ckb_snapshot::Snapshot;
 use ckb_store::ChainStore;
+use ckb_types::core::error::OutPointError;
+use ckb_types::packed::OutPoint;
+use ckb_types::{
+    core::cell::{CellMetaBuilder, CellProvider, CellStatus},
+    prelude::*,
+};
 use ckb_types::{
     core::{
         cell::{resolve_transaction, OverlayCellChecker, OverlayCellProvider, ResolvedTransaction},
@@ -20,7 +29,10 @@ use ckb_types::{
 };
 use ckb_verification::{cache::CacheEntry, TxVerifyEnv};
 use lru::LruCache;
-use std::collections::HashSet;
+use multi_index_map::MultiIndexMap;
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
+use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 
 const COMMITTED_HASH_CACHE_SIZE: usize = 100_000;
@@ -51,6 +63,28 @@ macro_rules! evict_for_trim_size {
     };
 }
 
+type ConflictEntry = (TxEntry, Reject);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Status {
+    Pending,
+    Gap,
+    Proposed,
+}
+
+#[derive(MultiIndexMap, Clone)]
+pub struct PoolEntry {
+    #[multi_index(hashed_unique)]
+    pub id: ProposalShortId,
+    #[multi_index(ordered_non_unique)]
+    pub score: AncestorsScoreSortKey,
+    #[multi_index(ordered_non_unique)]
+    pub status: Status,
+
+    pub inner: TxEntry,
+    // other sort key
+}
+
 /// Tx-pool implementation
 pub struct TxPool {
     pub(crate) config: TxPoolConfig,
@@ -60,6 +94,17 @@ pub struct TxPool {
     pub(crate) gap: PendingQueue,
     /// Tx pool that finely for commit
     pub(crate) proposed: ProposedPool,
+
+    /// The pool entries with different kinds of sort strategies
+    pub(crate) entries: MultiIndexPoolEntryMap,
+    /// dep-set<txid-headers> map represent in-pool tx's header deps
+    pub(crate) header_deps: HashMap<ProposalShortId, Vec<Byte32>>,
+    /// dep-set<txid> map represent in-pool tx's deps
+    pub(crate) deps: HashMap<OutPoint, HashSet<ProposalShortId>>,
+    /// input-set<txid> map represent in-pool tx's inputs
+    pub(crate) inputs: HashMap<OutPoint, HashSet<ProposalShortId>>,
+    pub(crate) outputs: HashMap<OutPoint, HashSet<ProposalShortId>>,
+
     /// cache for committed transactions hash
     pub(crate) committed_txs_hash_cache: LruCache<ProposalShortId, Byte32>,
     // sum of all tx_pool tx's virtual sizes.
@@ -83,6 +128,11 @@ impl TxPool {
             pending: PendingQueue::new(),
             gap: PendingQueue::new(),
             proposed: ProposedPool::new(config.max_ancestors_count),
+            entries: MultiIndexPoolEntryMap::default(),
+            header_deps: HashMap::default(),
+            deps: Default::default(),
+            inputs: Default::default(),
+            outputs: Default::default(),
             committed_txs_hash_cache: LruCache::new(COMMITTED_HASH_CACHE_SIZE),
             total_tx_size: 0,
             total_tx_cycles: 0,
@@ -135,6 +185,22 @@ impl TxPool {
         self.total_tx_cycles = total_tx_cycles;
     }
 
+    fn add_poolentry(&mut self, entry: TxEntry, status: Status) -> bool {
+        let short_id = entry.proposal_short_id();
+        if self.entries.get_by_id(&short_id).is_some() {
+            return false;
+        }
+        let score = entry.as_score_key();
+        trace!("add_{:?} {}", status, entry.transaction().hash());
+        self.entries.insert(PoolEntry {
+            id: short_id,
+            score,
+            status,
+            inner: entry,
+        });
+        true
+    }
+
     /// Add tx to pending pool
     /// If did have this value present, false is returned.
     pub fn add_pending(&mut self, entry: TxEntry) -> bool {
@@ -143,6 +209,10 @@ impl TxPool {
         }
         trace!("add_pending {}", entry.transaction().hash());
         self.pending.add_entry(entry)
+    }
+
+    pub fn add_pending_v2(&mut self, entry: TxEntry) -> bool {
+        self.add_poolentry(entry, Status::Pending)
     }
 
     /// Add tx which proposed but still uncommittable to gap pool
@@ -154,15 +224,27 @@ impl TxPool {
         self.gap.add_entry(entry)
     }
 
+    pub fn add_gap_v2(&mut self, entry: TxEntry) -> bool {
+        self.add_poolentry(entry, Status::Gap)
+    }
+
     /// Add tx to proposed pool
     pub fn add_proposed(&mut self, entry: TxEntry) -> Result<bool, Reject> {
         trace!("add_proposed {}", entry.transaction().hash());
         self.proposed.add_entry(entry)
     }
 
+    pub fn add_proposed_v2(&mut self, entry: TxEntry) -> bool {
+        self.add_poolentry(entry, Status::Proposed)
+    }
+
     /// Returns true if the tx-pool contains a tx with specified id.
     pub fn contains_proposal_id(&self, id: &ProposalShortId) -> bool {
         self.pending.contains_key(id) || self.gap.contains_key(id) || self.proposed.contains_key(id)
+    }
+
+    pub fn contains_proposal_id_v2(&self, id: &ProposalShortId) -> bool {
+        self.entries.get_by_id(id).is_some()
     }
 
     /// Returns tx with cycles corresponding to the id.
@@ -182,6 +264,12 @@ impl TxPool {
             })
     }
 
+    pub fn get_tx_with_cycles_v2(&self, id: &ProposalShortId) -> Option<(TransactionView, Cycle)> {
+        self.entries
+            .get_by_id(id)
+            .map(|entry| (entry.inner.transaction().clone(), entry.inner.cycles))
+    }
+
     /// Returns tx corresponding to the id.
     pub fn get_tx(&self, id: &ProposalShortId) -> Option<&TransactionView> {
         self.pending
@@ -190,9 +278,26 @@ impl TxPool {
             .or_else(|| self.proposed.get_tx(id))
     }
 
+    pub fn get_tx_v2(&self, id: &ProposalShortId) -> Option<&TransactionView> {
+        self.entries
+            .get_by_id(id)
+            .map(|entry| entry.inner.transaction())
+    }
+
     /// Returns tx from pending and gap corresponding to the id. RPC
     pub fn get_entry_from_pending_or_gap(&self, id: &ProposalShortId) -> Option<&TxEntry> {
         self.pending.get(id).or_else(|| self.gap.get(id))
+    }
+
+    pub fn get_entry_from_pending_or_gap_v2(&self, id: &ProposalShortId) -> Option<&TxEntry> {
+        if let Some(entry) = self.entries.get_by_id(id) {
+            match entry.status {
+                Status::Pending | Status::Gap => return Some(&entry.inner),
+                _ => return None,
+            }
+        } else {
+            return None;
+        }
     }
 
     pub(crate) fn proposed(&self) -> &ProposedPool {
@@ -207,6 +312,15 @@ impl TxPool {
             .get_tx(id)
             .or_else(|| self.gap.get_tx(id))
             .or_else(|| self.pending.get_tx(id))
+    }
+
+    pub(crate) fn get_tx_from_proposed_and_others_v2(
+        &self,
+        id: &ProposalShortId,
+    ) -> Option<&TransactionView> {
+        self.entries
+            .get_by_id(id)
+            .map(|entry| entry.inner.transaction())
     }
 
     pub(crate) fn remove_committed_txs<'a>(
@@ -243,6 +357,129 @@ impl TxPool {
         for (entry, reject) in self.pending.resolve_conflict_header_dep(detached_headers) {
             callbacks.call_reject(self, &entry, reject);
         }
+    }
+
+    pub(crate) fn resolve_conflict_header_dep_v2(
+        &mut self,
+        detached_headers: &HashSet<Byte32>,
+        callbacks: &Callbacks,
+    ) {
+        for (entry, reject) in self.__resolve_conflict_header_dep_v2(detached_headers) {
+            callbacks.call_reject(self, &entry, reject);
+        }
+    }
+
+    pub(crate) fn get_descendants(&self, entry: &TxEntry) -> HashSet<ProposalShortId> {
+        let mut entries: VecDeque<&TxEntry> = VecDeque::new();
+        entries.push_back(entry);
+
+        let mut descendants = HashSet::new();
+        while let Some(entry) = entries.pop_front() {
+            let outputs = entry.transaction().output_pts();
+
+            for output in outputs {
+                if let Some(ids) = self.outputs.get(&output) {
+                    for id in ids {
+                        if descendants.insert(id.clone()) {
+                            if let Some(entry) = self.entries.get_by_id(id) {
+                                entries.push_back(&entry.inner);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        descendants
+    }
+
+    pub(crate) fn remove_entry_relation(&mut self, entry: &TxEntry) {
+        let inputs = entry.transaction().input_pts_iter();
+        let tx_short_id = entry.proposal_short_id();
+        let outputs = entry.transaction().output_pts();
+
+        for i in inputs {
+            if let Entry::Occupied(mut occupied) = self.inputs.entry(i) {
+                let empty = {
+                    let ids = occupied.get_mut();
+                    ids.remove(&tx_short_id);
+                    ids.is_empty()
+                };
+                if empty {
+                    occupied.remove();
+                }
+            }
+        }
+
+        // remove dep
+        for d in entry.related_dep_out_points().cloned() {
+            if let Entry::Occupied(mut occupied) = self.deps.entry(d) {
+                let empty = {
+                    let ids = occupied.get_mut();
+                    ids.remove(&tx_short_id);
+                    ids.is_empty()
+                };
+                if empty {
+                    occupied.remove();
+                }
+            }
+        }
+
+        for o in outputs {
+            self.outputs.remove(&o);
+        }
+
+        self.header_deps.remove(&tx_short_id);
+    }
+
+    fn remove_entry(&mut self, id: &ProposalShortId) -> Option<TxEntry> {
+        let removed = self.entries.remove_by_id(id);
+
+        if let Some(ref entry) = removed {
+            self.remove_entry_relation(&entry.inner);
+        }
+        removed.map(|e| e.inner)
+    }
+
+    fn remove_entry_and_descendants(&mut self, id: &ProposalShortId) -> Vec<TxEntry> {
+        let mut removed = Vec::new();
+        if let Some(entry) = self.entries.remove_by_id(id) {
+            let descendants = self.get_descendants(&entry.inner);
+            self.remove_entry_relation(&entry.inner);
+            removed.push(entry.inner);
+            for id in descendants {
+                if let Some(entry) = self.remove_entry(&id) {
+                    removed.push(entry);
+                }
+            }
+        }
+        removed
+    }
+
+    fn __resolve_conflict_header_dep_v2(
+        &mut self,
+        headers: &HashSet<Byte32>,
+    ) -> Vec<ConflictEntry> {
+        let mut conflicts = Vec::new();
+
+        // invalid header deps
+        let mut ids = Vec::new();
+        for (tx_id, deps) in self.header_deps.iter() {
+            for hash in deps {
+                if headers.contains(hash) {
+                    ids.push((hash.clone(), tx_id.clone()));
+                    break;
+                }
+            }
+        }
+
+        for (blk_hash, id) in ids {
+            let entries = self.remove_entry_and_descendants(&id);
+            for entry in entries {
+                let reject = Reject::Resolve(OutPointError::InvalidHeader(blk_hash.to_owned()));
+                conflicts.push((entry, reject));
+            }
+        }
+        conflicts
     }
 
     pub(crate) fn remove_committed_tx(&mut self, tx: &TransactionView, callbacks: &Callbacks) {
@@ -287,6 +524,50 @@ impl TxPool {
         }
     }
 
+    fn resolve_conflict(&mut self, tx: &TransactionView) -> Vec<ConflictEntry> {
+        let inputs = tx.input_pts_iter();
+        let mut conflicts = Vec::new();
+
+        for i in inputs {
+            if let Some(ids) = self.inputs.remove(&i) {
+                for id in ids {
+                    let entries = self.remove_entry_and_descendants(&id);
+                    for entry in entries {
+                        let reject = Reject::Resolve(OutPointError::Dead(i.clone()));
+                        conflicts.push((entry, reject));
+                    }
+                }
+            }
+
+            // deps consumed
+            if let Some(ids) = self.deps.remove(&i) {
+                for id in ids {
+                    let entries = self.remove_entry_and_descendants(&id);
+                    for entry in entries {
+                        let reject = Reject::Resolve(OutPointError::Dead(i.clone()));
+                        conflicts.push((entry, reject));
+                    }
+                }
+            }
+        }
+        conflicts
+    }
+
+    pub(crate) fn remove_committed_tx_v2(&mut self, tx: &TransactionView, callbacks: &Callbacks) {
+        let hash = tx.hash();
+        let short_id = tx.proposal_short_id();
+        if let Some(entry) = self.remove_entry(&short_id) {
+            debug!("remove_committed_tx from gap {}", hash);
+            callbacks.call_committed(self, &entry)
+        }
+        {
+            let conflicts = self.resolve_conflict(tx);
+            for (entry, reject) in conflicts {
+                callbacks.call_reject(self, &entry, reject);
+            }
+        }
+    }
+
     // Expire all transaction (and their dependencies) in the pool.
     pub(crate) fn remove_expired(&mut self, callbacks: &Callbacks) {
         let now_ms = ckb_systemtime::unix_time_as_millis();
@@ -311,6 +592,42 @@ impl TxPool {
         }
 
         for entry in removed {
+            let tx_hash = entry.transaction().hash();
+            debug!("remove_expired {} timestamp({})", tx_hash, entry.timestamp);
+            let reject = Reject::Expiry(entry.timestamp);
+            callbacks.call_reject(self, &entry, reject);
+        }
+    }
+
+    fn remove_entries_by_filter<P: FnMut(&ProposalShortId, &TxEntry) -> bool>(
+        &mut self,
+        mut predicate: P,
+    ) -> Vec<TxEntry> {
+        let mut removed = Vec::new();
+        for (_, entry) in self.entries.iter() {
+            if predicate(&entry.id, &entry.inner) {
+                removed.push(entry.inner.clone());
+            }
+        }
+        for entry in &removed {
+            self.remove_entry(&entry.proposal_short_id());
+        }
+
+        removed
+    }
+
+    // Expire all transaction (and their dependencies) in the pool.
+    pub(crate) fn remove_expired_v2(&mut self, callbacks: &Callbacks) {
+        let now_ms = ckb_systemtime::unix_time_as_millis();
+        let removed: Vec<_> = self
+            .entries
+            .iter()
+            .filter(|&(_, entry)| self.expiry + entry.inner.timestamp < now_ms)
+            .map(|(_, entry)| entry.inner.clone())
+            .collect();
+
+        for entry in removed {
+            self.remove_entry(&entry.proposal_short_id());
             let tx_hash = entry.transaction().hash();
             debug!("remove_expired {} timestamp({})", tx_hash, entry.timestamp);
             let reject = Reject::Expiry(entry.timestamp);
@@ -382,6 +699,14 @@ impl TxPool {
         false
     }
 
+    pub(crate) fn remove_tx_v2(&mut self, id: &ProposalShortId) -> bool {
+        if let Some(entry) = self.remove_entry(id) {
+            self.update_statics_for_remove_tx(entry.size, entry.cycles);
+            return true;
+        }
+        false
+    }
+
     pub(crate) fn resolve_tx_from_pending_and_proposed(
         &self,
         tx: TransactionView,
@@ -400,6 +725,18 @@ impl TxPool {
         )
         .map(Arc::new)
         .map_err(Reject::Resolve)
+    }
+
+    pub(crate) fn resolve_tx_from_pending_and_proposed_v2(
+        &self,
+        tx: TransactionView,
+    ) -> Result<Arc<ResolvedTransaction>, Reject> {
+        let snapshot = self.snapshot();
+        let provider = OverlayCellProvider::new(&self.entries, snapshot);
+        let mut seen_inputs = HashSet::new();
+        resolve_transaction(tx, &mut seen_inputs, &provider, snapshot)
+            .map(Arc::new)
+            .map_err(Reject::Resolve)
     }
 
     pub(crate) fn check_rtx_from_pending_and_proposed(
@@ -583,6 +920,11 @@ impl TxPool {
         self.pending = PendingQueue::new();
         self.gap = PendingQueue::new();
         self.proposed = ProposedPool::new(self.config.max_ancestors_count);
+        self.entries = MultiIndexPoolEntryMap::default();
+        self.header_deps = HashMap::default();
+        self.deps = HashMap::default();
+        self.inputs = HashMap::default();
+        self.outputs = HashMap::default();
         self.snapshot = snapshot;
         self.committed_txs_hash_cache = LruCache::new(COMMITTED_HASH_CACHE_SIZE);
         self.total_tx_size = 0;
@@ -643,5 +985,28 @@ fn build_recent_reject(config: &TxPoolConfig) -> Option<RecentReject> {
     } else {
         warn!("Recent reject database is disabled!");
         None
+    }
+}
+
+impl CellProvider for MultiIndexPoolEntryMap {
+    fn cell(&self, out_point: &OutPoint, _eager_load: bool) -> CellStatus {
+        let tx_hash = out_point.tx_hash();
+        if let Some(entry) = self.get_by_id(&ProposalShortId::from_tx_hash(&tx_hash)) {
+            match entry
+                .inner
+                .transaction()
+                .output_with_data(out_point.index().unpack())
+            {
+                Some((output, data)) => {
+                    let cell_meta = CellMetaBuilder::from_cell_output(output, data)
+                        .out_point(out_point.to_owned())
+                        .build();
+                    CellStatus::live_cell(cell_meta)
+                }
+                None => CellStatus::Unknown,
+            }
+        } else {
+            CellStatus::Unknown
+        }
     }
 }
