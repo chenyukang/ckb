@@ -4,9 +4,9 @@ extern crate slab;
 use super::component::{commit_txs_scanner::CommitTxsScanner, TxEntry};
 use crate::callback::Callbacks;
 use crate::component::container::AncestorsScoreSortKey;
-use crate::component::entry;
+use crate::component::entry::EvictKey;
 use crate::component::pending::PendingQueue;
-use crate::component::proposed::{self, ProposedPool};
+use crate::component::proposed::ProposedPool;
 use crate::component::recent_reject::RecentReject;
 use crate::error::Reject;
 use crate::util::verify_rtx;
@@ -84,6 +84,8 @@ pub struct PoolEntry {
     pub score: AncestorsScoreSortKey,
     #[multi_index(ordered_non_unique)]
     pub status: Status,
+    #[multi_index(ordered_non_unique)]
+    pub evict_key: EvictKey,
 
     pub inner: TxEntry,
     // other sort key
@@ -136,7 +138,7 @@ pub struct TxPool {
 impl TxPool {
     /// Create new TxPool
     pub fn new(config: TxPoolConfig, snapshot: Arc<Snapshot>) -> TxPool {
-        let recent_reject = build_recent_reject(&config);
+        let recent_reject = Self::build_recent_reject(&config);
         let expiry = config.expiry_hours as u64 * 60 * 60 * 1000;
         TxPool {
             pending: PendingQueue::new(),
@@ -204,13 +206,15 @@ impl TxPool {
         if self.entries.get_by_id(&short_id).is_some() {
             return false;
         }
-        let score = entry.as_score_key();
         trace!("add_{:?} {}", status, entry.transaction().hash());
+        let score = entry.as_score_key();
+        let evict_key = entry.as_evict_key();
         self.entries.insert(PoolEntry {
             id: short_id,
             score,
             status,
             inner: entry,
+            evict_key,
         });
         true
     }
@@ -658,6 +662,31 @@ impl TxPool {
                 evict_for_trim_size!(self, self.gap, callbacks)
             } else {
                 evict_for_trim_size!(self, self.proposed, callbacks)
+            }
+        }
+    }
+
+    pub(crate) fn limit_size_v2(&mut self, callbacks: &Callbacks) {
+        while self.total_tx_size > self.config.max_tx_pool_size {
+            if let Some(id) = self
+                .entries
+                .iter_by_evict_key()
+                .next()
+                .map(|entry| entry.id.clone())
+            {
+                let removed = self.remove_entry_and_descendants(&id);
+                for entry in removed {
+                    let tx_hash = entry.transaction().hash();
+                    debug!(
+                        "removed by size limit {} timestamp({})",
+                        tx_hash, entry.timestamp
+                    );
+                    let reject = Reject::Full(format!(
+                        "the fee_rate for this transaction is: {}",
+                        entry.fee_rate()
+                    ));
+                    callbacks.call_reject(self, &entry, reject);
+                }
             }
         }
     }
@@ -1110,28 +1139,28 @@ impl TxPool {
         }
         (entries, size, cycles)
     }
-}
 
-fn build_recent_reject(config: &TxPoolConfig) -> Option<RecentReject> {
-    if !config.recent_reject.as_os_str().is_empty() {
-        let recent_reject_ttl = config.keep_rejected_tx_hashes_days as i32 * 24 * 60 * 60;
-        match RecentReject::new(
-            &config.recent_reject,
-            config.keep_rejected_tx_hashes_count,
-            recent_reject_ttl,
-        ) {
-            Ok(recent_reject) => Some(recent_reject),
-            Err(err) => {
-                error!(
-                    "Failed to open recent reject database {:?} {}",
-                    config.recent_reject, err
-                );
-                None
+    fn build_recent_reject(config: &TxPoolConfig) -> Option<RecentReject> {
+        if !config.recent_reject.as_os_str().is_empty() {
+            let recent_reject_ttl = config.keep_rejected_tx_hashes_days as i32 * 24 * 60 * 60;
+            match RecentReject::new(
+                &config.recent_reject,
+                config.keep_rejected_tx_hashes_count,
+                recent_reject_ttl,
+            ) {
+                Ok(recent_reject) => Some(recent_reject),
+                Err(err) => {
+                    error!(
+                        "Failed to open recent reject database {:?} {}",
+                        config.recent_reject, err
+                    );
+                    None
+                }
             }
+        } else {
+            warn!("Recent reject database is disabled!");
+            None
         }
-    } else {
-        warn!("Recent reject database is disabled!");
-        None
     }
 }
 
