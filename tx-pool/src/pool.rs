@@ -4,8 +4,9 @@ extern crate slab;
 use super::component::{commit_txs_scanner::CommitTxsScanner, TxEntry};
 use crate::callback::Callbacks;
 use crate::component::container::AncestorsScoreSortKey;
+use crate::component::entry;
 use crate::component::pending::PendingQueue;
-use crate::component::proposed::ProposedPool;
+use crate::component::proposed::{self, ProposedPool};
 use crate::component::recent_reject::RecentReject;
 use crate::error::Reject;
 use crate::util::verify_rtx;
@@ -21,7 +22,10 @@ use ckb_types::{
 };
 use ckb_types::{
     core::{
-        cell::{resolve_transaction, OverlayCellChecker, OverlayCellProvider, ResolvedTransaction},
+        cell::{
+            resolve_transaction, CellChecker, OverlayCellChecker, OverlayCellProvider,
+            ResolvedTransaction,
+        },
         tx_pool::{TxPoolEntryInfo, TxPoolIds},
         Cycle, TransactionView, UncleBlockView,
     },
@@ -83,6 +87,16 @@ pub struct PoolEntry {
 
     pub inner: TxEntry,
     // other sort key
+}
+
+impl MultiIndexPoolEntryMap {
+    /// sorted by ancestor score from higher to lower
+    pub fn score_sorted_iter(&self) -> impl Iterator<Item = &TxEntry> {
+        // Note: multi_index don't support reverse order iteration now
+        // so we need to collect and reverse
+        let entries = self.iter_by_score().collect::<Vec<_>>();
+        entries.into_iter().rev().map(move |entry| &entry.inner)
+    }
 }
 
 /// Tx-pool implementation
@@ -753,6 +767,17 @@ impl TxPool {
             .map_err(Reject::Resolve)
     }
 
+    pub(crate) fn check_rtx_from_pending_and_proposed_v2(
+        &self,
+        rtx: &ResolvedTransaction,
+    ) -> Result<(), Reject> {
+        let snapshot = self.snapshot();
+        let checker = OverlayCellChecker::new(&self.entries, snapshot);
+        let mut seen_inputs = HashSet::new();
+        rtx.check(&mut seen_inputs, &checker, snapshot)
+            .map_err(Reject::Resolve)
+    }
+
     pub(crate) fn resolve_tx_from_proposed(
         &self,
         tx: TransactionView,
@@ -765,9 +790,31 @@ impl TxPool {
             .map_err(Reject::Resolve)
     }
 
+    pub(crate) fn resolve_tx_from_proposed_v2(
+        &self,
+        rtx: &ResolvedTransaction,
+    ) -> Result<(), Reject> {
+        let snapshot = self.snapshot();
+        let checker = OverlayCellChecker::new(&self.entries, snapshot);
+        let mut seen_inputs = HashSet::new();
+        rtx.check(&mut seen_inputs, &checker, snapshot)
+            .map_err(Reject::Resolve)
+    }
+
     pub(crate) fn check_rtx_from_proposed(&self, rtx: &ResolvedTransaction) -> Result<(), Reject> {
         let snapshot = self.snapshot();
         let cell_checker = OverlayCellChecker::new(&self.proposed, snapshot);
+        let mut seen_inputs = HashSet::new();
+        rtx.check(&mut seen_inputs, &cell_checker, snapshot)
+            .map_err(Reject::Resolve)
+    }
+
+    pub(crate) fn check_rtx_from_proposed_v2(
+        &self,
+        rtx: &ResolvedTransaction,
+    ) -> Result<(), Reject> {
+        let snapshot = self.snapshot();
+        let cell_checker = OverlayCellChecker::new(&self.entries, snapshot);
         let mut seen_inputs = HashSet::new();
         rtx.check(&mut seen_inputs, &cell_checker, snapshot)
             .map_err(Reject::Resolve)
@@ -835,6 +882,24 @@ impl TxPool {
         }
     }
 
+    // fill proposal txs
+    pub fn fill_proposals(
+        &self,
+        limit: usize,
+        exclusion: &HashSet<ProposalShortId>,
+        proposals: &mut HashSet<ProposalShortId>,
+        status: &Status,
+    ) {
+        for entry in self.entries.get_by_status(status) {
+            if proposals.len() == limit {
+                break;
+            }
+            if !exclusion.contains(&entry.id) {
+                proposals.insert(entry.id.clone());
+            }
+        }
+    }
+
     /// Get to-be-proposal transactions that may be included in the next block.
     pub fn get_proposals(
         &self,
@@ -845,6 +910,18 @@ impl TxPool {
         self.pending
             .fill_proposals(limit, exclusion, &mut proposals);
         self.gap.fill_proposals(limit, exclusion, &mut proposals);
+        proposals
+    }
+
+    /// Get to-be-proposal transactions that may be included in the next block.
+    pub fn get_proposals_v2(
+        &self,
+        limit: usize,
+        exclusion: &HashSet<ProposalShortId>,
+    ) -> HashSet<ProposalShortId> {
+        let mut proposals = HashSet::with_capacity(limit);
+        self.fill_proposals(limit, exclusion, &mut proposals, &Status::Pending);
+        self.fill_proposals(limit, exclusion, &mut proposals, &Status::Gap);
         proposals
     }
 
@@ -879,6 +956,25 @@ impl TxPool {
         TxPoolIds { pending, proposed }
     }
 
+    // This is for RPC request, performance is not critical
+    pub(crate) fn get_ids_v2(&self) -> TxPoolIds {
+        let pending: Vec<Byte32> = self
+            .entries
+            .get_by_status(&Status::Pending)
+            .iter()
+            .chain(self.entries.get_by_status(&Status::Gap).iter())
+            .map(|entry| entry.inner.transaction().hash())
+            .collect();
+
+        let proposed: Vec<Byte32> = self
+            .proposed
+            .iter()
+            .map(|(_, entry)| entry.transaction().hash())
+            .collect();
+
+        TxPoolIds { pending, proposed }
+    }
+
     pub(crate) fn get_all_entry_info(&self) -> TxPoolEntryInfo {
         let pending = self
             .pending
@@ -900,8 +996,27 @@ impl TxPool {
         TxPoolEntryInfo { pending, proposed }
     }
 
+    pub(crate) fn get_all_entry_info_v2(&self) -> TxPoolEntryInfo {
+        let pending = self
+            .entries
+            .get_by_status(&Status::Pending)
+            .iter()
+            .chain(self.entries.get_by_status(&Status::Gap).iter())
+            .map(|entry| (entry.inner.transaction().hash(), entry.inner.to_info()))
+            .collect();
+
+        let proposed = self
+            .entries
+            .get_by_status(&Status::Proposed)
+            .iter()
+            .map(|entry| (entry.inner.transaction().hash(), entry.inner.to_info()))
+            .collect();
+
+        TxPoolEntryInfo { pending, proposed }
+    }
+
     pub(crate) fn drain_all_transactions(&mut self) -> Vec<TransactionView> {
-        let mut txs = CommitTxsScanner::new(&self.proposed)
+        let mut txs = CommitTxsScanner::new(&self.proposed, &self.entries)
             .txs_to_commit(self.total_tx_size, self.total_tx_cycles)
             .0
             .into_iter()
@@ -912,6 +1027,38 @@ impl TxPool {
         txs.append(&mut self.pending.drain());
         self.total_tx_size = 0;
         self.total_tx_cycles = 0;
+        // self.touch_last_txs_updated_at();
+        txs
+    }
+
+    pub(crate) fn drain_all_transactions_v2(&mut self) -> Vec<TransactionView> {
+        let mut txs = CommitTxsScanner::new(&self.proposed, &self.entries)
+            .txs_to_commit(self.total_tx_size, self.total_tx_cycles)
+            .0
+            .into_iter()
+            .map(|tx_entry| tx_entry.into_transaction())
+            .collect::<Vec<_>>();
+        self.proposed.clear();
+        let mut pending = self
+            .entries
+            .remove_by_status(&Status::Pending)
+            .into_iter()
+            .map(|e| e.inner.into_transaction())
+            .collect::<Vec<_>>();
+        txs.append(&mut pending);
+        let mut gap = self
+            .entries
+            .remove_by_status(&Status::Gap)
+            .into_iter()
+            .map(|e| e.inner.into_transaction())
+            .collect::<Vec<_>>();
+        txs.append(&mut gap);
+        self.total_tx_size = 0;
+        self.total_tx_cycles = 0;
+        self.deps.clear();
+        self.inputs.clear();
+        self.header_deps.clear();
+        self.outputs.clear();
         // self.touch_last_txs_updated_at();
         txs
     }
@@ -948,8 +1095,8 @@ impl TxPool {
         max_block_cycles: Cycle,
         txs_size_limit: usize,
     ) -> (Vec<TxEntry>, usize, Cycle) {
-        let (entries, size, cycles) =
-            CommitTxsScanner::new(self.proposed()).txs_to_commit(txs_size_limit, max_block_cycles);
+        let (entries, size, cycles) = CommitTxsScanner::new(self.proposed(), &self.entries)
+            .txs_to_commit(txs_size_limit, max_block_cycles);
 
         if !entries.is_empty() {
             ckb_logger::info!(
@@ -1007,6 +1154,21 @@ impl CellProvider for MultiIndexPoolEntryMap {
             }
         } else {
             CellStatus::Unknown
+        }
+    }
+}
+
+impl CellChecker for MultiIndexPoolEntryMap {
+    fn is_live(&self, out_point: &OutPoint) -> Option<bool> {
+        let tx_hash = out_point.tx_hash();
+        if let Some(entry) = self.get_by_id(&ProposalShortId::from_tx_hash(&tx_hash)) {
+            entry
+                .inner
+                .transaction()
+                .output(out_point.index().unpack())
+                .map(|_| true)
+        } else {
+            None
         }
     }
 }
