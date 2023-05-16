@@ -262,7 +262,7 @@ impl PoolMap {
         removed
     }
 
-    pub fn __resolve_conflict_header_dep_v2(
+    pub fn resolve_conflict_header_dep(
         &mut self,
         headers: &HashSet<Byte32>,
     ) -> Vec<ConflictEntry> {
@@ -316,6 +316,24 @@ impl PoolMap {
             }
         }
         conflicts
+    }
+
+    // fill proposal txs
+    pub fn fill_proposals(
+        &self,
+        limit: usize,
+        exclusion: &HashSet<ProposalShortId>,
+        proposals: &mut HashSet<ProposalShortId>,
+        status: &Status,
+    ) {
+        for entry in self.entries.get_by_status(status) {
+            if proposals.len() == limit {
+                break;
+            }
+            if !exclusion.contains(&entry.id) {
+                proposals.insert(entry.id.clone());
+            }
+        }
     }
 
     pub fn remove_entries_by_filter<P: FnMut(&ProposalShortId, &TxEntry) -> bool>(

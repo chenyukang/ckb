@@ -40,9 +40,9 @@ fn test_basic() {
     assert_eq!(txs, vec![tx1, tx2]);
 }
 
-/* #[test]
+#[test]
 fn test_resolve_conflict() {
-    let mut queue = PendingQueue::new();
+    let mut pool = PoolMap::new(100);
     let tx1 = build_tx(vec![(&Byte32::zero(), 1), (&h256!("0x1").pack(), 1)], 1);
     let tx2 = build_tx(
         vec![(&h256!("0x2").pack(), 1), (&h256!("0x3").pack(), 1)],
@@ -62,9 +62,9 @@ fn test_resolve_conflict() {
     let entry1 = TxEntry::dummy_resolve(tx1, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry2 = TxEntry::dummy_resolve(tx2, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry3 = TxEntry::dummy_resolve(tx3, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
-    assert!(pool.add_entry(entry1.clone()));
-    assert!(pool.add_entry(entry2.clone()));
-    assert!(pool.add_entry(entry3.clone()));
+    assert!(pool.add_entry(entry1.clone(), Status::Pending));
+    assert!(pool.add_entry(entry2.clone(), Status::Pending));
+    assert!(pool.add_entry(entry3.clone(), Status::Pending));
 
     let conflicts = pool.resolve_conflict(&tx4);
     assert_eq!(
@@ -81,7 +81,7 @@ fn test_resolve_conflict() {
 
 #[test]
 fn test_resolve_conflict_descendants() {
-    let mut queue = PendingQueue::new();
+    let mut pool = PoolMap::new(1000);
     let tx1 = build_tx(vec![(&Byte32::zero(), 1)], 1);
     let tx3 = build_tx(vec![(&tx1.hash(), 0)], 2);
     let tx4 = build_tx(vec![(&tx3.hash(), 0)], 1);
@@ -91,9 +91,9 @@ fn test_resolve_conflict_descendants() {
     let entry1 = TxEntry::dummy_resolve(tx1, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry3 = TxEntry::dummy_resolve(tx3, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry4 = TxEntry::dummy_resolve(tx4, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
-    assert!(pool.add_entry(entry1));
-    assert!(pool.add_entry(entry3.clone()));
-    assert!(pool.add_entry(entry4.clone()));
+    assert!(pool.add_entry(entry1, Status::Pending));
+    assert!(pool.add_entry(entry3.clone(), Status::Pending));
+    assert!(pool.add_entry(entry4.clone(), Status::Pending));
 
     let conflicts = pool.resolve_conflict(&tx2);
     assert_eq!(
@@ -104,7 +104,7 @@ fn test_resolve_conflict_descendants() {
 
 #[test]
 fn test_resolve_conflict_header_dep() {
-    let mut queue = PendingQueue::new();
+    let mut pool = PoolMap::new(1000);
 
     let header: Byte32 = h256!("0x1").pack();
     let tx = build_tx_with_header_dep(
@@ -116,8 +116,8 @@ fn test_resolve_conflict_header_dep() {
 
     let entry = TxEntry::dummy_resolve(tx, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry1 = TxEntry::dummy_resolve(tx1, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
-    assert!(pool.add_entry(entry.clone()));
-    assert!(pool.add_entry(entry1.clone()));
+    assert!(pool.add_entry(entry.clone(), Status::Pending));
+    assert!(pool.add_entry(entry1.clone(), Status::Pending));
 
     assert_eq!(pool.inputs_len(), 3);
     assert_eq!(pool.header_deps_len(), 1);
@@ -133,31 +133,33 @@ fn test_resolve_conflict_header_dep() {
     );
 }
 
+
 #[test]
 fn test_remove_entry() {
-    let mut queue = PendingQueue::new();
+    let mut pool = PoolMap::new(1000);
     let tx1 = build_tx(vec![(&Byte32::zero(), 1), (&h256!("0x1").pack(), 1)], 1);
     let header: Byte32 = h256!("0x1").pack();
     let tx2 = build_tx_with_header_dep(vec![(&h256!("0x2").pack(), 1)], vec![header], 1);
 
     let entry1 = TxEntry::dummy_resolve(tx1.clone(), MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry2 = TxEntry::dummy_resolve(tx2.clone(), MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
-    assert!(pool.add_entry(entry1.clone()));
-    assert!(pool.add_entry(entry2.clone()));
+    assert!(pool.add_entry(entry1.clone(), Status::Pending));
+    assert!(pool.add_entry(entry2.clone(), Status::Pending));
 
     let removed = pool.remove_entry(&tx1.proposal_short_id());
     assert_eq!(removed, Some(entry1));
     let removed = pool.remove_entry(&tx2.proposal_short_id());
     assert_eq!(removed, Some(entry2));
-    assert!(pool.inner.is_empty());
+    assert!(pool.entries.is_empty());
     assert!(pool.deps.is_empty());
     assert!(pool.inputs.is_empty());
     assert!(pool.header_deps.is_empty());
 }
 
+
 #[test]
 fn test_remove_entries_by_filter() {
-    let mut queue = PendingQueue::new();
+    let mut pool = PoolMap::new(1000);
     let tx1 = build_tx(vec![(&Byte32::zero(), 1), (&h256!("0x1").pack(), 1)], 1);
     let tx2 = build_tx(
         vec![(&h256!("0x2").pack(), 1), (&h256!("0x3").pack(), 1)],
@@ -171,9 +173,9 @@ fn test_remove_entries_by_filter() {
     let entry1 = TxEntry::dummy_resolve(tx1.clone(), MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry2 = TxEntry::dummy_resolve(tx2.clone(), MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry3 = TxEntry::dummy_resolve(tx3.clone(), MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
-    assert!(pool.add_entry(entry1));
-    assert!(pool.add_entry(entry2));
-    assert!(pool.add_entry(entry3));
+    assert!(pool.add_entry(entry1, Status::Pending));
+    assert!(pool.add_entry(entry2, Status::Pending));
+    assert!(pool.add_entry(entry3, Status::Pending));
 
     pool.remove_entries_by_filter(|id, _tx_entry| id == &tx1.proposal_short_id());
 
@@ -182,9 +184,10 @@ fn test_remove_entries_by_filter() {
     assert!(pool.contains_key(&tx3.proposal_short_id()));
 }
 
+
 #[test]
 fn test_fill_proposals() {
-    let mut queue = PendingQueue::new();
+    let mut pool = PoolMap::new(1000);
     let tx1 = build_tx(vec![(&Byte32::zero(), 1), (&h256!("0x1").pack(), 1)], 1);
     let tx2 = build_tx(
         vec![(&h256!("0x2").pack(), 1), (&h256!("0x3").pack(), 1)],
@@ -198,9 +201,9 @@ fn test_fill_proposals() {
     let entry1 = TxEntry::dummy_resolve(tx1.clone(), MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry2 = TxEntry::dummy_resolve(tx2.clone(), MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry3 = TxEntry::dummy_resolve(tx3.clone(), MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
-    assert!(pool.add_entry(entry1));
-    assert!(pool.add_entry(entry2));
-    assert!(pool.add_entry(entry3));
+    assert!(pool.add_entry(entry1, Status::Pending));
+    assert!(pool.add_entry(entry2, Status::Pending));
+    assert!(pool.add_entry(entry3, Status::Pending));
 
     assert_eq!(pool.inputs_len(), 5);
     assert_eq!(pool.deps_len(), 1);
@@ -211,24 +214,23 @@ fn test_fill_proposals() {
     let id3 = tx3.proposal_short_id();
 
     let mut ret = HashSet::new();
-    pool.fill_proposals(10, &HashSet::new(), &mut ret);
+    pool.fill_proposals(10, &HashSet::new(), &mut ret, &Status::Pending);
     assert_eq!(
         ret,
         HashSet::from_iter(vec![id1.clone(), id2.clone(), id3.clone()])
     );
 
     let mut ret = HashSet::new();
-    pool.fill_proposals(1, &HashSet::new(), &mut ret);
+    pool.fill_proposals(1, &HashSet::new(), &mut ret, &Status::Pending);
     assert_eq!(ret, HashSet::from_iter(vec![id1.clone()]));
 
     let mut ret = HashSet::new();
-    pool.fill_proposals(2, &HashSet::new(), &mut ret);
+    pool.fill_proposals(2, &HashSet::new(), &mut ret, &Status::Pending);
     assert_eq!(ret, HashSet::from_iter(vec![id1.clone(), id2.clone()]));
 
     let mut ret = HashSet::new();
     let mut exclusion = HashSet::new();
     exclusion.insert(id2);
-    pool.fill_proposals(2, &exclusion, &mut ret);
+    pool.fill_proposals(2, &exclusion, &mut ret, &Status::Pending);
     assert_eq!(ret, HashSet::from_iter(vec![id1, id3]));
 }
- */

@@ -308,7 +308,7 @@ impl TxPool {
     ) {
         for (entry, reject) in self
             .pool_map
-            .__resolve_conflict_header_dep_v2(detached_headers)
+            .resolve_conflict_header_dep(detached_headers)
         {
             callbacks.call_reject(self, &entry, reject);
         }
@@ -702,24 +702,6 @@ impl TxPool {
         }
     }
 
-    // fill proposal txs
-    pub fn fill_proposals(
-        &self,
-        limit: usize,
-        exclusion: &HashSet<ProposalShortId>,
-        proposals: &mut HashSet<ProposalShortId>,
-        status: &Status,
-    ) {
-        for entry in self.pool_map.entries.get_by_status(status) {
-            if proposals.len() == limit {
-                break;
-            }
-            if !exclusion.contains(&entry.id) {
-                proposals.insert(entry.id.clone());
-            }
-        }
-    }
-
     /// Get to-be-proposal transactions that may be included in the next block.
     pub fn get_proposals(
         &self,
@@ -740,8 +722,8 @@ impl TxPool {
         exclusion: &HashSet<ProposalShortId>,
     ) -> HashSet<ProposalShortId> {
         let mut proposals = HashSet::with_capacity(limit);
-        self.fill_proposals(limit, exclusion, &mut proposals, &Status::Pending);
-        self.fill_proposals(limit, exclusion, &mut proposals, &Status::Gap);
+        self.pool_map.fill_proposals(limit, exclusion, &mut proposals, &Status::Pending);
+        self.pool_map.fill_proposals(limit, exclusion, &mut proposals, &Status::Gap);
         proposals
     }
 
