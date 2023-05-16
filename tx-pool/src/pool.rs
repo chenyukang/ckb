@@ -120,6 +120,7 @@ pub struct TxPool {
     /// input-set<txid> map represent in-pool tx's inputs
     pub(crate) inputs: HashMap<OutPoint, HashSet<ProposalShortId>>,
     pub(crate) outputs: HashMap<OutPoint, HashSet<ProposalShortId>>,
+    pub(crate) max_ancestors_count: usize,
 
     /// cache for committed transactions hash
     pub(crate) committed_txs_hash_cache: LruCache<ProposalShortId, Byte32>,
@@ -149,6 +150,7 @@ impl TxPool {
             deps: Default::default(),
             inputs: Default::default(),
             outputs: Default::default(),
+            max_ancestors_count: config.max_ancestors_count,
             committed_txs_hash_cache: LruCache::new(COMMITTED_HASH_CACHE_SIZE),
             total_tx_size: 0,
             total_tx_cycles: 0,
@@ -716,6 +718,34 @@ impl TxPool {
                     "remove_by_detached_proposal from proposed {} add_pending {}",
                     tx_hash, ret
                 );
+            }
+        }
+    }
+
+    // remove transaction with detached proposal from gap and proposed
+    // try re-put to pending
+    pub(crate) fn remove_by_detached_proposal_v2<'a>(
+        &mut self,
+        ids: impl Iterator<Item = &'a ProposalShortId>,
+    ) {
+        for id in ids {
+            if let Some(e) = self.entries.get_by_id(id) {
+                let status = e.status;
+                // TODO: double check this
+                if status == Status::Pending {
+                    continue;
+                }
+                let mut entries = self.remove_entry_and_descendants(id);
+                entries.sort_unstable_by_key(|entry| entry.ancestors_count);
+                for mut entry in entries {
+                    let tx_hash = entry.transaction().hash();
+                    entry.reset_ancestors_state();
+                    let ret = self.add_pending(entry);
+                    debug!(
+                        "remove_by_detached_proposal from {:?} {} add_pending {}", status,
+                        tx_hash, ret
+                    );
+                }
             }
         }
     }
