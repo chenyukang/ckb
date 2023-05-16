@@ -100,7 +100,6 @@ impl PoolMap {
         self.inputs.len()
     }
 
-    #[cfg(test)]
     pub fn size(&self) -> usize {
         self.entries.len()
     }

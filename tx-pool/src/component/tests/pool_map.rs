@@ -3,7 +3,7 @@ use crate::component::tests::util::{
 };
 use crate::component::{
     entry::TxEntry,
-    pool_map::{PoolEntry, PoolMap, Status},
+    pool_map::{PoolMap, Status},
 };
 use ckb_types::{h256, packed::Byte32, prelude::*};
 use std::collections::HashSet;

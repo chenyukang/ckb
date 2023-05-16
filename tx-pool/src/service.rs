@@ -901,7 +901,7 @@ impl TxPoolService {
         TxPoolInfo {
             tip_hash: tip_header.hash(),
             tip_number: tip_header.number(),
-            pending_size: tx_pool.pending.size() + tx_pool.gap.size(),
+            pending_size: tx_pool.pool_map.size(),
             proposed_size: tx_pool.proposed.size(),
             orphan_size: orphan.len(),
             total_tx_size: tx_pool.total_tx_size,

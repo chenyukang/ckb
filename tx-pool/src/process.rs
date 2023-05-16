@@ -1056,7 +1056,7 @@ fn _update_tx_pool_for_reorg(
         let mut entries = Vec::new();
         let mut gaps = Vec::new();
 
-        tx_pool.gap.remove_entries_by_filter(|id, tx_entry| {
+        tx_pool.pool_map.remove_entries_by_filter(|id, tx_entry| {
             if snapshot.proposals().contains_proposed(id) {
                 entries.push(tx_entry.clone());
                 true
@@ -1065,7 +1065,7 @@ fn _update_tx_pool_for_reorg(
             }
         });
 
-        tx_pool.pending.remove_entries_by_filter(|id, tx_entry| {
+        tx_pool.pool_map.remove_entries_by_filter(|id, tx_entry| {
             if snapshot.proposals().contains_proposed(id) {
                 entries.push(tx_entry.clone());
                 true
