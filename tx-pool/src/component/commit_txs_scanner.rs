@@ -83,7 +83,7 @@ impl<'a> CommitTxsScanner<'a> {
         let mut cycles: Cycle = 0;
         let mut consecutive_failed = 0;
 
-        let mut iter = self.pool_entries.score_sorted_iter().peekable();
+        let mut iter = self.proposed_pool.score_sorted_iter().peekable();
         loop {
             let mut using_modified = false;
 
