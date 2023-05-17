@@ -13,6 +13,7 @@ use ckb_types::{
     utilities::DIFF_TWO,
 };
 use ckb_verification_traits::Switch;
+use std::eprintln;
 use std::sync::Arc;
 
 pub(crate) fn build_tx(
@@ -588,10 +589,13 @@ fn test_package_txs_with_deps_priority() {
     // get block template with txs
     while !(Into::<u64>::into(block_template.number) == 3 && block_template.transactions.len() == 1)
     {
+
         block_template = shared
             .get_block_template(None, None, None)
             .unwrap()
-            .unwrap()
+            .unwrap();
+        //eprintln!("block_template: {:?} block_template: {:?}", block_template.transactions.len(), block_template);
+        panic!("TODO: Fix it");
     }
 
     let block: Block = block_template.into();

@@ -124,6 +124,7 @@ impl PoolMap {
         let inputs = entry.transaction().input_pts_iter();
         let outputs = entry.transaction().output_pts();
 
+        // record tx inputs and outputs
         for i in inputs {
             self.inputs
                 .entry(i.to_owned())
@@ -203,6 +204,7 @@ impl PoolMap {
         let tx_short_id = entry.proposal_short_id();
         let outputs = entry.transaction().output_pts();
 
+        // remove inputs
         for i in inputs {
             if let Entry::Occupied(mut occupied) = self.inputs.entry(i) {
                 let empty = {
