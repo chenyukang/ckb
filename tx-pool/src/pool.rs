@@ -4,7 +4,6 @@ extern crate slab;
 use super::component::{commit_txs_scanner::CommitTxsScanner, TxEntry};
 use crate::callback::Callbacks;
 use crate::component::pool_map::{PoolMap, Status};
-use crate::component::proposed::ProposedPool;
 use crate::component::recent_reject::RecentReject;
 use crate::error::Reject;
 use crate::util::verify_rtx;
@@ -30,9 +29,6 @@ const COMMITTED_HASH_CACHE_SIZE: usize = 100_000;
 /// Tx-pool implementation
 pub struct TxPool {
     pub(crate) config: TxPoolConfig,
-    /// Tx pool that finely for commit
-    pub(crate) proposed: ProposedPool,
-
     pub(crate) pool_map: PoolMap,
     /// cache for committed transactions hash
     pub(crate) committed_txs_hash_cache: LruCache<ProposalShortId, Byte32>,
@@ -54,7 +50,6 @@ impl TxPool {
         let recent_reject = Self::build_recent_reject(&config);
         let expiry = config.expiry_hours as u64 * 60 * 60 * 1000;
         TxPool {
-            proposed: ProposedPool::new(config.max_ancestors_count),
             pool_map: PoolMap::new(config.max_ancestors_count),
             committed_txs_hash_cache: LruCache::new(COMMITTED_HASH_CACHE_SIZE),
             total_tx_size: 0,
@@ -122,7 +117,8 @@ impl TxPool {
     /// Add tx to proposed pool
     pub fn add_proposed(&mut self, entry: TxEntry) -> Result<bool, Reject> {
         trace!("add_proposed {}", entry.transaction().hash());
-        self.proposed.add_entry(entry)
+        // TODO: fix the returned value?
+        Ok(self.pool_map.add_entry(entry, Status::Proposed))
     }
 
     pub fn add_proposed_v2(&mut self, entry: TxEntry) -> bool {
@@ -160,10 +156,10 @@ impl TxPool {
         }
     }
 
-    pub(crate) fn proposed(&self) -> &ProposedPool {
-        &self.proposed
-    }
-
+    /*     pub(crate) fn proposed(&self) -> &ProposedPool {
+           &self.proposed
+       }
+    */
     pub(crate) fn get_tx_from_proposed_and_others(
         &self,
         id: &ProposalShortId,
@@ -287,7 +283,7 @@ impl TxPool {
     }
 
     pub(crate) fn remove_tx(&mut self, id: &ProposalShortId) -> bool {
-        let entries = self.proposed.remove_entry_and_descendants(id);
+        let entries = self.pool_map.remove_entry_and_descendants(id);
         if !entries.is_empty() {
             for entry in entries {
                 self.update_statics_for_remove_tx(entry.size, entry.cycles);
@@ -307,8 +303,7 @@ impl TxPool {
         tx: TransactionView,
     ) -> Result<Arc<ResolvedTransaction>, Reject> {
         let snapshot = self.snapshot();
-        let proposed_provider = OverlayCellProvider::new(&self.proposed, snapshot);
-        let provider = OverlayCellProvider::new(&self.pool_map.entries, &proposed_provider);
+        let provider = OverlayCellProvider::new(&self.pool_map.entries, snapshot);
         let mut seen_inputs = HashSet::new();
         resolve_transaction(tx, &mut seen_inputs, &provider, snapshot)
             .map(Arc::new)
@@ -320,8 +315,7 @@ impl TxPool {
         rtx: &ResolvedTransaction,
     ) -> Result<(), Reject> {
         let snapshot = self.snapshot();
-        let proposed_checker = OverlayCellChecker::new(&self.proposed, snapshot);
-        let checker = OverlayCellChecker::new(&self.pool_map.entries, &proposed_checker);
+        let checker = OverlayCellChecker::new(&self.pool_map.entries, snapshot);
         let mut seen_inputs = HashSet::new();
         rtx.check(&mut seen_inputs, &checker, snapshot)
             .map_err(Reject::Resolve)
@@ -448,9 +442,11 @@ impl TxPool {
             .collect();
 
         let proposed: Vec<Byte32> = self
-            .proposed
+            .pool_map
+            .entries
+            .get_by_status(&&Status::Proposed)
             .iter()
-            .map(|(_, entry)| entry.transaction().hash())
+            .map(|entry| entry.inner.transaction().hash())
             .collect();
 
         TxPoolIds { pending, proposed }
@@ -478,13 +474,12 @@ impl TxPool {
     }
 
     pub(crate) fn drain_all_transactions(&mut self) -> Vec<TransactionView> {
-        let mut txs = CommitTxsScanner::new(&self.proposed, &self.pool_map.entries)
+        let mut txs = CommitTxsScanner::new(&self.pool_map)
             .txs_to_commit(self.total_tx_size, self.total_tx_cycles)
             .0
             .into_iter()
             .map(|tx_entry| tx_entry.into_transaction())
             .collect::<Vec<_>>();
-        self.proposed.clear();
         let mut pending = self
             .pool_map
             .entries
@@ -509,7 +504,6 @@ impl TxPool {
     }
 
     pub(crate) fn clear(&mut self, snapshot: Arc<Snapshot>) {
-        self.proposed = ProposedPool::new(self.config.max_ancestors_count);
         self.pool_map.clear();
         self.snapshot = snapshot;
         self.committed_txs_hash_cache = LruCache::new(COMMITTED_HASH_CACHE_SIZE);
@@ -535,8 +529,7 @@ impl TxPool {
         txs_size_limit: usize,
     ) -> (Vec<TxEntry>, usize, Cycle) {
         let (entries, size, cycles) =
-            CommitTxsScanner::new(self.proposed(), &self.pool_map.entries)
-                .txs_to_commit(txs_size_limit, max_block_cycles);
+            CommitTxsScanner::new(&self.pool_map).txs_to_commit(txs_size_limit, max_block_cycles);
 
         if !entries.is_empty() {
             ckb_logger::info!(

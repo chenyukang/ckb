@@ -8,9 +8,8 @@ use crate::component::links::{Relation, TxLinksMap};
 use crate::error::Reject;
 use crate::TxEntry;
 use std::collections::hash_map::Entry as HashMapEntry;
-use std::eprintln;
 
-use ckb_logger::{debug, error, trace, warn};
+use ckb_logger::trace;
 use ckb_types::core::error::OutPointError;
 use ckb_types::packed::OutPoint;
 use ckb_types::{
@@ -23,7 +22,7 @@ use ckb_types::{
 };
 use multi_index_map::MultiIndexMap;
 use std::borrow::Cow;
-use std::collections::{HashSet, VecDeque};
+use std::collections::HashSet;
 
 use super::links::TxLinks;
 
@@ -106,6 +105,7 @@ impl PoolMap {
         self.edges.inputs_len()
     }
 
+    #[cfg(test)]
     pub fn size(&self) -> usize {
         self.entries.len()
     }
@@ -115,6 +115,23 @@ impl PoolMap {
         self.entries.get_by_id(id).is_some()
     }
 
+    pub fn pending_size(&self) -> usize {
+        self.entries.get_by_status(&Status::Pending).len()
+    }
+
+    pub fn proposed_size(&self) -> usize {
+        self.entries.get_by_status(&Status::Proposed).len()
+    }
+
+    pub fn score_sorted_iter(&self) -> impl Iterator<Item = &TxEntry> {
+        self.entries.score_sorted_iter()
+    }
+
+    pub fn get(&self, id: &ProposalShortId) -> Option<&TxEntry> {
+        self.entries.get_by_id(id).map(|entry| &entry.inner)
+    }
+
+    #[cfg(test)]
     pub(crate) fn get_tx(&self, id: &ProposalShortId) -> Option<&TransactionView> {
         self.entries
             .get_by_id(id)
@@ -315,29 +332,6 @@ impl PoolMap {
         Ok(true)
     }
 
-    fn get_descendants(&self, entry: &TxEntry) -> HashSet<ProposalShortId> {
-        let mut entries: VecDeque<&TxEntry> = VecDeque::new();
-        entries.push_back(entry);
-
-        let mut descendants = HashSet::new();
-        while let Some(entry) = entries.pop_front() {
-            let outputs = entry.transaction().output_pts();
-
-            for output in outputs {
-                if let Some(ids) = self.edges.outputs.get(&output) {
-                    for id in ids {
-                        if descendants.insert(id.clone()) {
-                            if let Some(entry) = self.entries.get_by_id(id) {
-                                entries.push_back(&entry.inner);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        descendants
-    }
-
     pub(crate) fn remove_entry_relation(&mut self, entry: &TxEntry) {
         let inputs = entry.transaction().input_pts_iter();
         let id = entry.proposal_short_id();
@@ -360,6 +354,12 @@ impl PoolMap {
         }
 
         self.edges.header_deps.remove(&id);
+    }
+
+    #[cfg(test)]
+    pub fn add_proposed(&mut self, entry: TxEntry) -> Result<bool, Reject> {
+        //TODO: care about error handling
+        Ok(self.add_entry(entry, Status::Proposed))
     }
 
     pub fn add_entry(&mut self, mut entry: TxEntry, status: Status) -> bool {
@@ -389,12 +389,14 @@ impl PoolMap {
         let removed = self.entries.remove_by_id(id);
 
         if let Some(ref entry) = removed {
+            self.update_descendants_index_key(&entry.inner, EntryOp::Remove);
             self.remove_entry_relation(&entry.inner);
         }
         removed.map(|e| e.inner)
     }
 
-    pub(crate) fn remove_committed_tx(&mut self, tx: &TransactionView) -> Option<TxEntry> {
+    #[cfg(test)]
+    pub fn remove_committed_tx(&mut self, tx: &TransactionView) -> Option<TxEntry> {
         self.remove_entry(&tx.proposal_short_id())
     }
 
@@ -548,18 +550,7 @@ impl PoolMap {
     pub fn clear(&mut self) {
         self.entries = MultiIndexPoolEntryMap::default();
         self.edges.clear();
-    }
-
-    pub(crate) fn drain(&mut self) -> Vec<TransactionView> {
-        let txs = self
-            .entries
-            .iter()
-            .map(|(_k, entry)| entry.inner.clone().into_transaction())
-            .collect::<Vec<_>>();
-        self.entries.clear();
-        self.edges.clear();
         self.links.clear();
-        txs
     }
 }
 

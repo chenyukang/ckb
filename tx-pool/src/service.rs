@@ -736,7 +736,7 @@ async fn process(mut service: TxPoolService, message: Message) {
         }) => {
             let id = ProposalShortId::from_tx_hash(&hash);
             let tx_pool = service.tx_pool.read().await;
-            let ret = if let Some(entry) = tx_pool.proposed.get(&id) {
+            let ret = if let Some(entry) = tx_pool.pool_map.get(&id) {
                 Ok((TxStatus::Proposed, Some(entry.cycles)))
             } else if let Some(entry) = tx_pool.get_entry_from_pending_or_gap(&id) {
                 Ok((TxStatus::Pending, Some(entry.cycles)))
@@ -765,7 +765,7 @@ async fn process(mut service: TxPoolService, message: Message) {
         }) => {
             let id = ProposalShortId::from_tx_hash(&hash);
             let tx_pool = service.tx_pool.read().await;
-            let ret = if let Some(entry) = tx_pool.proposed.get(&id) {
+            let ret = if let Some(entry) = tx_pool.pool_map.get(&id) {
                 Ok(TransactionWithStatus::with_proposed(
                     Some(entry.transaction().clone()),
                     entry.cycles,
@@ -901,8 +901,8 @@ impl TxPoolService {
         TxPoolInfo {
             tip_hash: tip_header.hash(),
             tip_number: tip_header.number(),
-            pending_size: tx_pool.pool_map.size(),
-            proposed_size: tx_pool.proposed.size(),
+            pending_size: tx_pool.pool_map.pending_size(),
+            proposed_size: tx_pool.pool_map.proposed_size(),
             orphan_size: orphan.len(),
             total_tx_size: tx_pool.total_tx_size,
             total_tx_cycles: tx_pool.total_tx_cycles,

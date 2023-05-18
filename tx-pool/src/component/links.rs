@@ -1,11 +1,5 @@
-use crate::{component::entry::TxEntry, error::Reject};
-use ckb_types::{
-    core::Capacity,
-    packed::{OutPoint, ProposalShortId},
-};
+use ckb_types::packed::ProposalShortId;
 use std::borrow::Cow;
-use std::cmp::Ordering;
-use std::collections::hash_map::Entry as HashMapEntry;
 use std::collections::{HashMap, HashSet};
 
 #[derive(Default, Debug, Clone)]

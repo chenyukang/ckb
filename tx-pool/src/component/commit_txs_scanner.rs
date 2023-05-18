@@ -1,5 +1,5 @@
-use crate::component::pool_map::MultiIndexPoolEntryMap;
-use crate::component::{container::AncestorsScoreSortKey, entry::TxEntry, proposed::ProposedPool};
+use crate::component::pool_map::PoolMap;
+use crate::component::{container::AncestorsScoreSortKey, entry::TxEntry};
 use ckb_types::{core::Cycle, packed::ProposalShortId};
 use ckb_util::LinkedHashMap;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -49,8 +49,7 @@ const MAX_CONSECUTIVE_FAILURES: usize = 500;
 
 /// find txs to package into commitment
 pub struct CommitTxsScanner<'a> {
-    proposed_pool: &'a ProposedPool,
-    pool_entries: &'a MultiIndexPoolEntryMap,
+    pool_map: &'a PoolMap,
     entries: Vec<TxEntry>,
     // modified_entries will store sorted packages after they are modified
     // because some of their txs are already in the block
@@ -62,14 +61,10 @@ pub struct CommitTxsScanner<'a> {
 }
 
 impl<'a> CommitTxsScanner<'a> {
-    pub fn new(
-        proposed_pool: &'a ProposedPool,
-        pool_entries: &'a MultiIndexPoolEntryMap,
-    ) -> CommitTxsScanner<'a> {
+    pub fn new(pool_map: &'a PoolMap) -> CommitTxsScanner<'a> {
         CommitTxsScanner {
-            proposed_pool,
             entries: Vec::new(),
-            pool_entries: pool_entries,
+            pool_map: pool_map,
             modified_entries: TxModifiedEntries::default(),
             fetched_txs: HashSet::default(),
             failed_txs: HashSet::default(),
@@ -86,7 +81,7 @@ impl<'a> CommitTxsScanner<'a> {
         let mut cycles: Cycle = 0;
         let mut consecutive_failed = 0;
 
-        let mut iter = self.proposed_pool.score_sorted_iter().peekable();
+        let mut iter = self.pool_map.score_sorted_iter().peekable();
         loop {
             let mut using_modified = false;
 
@@ -149,7 +144,7 @@ impl<'a> CommitTxsScanner<'a> {
             };
 
             // prepare to package tx with ancestors
-            let ancestors_ids = self.proposed_pool.calc_ancestors(&short_id);
+            let ancestors_ids = self.pool_map.calc_ancestors(&short_id);
             let mut ancestors = ancestors_ids
                 .iter()
                 .filter_map(only_unconfirmed)
@@ -184,7 +179,7 @@ impl<'a> CommitTxsScanner<'a> {
     fn retrieve_entry(&self, short_id: &ProposalShortId) -> Option<&TxEntry> {
         self.modified_entries
             .get(short_id)
-            .or_else(|| self.proposed_pool.get(short_id))
+            .or_else(|| self.pool_map.get(short_id))
     }
 
     // Skip entries in `proposed` that are already in a block or are present
@@ -201,7 +196,7 @@ impl<'a> CommitTxsScanner<'a> {
     /// state updated assuming given transactions are inBlock.
     fn update_modified_entries(&mut self, already_added: &LinkedHashMap<ProposalShortId, TxEntry>) {
         for (id, entry) in already_added {
-            let descendants = self.proposed_pool.calc_descendants(id);
+            let descendants = self.pool_map.calc_descendants(id);
             for desc_id in descendants
                 .iter()
                 .filter(|id| !already_added.contains_key(id))
@@ -211,7 +206,7 @@ impl<'a> CommitTxsScanner<'a> {
                 if let Some(mut desc) = self
                     .modified_entries
                     .remove(desc_id)
-                    .or_else(|| self.proposed_pool.get(desc_id).cloned())
+                    .or_else(|| self.pool_map.get(desc_id).cloned())
                 {
                     desc.sub_entry_weight(entry);
                     self.modified_entries.insert(desc);
