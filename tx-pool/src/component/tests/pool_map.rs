@@ -33,10 +33,10 @@ fn test_basic() {
 
     let txs = pool.drain();
     assert!(pool.entries.is_empty());
-    assert!(pool.deps.is_empty());
-    assert!(pool.inputs.is_empty());
-    assert!(pool.header_deps.is_empty());
-    assert!(pool.outputs.is_empty());
+    assert!(pool.edges.deps.is_empty());
+    assert!(pool.edges.inputs.is_empty());
+    assert!(pool.edges.header_deps.is_empty());
+    assert!(pool.edges.outputs.is_empty());
     assert_eq!(txs, vec![tx1, tx2]);
 }
 
@@ -151,9 +151,9 @@ fn test_remove_entry() {
     let removed = pool.remove_entry(&tx2.proposal_short_id());
     assert_eq!(removed, Some(entry2));
     assert!(pool.entries.is_empty());
-    assert!(pool.deps.is_empty());
-    assert!(pool.inputs.is_empty());
-    assert!(pool.header_deps.is_empty());
+    assert!(pool.edges.deps.is_empty());
+    assert!(pool.edges.inputs.is_empty());
+    assert!(pool.edges.header_deps.is_empty());
 }
 
 

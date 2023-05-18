@@ -2,7 +2,9 @@
 extern crate rustc_hash;
 extern crate slab;
 use crate::component::container::AncestorsScoreSortKey;
+use crate::component::edges::Edges;
 use crate::component::entry::EvictKey;
+use crate::component::links::{Relation, TxLinks, TxLinksMap};
 use crate::error::Reject;
 use crate::TxEntry;
 use ckb_logger::{debug, error, trace, warn};
@@ -17,8 +19,8 @@ use ckb_types::{
     packed::{Byte32, ProposalShortId},
 };
 use multi_index_map::MultiIndexMap;
+use std::borrow::Cow;
 use std::collections::hash_map::Entry;
-use std::collections::HashMap;
 use std::collections::{HashSet, VecDeque};
 
 type ConflictEntry = (TxEntry, Reject);
@@ -58,13 +60,10 @@ impl MultiIndexPoolEntryMap {
 pub struct PoolMap {
     /// The pool entries with different kinds of sort strategies
     pub(crate) entries: MultiIndexPoolEntryMap,
-    /// dep-set<txid-headers> map represent in-pool tx's header deps
-    pub(crate) header_deps: HashMap<ProposalShortId, Vec<Byte32>>,
-    /// dep-set<txid> map represent in-pool tx's deps
-    pub(crate) deps: HashMap<OutPoint, HashSet<ProposalShortId>>,
-    /// input-set<txid> map represent in-pool tx's inputs
-    pub(crate) inputs: HashMap<OutPoint, HashSet<ProposalShortId>>,
-    pub(crate) outputs: HashMap<OutPoint, HashSet<ProposalShortId>>,
+    /// All the deps, header_deps, inputs, outputs relationships
+    pub(crate) edges: Edges,
+    /// All the parent/children relationships
+    pub(crate) links: TxLinksMap,
     pub(crate) max_ancestors_count: usize,
 }
 
@@ -72,32 +71,30 @@ impl PoolMap {
     pub fn new(max_ancestors_count: usize) -> Self {
         PoolMap {
             entries: MultiIndexPoolEntryMap::default(),
-            header_deps: HashMap::default(),
-            deps: HashMap::default(),
-            inputs: HashMap::default(),
-            outputs: HashMap::default(),
+            edges: Edges::default(),
+            links: TxLinksMap::new(),
             max_ancestors_count,
         }
     }
 
     #[cfg(test)]
     pub(crate) fn outputs_len(&self) -> usize {
-        self.outputs.len()
+        self.edges.outputs_len()
     }
 
     #[cfg(test)]
     pub(crate) fn header_deps_len(&self) -> usize {
-        self.header_deps.len()
+        self.edges.header_deps_len()
     }
 
     #[cfg(test)]
     pub(crate) fn deps_len(&self) -> usize {
-        self.deps.len()
+        self.edges.deps_len()
     }
 
     #[cfg(test)]
     pub(crate) fn inputs_len(&self) -> usize {
-        self.inputs.len()
+        self.edges.inputs_len()
     }
 
     pub fn size(&self) -> usize {
@@ -115,51 +112,118 @@ impl PoolMap {
             .map(|entry| entry.inner.transaction())
     }
 
-    pub fn add_entry(&mut self, entry: TxEntry, status: Status) -> bool {
+    fn record_entry_edges(&mut self, entry: &TxEntry) {
         let tx_short_id = entry.proposal_short_id();
-        if self.entries.get_by_id(&tx_short_id).is_some() {
-            return false;
-        }
-        trace!("add_{:?} {}", status, entry.transaction().hash());
         let inputs = entry.transaction().input_pts_iter();
         let outputs = entry.transaction().output_pts();
 
-        // record tx inputs and outputs
         for i in inputs {
-            self.inputs
+            self.edges
+                .inputs
                 .entry(i.to_owned())
                 .or_default()
                 .insert(tx_short_id.clone());
 
-            if let Some(outputs) = self.outputs.get_mut(&i) {
+            if let Some(outputs) = self.edges.outputs.get_mut(&i) {
                 outputs.insert(tx_short_id.clone());
             }
         }
 
         // record dep-txid
         for d in entry.related_dep_out_points() {
-            self.deps
+            self.edges
+                .deps
                 .entry(d.to_owned())
                 .or_default()
                 .insert(tx_short_id.clone());
 
-            if let Some(outputs) = self.outputs.get_mut(d) {
+            if let Some(outputs) = self.edges.outputs.get_mut(d) {
                 outputs.insert(tx_short_id.clone());
             }
         }
 
         // record tx unconsumed output
         for o in outputs {
-            self.outputs.insert(o, HashSet::new());
+            self.edges.outputs.insert(o, HashSet::new());
         }
 
         // record header_deps
         let header_deps = entry.transaction().header_deps();
         if !header_deps.is_empty() {
-            self.header_deps
+            self.edges
+                .header_deps
                 .insert(tx_short_id.clone(), header_deps.into_iter().collect());
         }
+    }
 
+    /// Record the edges and links for entry
+    fn record_entry_relations(&mut self, entry: &mut TxEntry) -> Result<bool, Reject> {
+        // find in pool parents
+        let mut parents: HashSet<ProposalShortId> = HashSet::with_capacity(
+            entry.transaction().inputs().len() + entry.transaction().cell_deps().len(),
+        );
+        let short_id = entry.proposal_short_id();
+
+        for input in entry.transaction().inputs() {
+            let input_pt = input.previous_output();
+            if let Some(deps) = self.edges.deps.get(&input_pt) {
+                parents.extend(deps.iter().cloned());
+            }
+
+            let parent_hash = &input_pt.tx_hash();
+            let id = ProposalShortId::from_tx_hash(parent_hash);
+            if self.links.inner.contains_key(&id) {
+                parents.insert(id);
+            }
+        }
+        for cell_dep in entry.transaction().cell_deps() {
+            let dep_pt = cell_dep.out_point();
+            let id = ProposalShortId::from_tx_hash(&dep_pt.tx_hash());
+            if self.links.inner.contains_key(&id) {
+                parents.insert(id);
+            }
+        }
+
+        let ancestors = self
+            .links
+            .calc_relation_ids(Cow::Borrowed(&parents), Relation::Parents);
+
+        // update parents references
+        for ancestor_id in &ancestors {
+            let ancestor = self
+                .entries
+                .get_by_id(ancestor_id)
+                .expect("pool consistent");
+            entry.add_entry_weight(&ancestor.inner);
+        }
+
+        if entry.ancestors_count > self.max_ancestors_count {
+            return Err(Reject::ExceededMaximumAncestorsCount);
+        }
+
+        for cell_dep in entry.transaction().cell_deps() {
+            let dep_pt = cell_dep.out_point();
+            // insert dep-ref map
+            self.edges
+                .deps
+                .entry(dep_pt)
+                .or_insert_with(HashSet::new)
+                .insert(short_id.clone());
+        }
+
+        Ok(true)
+    }
+
+    pub fn add_entry(&mut self, mut entry: TxEntry, status: Status) -> bool {
+        let tx_short_id = entry.proposal_short_id();
+        if self.entries.get_by_id(&tx_short_id).is_some() {
+            return false;
+        }
+        trace!("add_{:?} {}", status, entry.transaction().hash());
+        self.record_entry_edges(&entry);
+        if self.record_entry_relations(&mut entry).is_err() {
+            return false;
+        }
         let score = entry.as_score_key();
         let evict_key = entry.as_evict_key();
         self.entries.insert(PoolEntry {
@@ -185,7 +249,7 @@ impl PoolMap {
             let outputs = entry.transaction().output_pts();
 
             for output in outputs {
-                if let Some(ids) = self.outputs.get(&output) {
+                if let Some(ids) = self.edges.outputs.get(&output) {
                     for id in ids {
                         if descendants.insert(id.clone()) {
                             if let Some(entry) = self.entries.get_by_id(id) {
@@ -206,7 +270,7 @@ impl PoolMap {
 
         // remove inputs
         for i in inputs {
-            if let Entry::Occupied(mut occupied) = self.inputs.entry(i) {
+            if let Entry::Occupied(mut occupied) = self.edges.inputs.entry(i) {
                 let empty = {
                     let ids = occupied.get_mut();
                     ids.remove(&tx_short_id);
@@ -220,7 +284,7 @@ impl PoolMap {
 
         // remove dep
         for d in entry.related_dep_out_points().cloned() {
-            if let Entry::Occupied(mut occupied) = self.deps.entry(d) {
+            if let Entry::Occupied(mut occupied) = self.edges.deps.entry(d) {
                 let empty = {
                     let ids = occupied.get_mut();
                     ids.remove(&tx_short_id);
@@ -233,10 +297,10 @@ impl PoolMap {
         }
 
         for o in outputs {
-            self.outputs.remove(&o);
+            self.edges.outputs.remove(&o);
         }
 
-        self.header_deps.remove(&tx_short_id);
+        self.edges.header_deps.remove(&tx_short_id);
     }
 
     pub fn remove_entry(&mut self, id: &ProposalShortId) -> Option<TxEntry> {
@@ -263,15 +327,12 @@ impl PoolMap {
         removed
     }
 
-    pub fn resolve_conflict_header_dep(
-        &mut self,
-        headers: &HashSet<Byte32>,
-    ) -> Vec<ConflictEntry> {
+    pub fn resolve_conflict_header_dep(&mut self, headers: &HashSet<Byte32>) -> Vec<ConflictEntry> {
         let mut conflicts = Vec::new();
 
         // invalid header deps
         let mut ids = Vec::new();
-        for (tx_id, deps) in self.header_deps.iter() {
+        for (tx_id, deps) in self.edges.header_deps.iter() {
             for hash in deps {
                 if headers.contains(hash) {
                     ids.push((hash.clone(), tx_id.clone()));
@@ -295,7 +356,7 @@ impl PoolMap {
         let mut conflicts = Vec::new();
 
         for i in inputs {
-            if let Some(ids) = self.inputs.remove(&i) {
+            if let Some(ids) = self.edges.inputs.remove(&i) {
                 for id in ids {
                     let entries = self.remove_entry_and_descendants(&id);
                     for entry in entries {
@@ -306,7 +367,7 @@ impl PoolMap {
             }
 
             // deps consumed
-            if let Some(ids) = self.deps.remove(&i) {
+            if let Some(ids) = self.edges.deps.remove(&i) {
                 for id in ids {
                     let entries = self.remove_entry_and_descendants(&id);
                     for entry in entries {
@@ -371,10 +432,7 @@ impl PoolMap {
 
     pub fn clear(&mut self) {
         self.entries = MultiIndexPoolEntryMap::default();
-        self.deps.clear();
-        self.inputs.clear();
-        self.header_deps.clear();
-        self.outputs.clear();
+        self.edges.clear();
     }
 
     pub(crate) fn drain(&mut self) -> Vec<TransactionView> {
@@ -384,10 +442,7 @@ impl PoolMap {
             .map(|(_k, entry)| entry.inner.clone().into_transaction())
             .collect::<Vec<_>>();
         self.entries.clear();
-        self.deps.clear();
-        self.inputs.clear();
-        self.header_deps.clear();
-        self.outputs.clear();
+        self.edges.clear();
         txs
     }
 }

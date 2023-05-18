@@ -5,10 +5,12 @@ use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 #[derive(Default, Debug, Clone)]
 pub(crate) struct Edges {
+    pub(crate) inputs: HashMap<OutPoint, HashSet<ProposalShortId>>,
+    pub(crate) outputs: HashMap<OutPoint, HashSet<ProposalShortId>>,
     /// output-op<txid> map represent in-pool tx's outputs
-    pub(crate) outputs: HashMap<OutPoint, Option<ProposalShortId>>,
+    pub(crate) single_outputs: HashMap<OutPoint, Option<ProposalShortId>>,
     /// input-txid map represent in-pool tx's inputs
-    pub(crate) inputs: HashMap<OutPoint, ProposalShortId>,
+    pub(crate) single_inputs: HashMap<OutPoint, ProposalShortId>,
     /// dep-set<txid> map represent in-pool tx's deps
     pub(crate) deps: HashMap<OutPoint, HashSet<ProposalShortId>>,
     /// dep-set<txid-headers> map represent in-pool tx's header deps
@@ -26,43 +28,63 @@ impl Edges {
         self.inputs.len()
     }
 
-    pub(crate) fn insert_input(&mut self, out_point: OutPoint, txid: ProposalShortId) {
-        self.inputs.insert(out_point, txid);
+    #[cfg(test)]
+    pub(crate) fn single_outputs_len(&self) -> usize {
+        self.single_outputs.len()
     }
 
-    pub(crate) fn remove_input(&mut self, out_point: &OutPoint) -> Option<ProposalShortId> {
-        self.inputs.remove(out_point)
+    #[cfg(test)]
+    pub(crate) fn single_inputs_len(&self) -> usize {
+        self.single_inputs.len()
     }
 
-    pub(crate) fn remove_output(&mut self, out_point: &OutPoint) -> Option<ProposalShortId> {
-        self.outputs.remove(out_point).unwrap_or(None)
+    #[cfg(test)]
+    pub(crate) fn header_deps_len(&self) -> usize {
+        self.header_deps.len()
     }
 
-    pub(crate) fn insert_output(&mut self, out_point: OutPoint) {
-        self.outputs.insert(out_point, None);
+    #[cfg(test)]
+    pub(crate) fn deps_len(&self) -> usize {
+        self.deps.len()
+    }
+
+    pub(crate) fn insert_single_input(&mut self, out_point: OutPoint, txid: ProposalShortId) {
+        self.single_inputs.insert(out_point, txid);
+    }
+
+    pub(crate) fn remove_single_input(&mut self, out_point: &OutPoint) -> Option<ProposalShortId> {
+        self.single_inputs.remove(out_point)
+    }
+
+    pub(crate) fn remove_single_output(&mut self, out_point: &OutPoint) -> Option<ProposalShortId> {
+        self.single_outputs.remove(out_point).unwrap_or(None)
+    }
+
+    pub(crate) fn insert_single_output(&mut self, out_point: OutPoint) {
+        self.single_outputs.insert(out_point, None);
     }
 
     pub(crate) fn insert_consumed_output(&mut self, out_point: OutPoint, id: ProposalShortId) {
-        self.outputs.insert(out_point, Some(id));
+        self.single_outputs.insert(out_point, Some(id));
     }
 
-    pub(crate) fn get_output_ref(&self, out_point: &OutPoint) -> Option<&Option<ProposalShortId>> {
-        self.outputs.get(out_point)
+    pub(crate) fn get_single_output_ref(&self, out_point: &OutPoint) -> Option<&Option<ProposalShortId>> {
+        self.single_outputs.get(out_point)
     }
 
-    pub(crate) fn get_input_ref(&self, out_point: &OutPoint) -> Option<&ProposalShortId> {
-        self.inputs.get(out_point)
+    pub(crate) fn get_single_input_ref(&self, out_point: &OutPoint) -> Option<&ProposalShortId> {
+        self.single_inputs.get(out_point)
     }
 
     pub(crate) fn get_deps_ref(&self, out_point: &OutPoint) -> Option<&HashSet<ProposalShortId>> {
         self.deps.get(out_point)
     }
 
-    pub(crate) fn get_mut_output(
+    pub(crate) fn get_mut_single_output(
         &mut self,
         out_point: &OutPoint,
     ) -> Option<&mut Option<ProposalShortId>> {
-        self.outputs.get_mut(out_point)
+        self.single_outputs.get_mut(out_point)
     }
 
     pub(crate) fn remove_deps(&mut self, out_point: &OutPoint) -> Option<HashSet<ProposalShortId>> {
@@ -87,8 +109,10 @@ impl Edges {
     }
 
     pub(crate) fn clear(&mut self) {
-        self.outputs.clear();
+        self.single_outputs.clear();
+        self.single_inputs.clear();
         self.inputs.clear();
+        self.outputs.clear();
         self.deps.clear();
         self.header_deps.clear();
     }

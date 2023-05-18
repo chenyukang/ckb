@@ -67,12 +67,12 @@ fn test_add_entry() {
     .unwrap();
 
     assert_eq!(pool.size(), 2);
-    assert_eq!(pool.edges.outputs_len(), 2);
-    assert_eq!(pool.edges.inputs_len(), 3);
+    assert_eq!(pool.edges.single_outputs_len(), 2);
+    assert_eq!(pool.edges.single_inputs_len(), 3);
 
     pool.remove_committed_tx(&tx1);
-    assert_eq!(pool.edges.outputs_len(), 1);
-    assert_eq!(pool.edges.inputs_len(), 1);
+    assert_eq!(pool.edges.single_outputs_len(), 1);
+    assert_eq!(pool.edges.single_inputs_len(), 1);
 }
 
 #[test]
@@ -97,8 +97,8 @@ fn test_add_entry_from_detached() {
     pool.add_entry(entry3).unwrap();
 
     assert_eq!(pool.size(), 3);
-    assert_eq!(pool.edges.outputs_len(), 3);
-    assert_eq!(pool.edges.inputs_len(), 4);
+    assert_eq!(pool.edges.single_outputs_len(), 3);
+    assert_eq!(pool.edges.single_inputs_len(), 4);
 
     assert_eq!(pool.inner().sorted_index.len(), 3);
 
@@ -140,8 +140,8 @@ fn test_add_entry_from_detached() {
     }
 
     pool.remove_committed_tx(&tx1);
-    assert_eq!(pool.edges.outputs_len(), 2);
-    assert_eq!(pool.edges.inputs_len(), 2);
+    assert_eq!(pool.edges.single_outputs_len(), 2);
+    assert_eq!(pool.edges.single_inputs_len(), 2);
     assert_eq!(pool.inner().sorted_index.len(), 2);
 
     let left = vec![(id2.clone(), 1), (id3.clone(), 2)];
@@ -217,13 +217,13 @@ fn test_add_roots() {
     ))
     .unwrap();
 
-    assert_eq!(pool.edges.outputs_len(), 4);
-    assert_eq!(pool.edges.inputs_len(), 4);
+    assert_eq!(pool.edges.single_outputs_len(), 4);
+    assert_eq!(pool.edges.single_inputs_len(), 4);
 
     pool.remove_committed_tx(&tx1);
 
-    assert_eq!(pool.edges.outputs_len(), 3);
-    assert_eq!(pool.edges.inputs_len(), 2);
+    assert_eq!(pool.edges.single_outputs_len(), 3);
+    assert_eq!(pool.edges.single_inputs_len(), 2);
 }
 
 #[test]
@@ -278,13 +278,13 @@ fn test_add_no_roots() {
     ))
     .unwrap();
 
-    assert_eq!(pool.edges.outputs_len(), 13);
-    assert_eq!(pool.edges.inputs_len(), 7);
+    assert_eq!(pool.edges.single_outputs_len(), 13);
+    assert_eq!(pool.edges.single_inputs_len(), 7);
 
     pool.remove_committed_tx(&tx1);
 
-    assert_eq!(pool.edges.outputs_len(), 10);
-    assert_eq!(pool.edges.inputs_len(), 6);
+    assert_eq!(pool.edges.single_outputs_len(), 10);
+    assert_eq!(pool.edges.single_inputs_len(), 6);
 }
 
 #[test]
@@ -638,14 +638,14 @@ fn test_disordered_remove_committed_tx() {
     pool.add_entry(entry1).unwrap();
     pool.add_entry(entry2).unwrap();
 
-    assert_eq!(pool.edges.outputs_len(), 2);
-    assert_eq!(pool.edges.inputs_len(), 2);
+    assert_eq!(pool.edges.single_outputs_len(), 2);
+    assert_eq!(pool.edges.single_inputs_len(), 2);
 
     pool.remove_committed_tx(&tx2);
     pool.remove_committed_tx(&tx1);
 
-    assert_eq!(pool.edges.inputs_len(), 0);
-    assert_eq!(pool.edges.outputs_len(), 0);
+    assert_eq!(pool.edges.single_inputs_len(), 0);
+    assert_eq!(pool.edges.single_outputs_len(), 0);
 }
 
 #[test]
@@ -669,8 +669,8 @@ fn test_max_ancestors() {
     );
     assert!(pool.inner().calc_descendants(&tx1_id).is_empty());
 
-    assert_eq!(pool.edges.inputs_len(), 1);
-    assert_eq!(pool.edges.outputs_len(), 1);
+    assert_eq!(pool.edges.single_inputs_len(), 1);
+    assert_eq!(pool.edges.single_outputs_len(), 1);
 }
 
 #[test]
@@ -696,6 +696,6 @@ fn test_max_ancestors_with_dep() {
         .contains_key(&OutPoint::new(h256!("0x1").pack(), 0)));
     assert!(pool.inner().calc_descendants(&tx1_id).is_empty());
 
-    assert_eq!(pool.edges.inputs_len(), 1);
-    assert_eq!(pool.edges.outputs_len(), 1);
+    assert_eq!(pool.edges.single_inputs_len(), 1);
+    assert_eq!(pool.edges.single_outputs_len(), 1);
 }
