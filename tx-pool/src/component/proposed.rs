@@ -24,10 +24,10 @@ pub struct ProposedPool {
 
 impl CellProvider for ProposedPool {
     fn cell(&self, out_point: &OutPoint, _eager_load: bool) -> CellStatus {
-        if self.edges.get_single_input_ref(out_point).is_some() {
+        if self.edges.get_input_ref(out_point).is_some() {
             return CellStatus::Dead;
         }
-        if let Some(x) = self.edges.get_single_output_ref(out_point) {
+        if let Some(x) = self.edges.get_output_ref(out_point) {
             // output consumed
             if x.is_some() {
                 return CellStatus::Dead;
@@ -45,10 +45,10 @@ impl CellProvider for ProposedPool {
 
 impl CellChecker for ProposedPool {
     fn is_live(&self, out_point: &OutPoint) -> Option<bool> {
-        if self.edges.get_single_input_ref(out_point).is_some() {
+        if self.edges.get_input_ref(out_point).is_some() {
             return Some(false);
         }
-        if let Some(x) = self.edges.get_single_output_ref(out_point) {
+        if let Some(x) = self.edges.get_output_ref(out_point) {
             // output consumed
             if x.is_some() {
                 return Some(false);
@@ -107,7 +107,7 @@ impl ProposedPool {
             let outputs = tx.output_pts();
             for i in inputs {
                 self.edges.inputs.remove(&i);
-                if let Some(id) = self.edges.get_mut_single_output(&i) {
+                if let Some(id) = self.edges.get_mut_output(&i) {
                     *id = None;
                 }
             }
@@ -117,7 +117,7 @@ impl ProposedPool {
             }
 
             for o in outputs {
-                self.edges.remove_single_output(&o);
+                self.edges.remove_output(&o);
             }
 
             self.edges.header_deps.remove(&entry.proposal_short_id());
@@ -132,13 +132,13 @@ impl ProposedPool {
 
         if let Some(entry) = self.inner.remove_entry(&id) {
             for o in outputs {
-                self.edges.remove_single_output(&o);
+                self.edges.remove_output(&o);
             }
 
             for i in inputs {
                 // release input record
-                self.edges.remove_single_input(&i);
-                if let Some(id) = self.edges.get_mut_single_output(&i) {
+                self.edges.remove_input(&i);
+                if let Some(id) = self.edges.get_mut_output(&i) {
                     *id = None;
                 }
             }
@@ -186,10 +186,10 @@ impl ProposedPool {
                 // if input reference a in-pool output, connect it
                 // otherwise, record input for conflict check
                 for i in inputs {
-                    if let Some(id) = self.edges.get_mut_single_output(&i) {
+                    if let Some(id) = self.edges.get_mut_output(&i) {
                         *id = Some(tx_short_id.clone());
                     }
-                    self.edges.insert_single_input(i.to_owned(), tx_short_id.clone());
+                    self.edges.insert_input(i.to_owned(), tx_short_id.clone());
                 }
 
                 // record dep-txid
@@ -202,11 +202,11 @@ impl ProposedPool {
                     if let Some(ids) = self.edges.get_deps_ref(&o).cloned() {
                         children.extend(ids);
                     }
-                    if let Some(id) = self.edges.get_single_input_ref(&o).cloned() {
+                    if let Some(id) = self.edges.get_input_ref(&o).cloned() {
                         self.edges.insert_consumed_output(o, id.clone());
                         children.insert(id);
                     } else {
-                        self.edges.insert_single_output(o);
+                        self.edges.insert_output(o);
                     }
                 }
 
@@ -231,7 +231,7 @@ impl ProposedPool {
         let mut conflicts = Vec::new();
 
         for i in inputs {
-            if let Some(id) = self.edges.remove_single_input(&i) {
+            if let Some(id) = self.edges.remove_input(&i) {
                 let entries = self.remove_entry_and_descendants(&id);
                 if !entries.is_empty() {
                     let reject = Reject::Resolve(OutPointError::Dead(i.clone()));

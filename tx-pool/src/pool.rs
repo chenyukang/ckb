@@ -3,7 +3,6 @@ extern crate rustc_hash;
 extern crate slab;
 use super::component::{commit_txs_scanner::CommitTxsScanner, TxEntry};
 use crate::callback::Callbacks;
-use crate::component::pending::PendingQueue;
 use crate::component::pool_map::{PoolMap, Status};
 use crate::component::proposed::ProposedPool;
 use crate::component::recent_reject::RecentReject;
@@ -27,34 +26,6 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 const COMMITTED_HASH_CACHE_SIZE: usize = 100_000;
-
-// limit the size of the pool by sorting out tx based on EvictKey.
-macro_rules! evict_for_trim_size {
-    ($self:ident, $pool:expr, $callbacks:expr) => {
-        if let Some(id) = $pool
-            .iter()
-            .min_by_key(|(_id, entry)| entry.as_evict_key())
-            .map(|(id, _)| id)
-            .cloned()
-        {
-            let removed = $pool.remove_entry_and_descendants(&id);
-            for entry in removed {
-                let tx_hash = entry.transaction().hash();
-                debug!(
-                    "removed by size limit {} timestamp({})",
-                    tx_hash, entry.timestamp
-                );
-                let reject = Reject::Full(format!(
-                    "the fee_rate for this transaction is: {}",
-                    entry.fee_rate()
-                ));
-                $callbacks.call_reject($self, &entry, reject);
-            }
-        }
-    };
-}
-
-type ConflictEntry = (TxEntry, Reject);
 
 /// Tx-pool implementation
 pub struct TxPool {
@@ -361,33 +332,14 @@ impl TxPool {
         tx: TransactionView,
     ) -> Result<Arc<ResolvedTransaction>, Reject> {
         let snapshot = self.snapshot();
-        let cell_provider = OverlayCellProvider::new(&self.proposed, snapshot);
+        let cell_provider = OverlayCellProvider::new(&self.pool_map.entries, snapshot);
         let mut seen_inputs = HashSet::new();
         resolve_transaction(tx, &mut seen_inputs, &cell_provider, snapshot)
             .map(Arc::new)
             .map_err(Reject::Resolve)
     }
 
-    pub(crate) fn resolve_tx_from_proposed_v2(
-        &self,
-        rtx: &ResolvedTransaction,
-    ) -> Result<(), Reject> {
-        let snapshot = self.snapshot();
-        let checker = OverlayCellChecker::new(&self.pool_map.entries, snapshot);
-        let mut seen_inputs = HashSet::new();
-        rtx.check(&mut seen_inputs, &checker, snapshot)
-            .map_err(Reject::Resolve)
-    }
-
-    pub(crate) fn check_rtx_from_proposed(&self, rtx: &ResolvedTransaction) -> Result<(), Reject> {
-        let snapshot = self.snapshot();
-        let cell_checker = OverlayCellChecker::new(&self.proposed, snapshot);
-        let mut seen_inputs = HashSet::new();
-        rtx.check(&mut seen_inputs, &cell_checker, snapshot)
-            .map_err(Reject::Resolve)
-    }
-
-    pub(crate) fn check_rtx_from_proposed_v2(
+    pub(crate) fn check_rtx_from_proposed(
         &self,
         rtx: &ResolvedTransaction,
     ) -> Result<(), Reject> {
