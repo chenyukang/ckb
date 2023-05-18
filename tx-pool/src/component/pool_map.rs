@@ -156,7 +156,7 @@ impl PoolMap {
         }
     }
 
-    /// Record the edges and links for entry
+    /// Record the links for entry
     fn record_entry_relations(&mut self, entry: &mut TxEntry) -> Result<bool, Reject> {
         // find in pool parents
         let mut parents: HashSet<ProposalShortId> = HashSet::with_capacity(
@@ -221,7 +221,7 @@ impl PoolMap {
         }
         trace!("add_{:?} {}", status, entry.transaction().hash());
         self.record_entry_edges(&entry);
-        if self.record_entry_relations(&mut entry).is_err() {
+        if status == Status::Proposed && self.record_entry_relations(&mut entry).is_err() {
             return false;
         }
         let score = entry.as_score_key();
