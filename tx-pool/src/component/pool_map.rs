@@ -235,6 +235,7 @@ impl PoolMap {
                 .insert(tx_short_id.clone(), header_deps.into_iter().collect());
         }
 
+        // update children
         if !children.is_empty() {
             self.update_descendants_from_detached(&tx_short_id, children);
         }
@@ -268,7 +269,7 @@ impl PoolMap {
     }
 
     /// Record the links for entry
-    fn record_entry_relations(&mut self, entry: &mut TxEntry) -> Result<bool, Reject> {
+    fn record_entry_links(&mut self, entry: &mut TxEntry) -> Result<bool, Reject> {
         // find in pool parents
         let mut parents: HashSet<ProposalShortId> = HashSet::with_capacity(
             entry.transaction().inputs().len() + entry.transaction().cell_deps().len(),
@@ -336,7 +337,7 @@ impl PoolMap {
         Ok(true)
     }
 
-    pub(crate) fn remove_entry_relation(&mut self, entry: &TxEntry) {
+    pub(crate) fn remove_entry_edges(&mut self, entry: &TxEntry) {
         let inputs = entry.transaction().input_pts_iter();
         let id = entry.proposal_short_id();
         let outputs = entry.transaction().output_pts();
@@ -372,7 +373,7 @@ impl PoolMap {
             return false;
         }
         trace!("add_{:?} {}", status, entry.transaction().hash());
-        if self.record_entry_relations(&mut entry).is_err() {
+        if self.record_entry_links(&mut entry).is_err() {
             return false;
         }
 
@@ -394,7 +395,7 @@ impl PoolMap {
 
         if let Some(ref entry) = removed {
             self.update_descendants_index_key(&entry.inner, EntryOp::Remove);
-            self.remove_entry_relation(&entry.inner);
+            self.remove_entry_edges(&entry.inner);
             self.update_parents_for_remove(id);
             self.update_children_for_remove(id);
             self.links.remove(id);
@@ -445,7 +446,7 @@ impl PoolMap {
             }
         }
         for entry in &removed {
-            self.remove_entry_relation(entry);
+            self.remove_entry_edges(entry);
         }
         removed
     }
