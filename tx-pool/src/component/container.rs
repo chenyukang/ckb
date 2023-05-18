@@ -3,7 +3,7 @@
 extern crate rustc_hash;
 extern crate slab;
 
-use crate::component::links::{ Relation, TxLinks, TxLinksMap };
+use crate::component::links::{Relation, TxLinks, TxLinksMap};
 use crate::{component::entry::TxEntry, error::Reject};
 use ckb_types::{
     core::Capacity,

@@ -1,13 +1,12 @@
-
-use std::borrow::Cow;
-use std::cmp::Ordering;
-use std::collections::hash_map::Entry as HashMapEntry;
-use std::collections::{HashMap, HashSet};
 use crate::{component::entry::TxEntry, error::Reject};
 use ckb_types::{
     core::Capacity,
     packed::{OutPoint, ProposalShortId},
 };
+use std::borrow::Cow;
+use std::cmp::Ordering;
+use std::collections::hash_map::Entry as HashMapEntry;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Default, Debug, Clone)]
 pub struct TxLinks {
@@ -125,13 +124,21 @@ impl TxLinksMap {
             .map(|links| links.parents.remove(parent))
     }
 
-    pub fn add_child(&mut self, short_id: &ProposalShortId, child: ProposalShortId) -> Option<bool> {
+    pub fn add_child(
+        &mut self,
+        short_id: &ProposalShortId,
+        child: ProposalShortId,
+    ) -> Option<bool> {
         self.inner
             .get_mut(short_id)
             .map(|links| links.children.insert(child))
     }
 
-    pub fn add_parent(&mut self, short_id: &ProposalShortId, parent: ProposalShortId) -> Option<bool> {
+    pub fn add_parent(
+        &mut self,
+        short_id: &ProposalShortId,
+        parent: ProposalShortId,
+    ) -> Option<bool> {
         self.inner
             .get_mut(short_id)
             .map(|links| links.parents.insert(parent))

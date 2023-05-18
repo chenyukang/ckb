@@ -1,8 +1,8 @@
+use crate::component::pool_map::MultiIndexPoolEntryMap;
 use crate::component::{container::AncestorsScoreSortKey, entry::TxEntry, proposed::ProposedPool};
 use ckb_types::{core::Cycle, packed::ProposalShortId};
 use ckb_util::LinkedHashMap;
 use std::collections::{BTreeSet, HashMap, HashSet};
-use crate::component::pool_map::MultiIndexPoolEntryMap;
 
 // A template data struct used to store modified entries when package txs
 #[derive(Default)]
@@ -62,7 +62,10 @@ pub struct CommitTxsScanner<'a> {
 }
 
 impl<'a> CommitTxsScanner<'a> {
-    pub fn new(proposed_pool: &'a ProposedPool, pool_entries: &'a MultiIndexPoolEntryMap) -> CommitTxsScanner<'a> {
+    pub fn new(
+        proposed_pool: &'a ProposedPool,
+        pool_entries: &'a MultiIndexPoolEntryMap,
+    ) -> CommitTxsScanner<'a> {
         CommitTxsScanner {
             proposed_pool,
             entries: Vec::new(),

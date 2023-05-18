@@ -54,10 +54,7 @@ impl Edges {
         self.outputs.insert(out_point, Some(id));
     }
 
-    pub(crate) fn get_output_ref(
-        &self,
-        out_point: &OutPoint,
-    ) -> Option<&Option<ProposalShortId>> {
+    pub(crate) fn get_output_ref(&self, out_point: &OutPoint) -> Option<&Option<ProposalShortId>> {
         self.outputs.get(out_point)
     }
 

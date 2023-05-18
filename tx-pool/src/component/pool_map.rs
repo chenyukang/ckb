@@ -8,6 +8,7 @@ use crate::component::links::{Relation, TxLinksMap};
 use crate::error::Reject;
 use crate::TxEntry;
 use std::collections::hash_map::Entry as HashMapEntry;
+use std::eprintln;
 
 use ckb_logger::{debug, error, trace, warn};
 use ckb_types::core::error::OutPointError;
@@ -23,6 +24,8 @@ use ckb_types::{
 use multi_index_map::MultiIndexMap;
 use std::borrow::Cow;
 use std::collections::{HashSet, VecDeque};
+
+use super::links::TxLinks;
 
 type ConflictEntry = (TxEntry, Reject);
 
@@ -298,6 +301,17 @@ impl PoolMap {
                 .insert(short_id.clone());
         }
 
+        for parent in &parents {
+            self.links.add_child(parent, short_id.clone());
+        }
+
+        // insert links
+        let links = TxLinks {
+            parents,
+            children: Default::default(),
+        };
+        self.links.inner.insert(short_id.clone(), links);
+
         Ok(true)
     }
 
@@ -544,6 +558,7 @@ impl PoolMap {
             .collect::<Vec<_>>();
         self.entries.clear();
         self.edges.clear();
+        self.links.clear();
         txs
     }
 }

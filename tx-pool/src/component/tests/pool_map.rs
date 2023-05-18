@@ -7,6 +7,7 @@ use crate::component::{
 };
 use ckb_types::{h256, packed::Byte32, prelude::*};
 use std::collections::HashSet;
+use std::eprintln;
 
 #[test]
 fn test_basic() {
@@ -28,7 +29,13 @@ fn test_basic() {
     assert_eq!(pool.inputs_len(), 4);
     assert_eq!(pool.outputs_len(), 4);
 
-    assert_eq!(pool.entries.get_by_id(&tx1.proposal_short_id()).unwrap().inner, entry1);
+    assert_eq!(
+        pool.entries
+            .get_by_id(&tx1.proposal_short_id())
+            .unwrap()
+            .inner,
+        entry1
+    );
     assert_eq!(pool.get_tx(&tx2.proposal_short_id()).unwrap(), &tx2);
 
     let txs = pool.drain();
@@ -127,12 +134,12 @@ fn test_resolve_conflict_header_dep() {
     headers.insert(header);
 
     let conflicts = pool.resolve_conflict_header_dep(&headers);
+    eprintln!("len: {:?}", conflicts.len());
     assert_eq!(
         conflicts.into_iter().map(|i| i.0).collect::<HashSet<_>>(),
         HashSet::from_iter(vec![entry, entry1])
     );
 }
-
 
 #[test]
 fn test_remove_entry() {
@@ -155,7 +162,6 @@ fn test_remove_entry() {
     assert!(pool.edges.inputs.is_empty());
     assert!(pool.edges.header_deps.is_empty());
 }
-
 
 #[test]
 fn test_remove_entries_by_filter() {
@@ -183,7 +189,6 @@ fn test_remove_entries_by_filter() {
     assert!(pool.contains_key(&tx2.proposal_short_id()));
     assert!(pool.contains_key(&tx3.proposal_short_id()));
 }
-
 
 #[test]
 fn test_fill_proposals() {

@@ -339,10 +339,7 @@ impl TxPool {
             .map_err(Reject::Resolve)
     }
 
-    pub(crate) fn check_rtx_from_proposed(
-        &self,
-        rtx: &ResolvedTransaction,
-    ) -> Result<(), Reject> {
+    pub(crate) fn check_rtx_from_proposed(&self, rtx: &ResolvedTransaction) -> Result<(), Reject> {
         let snapshot = self.snapshot();
         let cell_checker = OverlayCellChecker::new(&self.pool_map.entries, snapshot);
         let mut seen_inputs = HashSet::new();
