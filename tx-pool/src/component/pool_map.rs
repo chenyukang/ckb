@@ -175,7 +175,8 @@ impl PoolMap {
     }
 
     fn update_descendants_index_key(&mut self, entry: &TxEntry, op: EntryOp) {
-        let descendants = self.links.calc_descendants(&entry.proposal_short_id());
+        let descendants: HashSet<ProposalShortId> =
+            self.links.calc_descendants(&entry.proposal_short_id());
         for desc_id in &descendants {
             if let Some(desc_entry) = self.entries.get_by_id(desc_id) {
                 let mut desc_entry = desc_entry.inner.clone();
@@ -184,8 +185,9 @@ impl PoolMap {
                     EntryOp::Add => desc_entry.add_entry_weight(entry),
                 }
                 self.entries
-                    .modify_by_id(&entry.proposal_short_id(), |pool_entry| {
+                    .modify_by_id(&desc_entry.proposal_short_id(), |pool_entry| {
                         pool_entry.score = desc_entry.as_score_key();
+                        pool_entry.inner = desc_entry;
                     });
             }
         }
@@ -251,7 +253,9 @@ impl PoolMap {
             for child in &children {
                 self.links.add_parent(child, id.clone());
             }
+            eprintln!("add child for {} {:?}", id, children);
             if let Some(links) = self.links.inner.get_mut(id) {
+                eprintln!("add child for {} {:?}", id, children);
                 links.children.extend(children);
             }
 
@@ -371,7 +375,6 @@ impl PoolMap {
         if self.record_entry_relations(&mut entry).is_err() {
             return false;
         }
-        self.record_entry_edges(&entry);
 
         let score = entry.as_score_key();
         let evict_key = entry.as_evict_key();
@@ -379,9 +382,10 @@ impl PoolMap {
             id: tx_short_id,
             score,
             status,
-            inner: entry,
+            inner: entry.clone(),
             evict_key,
         });
+        self.record_entry_edges(&entry);
         true
     }
 
@@ -391,6 +395,9 @@ impl PoolMap {
         if let Some(ref entry) = removed {
             self.update_descendants_index_key(&entry.inner, EntryOp::Remove);
             self.remove_entry_relation(&entry.inner);
+            self.update_parents_for_remove(id);
+            self.update_children_for_remove(id);
+            self.links.remove(id);
         }
         removed.map(|e| e.inner)
     }

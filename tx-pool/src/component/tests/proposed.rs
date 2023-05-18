@@ -157,9 +157,10 @@ fn test_add_entry_from_detached() {
         .is_empty());
 
     assert!(pool.add_proposed(entry1).unwrap());
-    for (idx, (_, key)) in pool.entries.iter().enumerate() {
-        assert_eq!(key.id, expected[idx].0);
-        assert_eq!(key.score.ancestors_size, expected[idx].1);
+
+    for (idx, (_, entry)) in pool.entries.iter().enumerate() {
+        assert_eq!(entry.id, expected[idx].0);
+        assert_eq!(entry.score.ancestors_size, expected[idx].1);
     }
     {
         assert!(pool.links.get_parents(&id1).unwrap().is_empty());
