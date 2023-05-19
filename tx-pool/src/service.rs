@@ -969,7 +969,7 @@ impl TxPoolService {
             match target {
                 PlugTarget::Pending => {
                     for entry in entries {
-                        tx_pool.add_pending(entry);
+                        tx_pool.add_pending(entry).unwrap();
                     }
                 }
                 PlugTarget::Proposed => {

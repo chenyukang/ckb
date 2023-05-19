@@ -7,7 +7,6 @@ use crate::component::{
 };
 use ckb_types::{h256, packed::Byte32, prelude::*};
 use std::collections::HashSet;
-use std::eprintln;
 
 #[test]
 fn test_basic() {
@@ -20,8 +19,8 @@ fn test_basic() {
     );
     let entry1 = TxEntry::dummy_resolve(tx1.clone(), MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry2 = TxEntry::dummy_resolve(tx2.clone(), MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
-    assert!(pool.add_entry(entry1.clone(), Status::Pending));
-    assert!(pool.add_entry(entry2, Status::Pending));
+    assert!(pool.add_entry(entry1.clone(), Status::Pending).unwrap());
+    assert!(pool.add_entry(entry2, Status::Pending).unwrap());
     assert!(pool.size() == 2);
     assert!(pool.contains_key(&tx1.proposal_short_id()));
     assert!(pool.contains_key(&tx2.proposal_short_id()));
@@ -68,9 +67,9 @@ fn test_resolve_conflict() {
     let entry1 = TxEntry::dummy_resolve(tx1, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry2 = TxEntry::dummy_resolve(tx2, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry3 = TxEntry::dummy_resolve(tx3, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
-    assert!(pool.add_entry(entry1.clone(), Status::Pending));
-    assert!(pool.add_entry(entry2.clone(), Status::Pending));
-    assert!(pool.add_entry(entry3.clone(), Status::Pending));
+    assert!(pool.add_entry(entry1.clone(), Status::Pending).unwrap());
+    assert!(pool.add_entry(entry2.clone(), Status::Pending).unwrap());
+    assert!(pool.add_entry(entry3.clone(), Status::Pending).unwrap());
 
     let conflicts = pool.resolve_conflict(&tx4);
     assert_eq!(
@@ -97,9 +96,9 @@ fn test_resolve_conflict_descendants() {
     let entry1 = TxEntry::dummy_resolve(tx1, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry3 = TxEntry::dummy_resolve(tx3, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry4 = TxEntry::dummy_resolve(tx4, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
-    assert!(pool.add_entry(entry1, Status::Pending));
-    assert!(pool.add_entry(entry3.clone(), Status::Pending));
-    assert!(pool.add_entry(entry4.clone(), Status::Pending));
+    assert!(pool.add_entry(entry1, Status::Pending).unwrap());
+    assert!(pool.add_entry(entry3.clone(), Status::Pending).unwrap());
+    assert!(pool.add_entry(entry4.clone(), Status::Pending).unwrap());
 
     let conflicts = pool.resolve_conflict(&tx2);
     assert_eq!(
@@ -122,8 +121,8 @@ fn test_resolve_conflict_header_dep() {
 
     let entry = TxEntry::dummy_resolve(tx, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry1 = TxEntry::dummy_resolve(tx1, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
-    assert!(pool.add_entry(entry.clone(), Status::Pending));
-    assert!(pool.add_entry(entry1.clone(), Status::Pending));
+    assert!(pool.add_entry(entry.clone(), Status::Pending).unwrap());
+    assert!(pool.add_entry(entry1.clone(), Status::Pending).unwrap());
 
     assert_eq!(pool.inputs_len(), 3);
     assert_eq!(pool.header_deps_len(), 1);
@@ -133,7 +132,6 @@ fn test_resolve_conflict_header_dep() {
     headers.insert(header);
 
     let conflicts = pool.resolve_conflict_header_dep(&headers);
-    eprintln!("len: {:?}", conflicts.len());
     assert_eq!(
         conflicts.into_iter().map(|i| i.0).collect::<HashSet<_>>(),
         HashSet::from_iter(vec![entry, entry1])
@@ -149,8 +147,8 @@ fn test_remove_entry() {
 
     let entry1 = TxEntry::dummy_resolve(tx1.clone(), MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry2 = TxEntry::dummy_resolve(tx2.clone(), MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
-    assert!(pool.add_entry(entry1.clone(), Status::Pending));
-    assert!(pool.add_entry(entry2.clone(), Status::Pending));
+    assert!(pool.add_entry(entry1.clone(), Status::Pending).unwrap());
+    assert!(pool.add_entry(entry2.clone(), Status::Pending).unwrap());
 
     let removed = pool.remove_entry(&tx1.proposal_short_id());
     assert_eq!(removed, Some(entry1));
@@ -178,9 +176,9 @@ fn test_remove_entries_by_filter() {
     let entry1 = TxEntry::dummy_resolve(tx1.clone(), MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry2 = TxEntry::dummy_resolve(tx2.clone(), MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry3 = TxEntry::dummy_resolve(tx3.clone(), MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
-    assert!(pool.add_entry(entry1, Status::Pending));
-    assert!(pool.add_entry(entry2, Status::Pending));
-    assert!(pool.add_entry(entry3, Status::Pending));
+    assert!(pool.add_entry(entry1, Status::Pending).unwrap());
+    assert!(pool.add_entry(entry2, Status::Pending).unwrap());
+    assert!(pool.add_entry(entry3, Status::Pending).unwrap());
 
     pool.remove_entries_by_filter(|id, _tx_entry| id == &tx1.proposal_short_id());
 
@@ -205,9 +203,9 @@ fn test_fill_proposals() {
     let entry1 = TxEntry::dummy_resolve(tx1.clone(), MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry2 = TxEntry::dummy_resolve(tx2.clone(), MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry3 = TxEntry::dummy_resolve(tx3.clone(), MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
-    assert!(pool.add_entry(entry1, Status::Pending));
-    assert!(pool.add_entry(entry2, Status::Pending));
-    assert!(pool.add_entry(entry3, Status::Pending));
+    assert!(pool.add_entry(entry1, Status::Pending).unwrap());
+    assert!(pool.add_entry(entry2, Status::Pending).unwrap());
+    assert!(pool.add_entry(entry3, Status::Pending).unwrap());
 
     assert_eq!(pool.inputs_len(), 5);
     assert_eq!(pool.deps_len(), 1);

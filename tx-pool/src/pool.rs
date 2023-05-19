@@ -105,23 +105,18 @@ impl TxPool {
 
     /// Add tx to pending pool
     /// If did have this value present, false is returned.
-    pub fn add_pending(&mut self, entry: TxEntry) -> bool {
+    pub fn add_pending(&mut self, entry: TxEntry) -> Result<bool, Reject> {
         self.pool_map.add_entry(entry, Status::Pending)
     }
 
     /// Add tx which proposed but still uncommittable to gap pool
-    pub fn add_gap(&mut self, entry: TxEntry) -> bool {
+    pub fn add_gap(&mut self, entry: TxEntry) -> Result<bool, Reject> {
         self.pool_map.add_entry(entry, Status::Gap)
     }
 
     /// Add tx to proposed pool
     pub fn add_proposed(&mut self, entry: TxEntry) -> Result<bool, Reject> {
         trace!("add_proposed {}", entry.transaction().hash());
-        // TODO: fix the returned value?
-        Ok(self.pool_map.add_entry(entry, Status::Proposed))
-    }
-
-    pub fn add_proposed_v2(&mut self, entry: TxEntry) -> bool {
         self.pool_map.add_entry(entry, Status::Proposed)
     }
 
@@ -274,7 +269,7 @@ impl TxPool {
                     entry.reset_ancestors_state();
                     let ret = self.add_pending(entry);
                     debug!(
-                        "remove_by_detached_proposal from {:?} {} add_pending {}",
+                        "remove_by_detached_proposal from {:?} {} add_pending {:?}",
                         status, tx_hash, ret
                     );
                 }
@@ -365,7 +360,7 @@ impl TxPool {
         let entry =
             TxEntry::new_with_timestamp(rtx, verified.cycles, verified.fee, size, timestamp);
         let tx_hash = entry.transaction().hash();
-        if self.add_gap(entry) {
+        if self.add_gap(entry).unwrap_or(false) {
             Ok(CacheEntry::Completed(verified))
         } else {
             Err(Reject::Duplicated(tx_hash))

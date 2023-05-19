@@ -1003,15 +1003,16 @@ fn _submit_entry(
     let tx_hash = entry.transaction().hash();
     match status {
         TxStatus::Fresh => {
-            if tx_pool.add_pending(entry.clone()) {
+            if tx_pool.add_pending(entry.clone()).unwrap_or(false) {
                 debug!("submit_entry pending {}", tx_hash);
                 callbacks.call_pending(tx_pool, &entry);
             } else {
                 return Err(Reject::Duplicated(tx_hash));
             }
         }
+
         TxStatus::Gap => {
-            if tx_pool.add_gap(entry.clone()) {
+            if tx_pool.add_gap(entry.clone()).unwrap_or(false) {
                 debug!("submit_entry gap {}", tx_hash);
                 callbacks.call_pending(tx_pool, &entry);
             } else {

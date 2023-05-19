@@ -254,9 +254,7 @@ impl PoolMap {
             for child in &children {
                 self.links.add_parent(child, id.clone());
             }
-            eprintln!("add child for {} {:?}", id, children);
             if let Some(links) = self.links.inner.get_mut(id) {
-                eprintln!("add child for {} {:?}", id, children);
                 links.children.extend(children);
             }
 
@@ -363,19 +361,16 @@ impl PoolMap {
 
     #[cfg(test)]
     pub fn add_proposed(&mut self, entry: TxEntry) -> Result<bool, Reject> {
-        //TODO: care about error handling
-        Ok(self.add_entry(entry, Status::Proposed))
+        self.add_entry(entry, Status::Proposed)
     }
 
-    pub fn add_entry(&mut self, mut entry: TxEntry, status: Status) -> bool {
+    pub fn add_entry(&mut self, mut entry: TxEntry, status: Status) -> Result<bool, Reject> {
         let tx_short_id = entry.proposal_short_id();
         if self.entries.get_by_id(&tx_short_id).is_some() {
-            return false;
+            return Ok(false);
         }
         trace!("add_{:?} {}", status, entry.transaction().hash());
-        if self.record_entry_links(&mut entry).is_err() {
-            return false;
-        }
+        self.record_entry_links(&mut entry)?;
 
         let score = entry.as_score_key();
         let evict_key = entry.as_evict_key();
@@ -387,7 +382,7 @@ impl PoolMap {
             evict_key,
         });
         self.record_entry_edges(&entry);
-        true
+        Ok(true)
     }
 
     pub fn remove_entry(&mut self, id: &ProposalShortId) -> Option<TxEntry> {
