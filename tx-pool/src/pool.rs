@@ -107,18 +107,18 @@ impl TxPool {
         self.total_tx_cycles = total_tx_cycles;
     }
 
-    /// Add tx to pending pool
+    /// Add tx with pending status
     /// If did have this value present, false is returned.
     pub fn add_pending(&mut self, entry: TxEntry) -> Result<bool, Reject> {
         self.pool_map.add_entry(entry, Status::Pending)
     }
 
-    /// Add tx which proposed but still uncommittable to gap pool
+    /// Add tx which proposed but still uncommittable to gap
     pub fn add_gap(&mut self, entry: TxEntry) -> Result<bool, Reject> {
         self.pool_map.add_entry(entry, Status::Gap)
     }
 
-    /// Add tx to proposed pool
+    /// Add tx with proposed status
     pub fn add_proposed(&mut self, entry: TxEntry) -> Result<bool, Reject> {
         trace!("add_proposed {}", entry.transaction().hash());
         self.pool_map.add_entry(entry, Status::Proposed)
@@ -143,26 +143,7 @@ impl TxPool {
             .map(|entry| entry.inner.transaction())
     }
 
-    /// Returns tx from pending and gap corresponding to the id. RPC
-    pub fn get_entry_from_pending_or_gap(&self, id: &ProposalShortId) -> Option<&TxEntry> {
-        if let Some(entry) = self.pool_map.get_by_id(id) {
-            match entry.status {
-                Status::Pending | Status::Gap => return Some(&entry.inner),
-                _ => return None,
-            }
-        } else {
-            return None;
-        }
-    }
-
-    /*     pub(crate) fn proposed(&self) -> &ProposedPool {
-           &self.proposed
-       }
-    */
-    pub(crate) fn get_tx_from_proposed_and_others(
-        &self,
-        id: &ProposalShortId,
-    ) -> Option<&TransactionView> {
+    pub(crate) fn get_tx_from_pool(&self, id: &ProposalShortId) -> Option<&TransactionView> {
         self.pool_map
             .get_by_id(id)
             .map(|entry| entry.inner.transaction())
@@ -297,10 +278,7 @@ impl TxPool {
         false
     }
 
-    pub(crate) fn check_rtx_from_pending_and_proposed(
-        &self,
-        rtx: &ResolvedTransaction,
-    ) -> Result<(), Reject> {
+    pub(crate) fn check_rtx(&self, rtx: &ResolvedTransaction) -> Result<(), Reject> {
         let snapshot = self.snapshot();
         let checker = OverlayCellChecker::new(&self.pool_map, snapshot);
         let mut seen_inputs = HashSet::new();
@@ -308,7 +286,7 @@ impl TxPool {
             .map_err(Reject::Resolve)
     }
 
-    pub(crate) fn resolve_tx_from_pool(
+    pub(crate) fn resolve_tx(
         &self,
         tx: TransactionView,
     ) -> Result<Arc<ResolvedTransaction>, Reject> {
@@ -317,14 +295,6 @@ impl TxPool {
         let mut seen_inputs = HashSet::new();
         resolve_transaction(tx, &mut seen_inputs, &provider, snapshot)
             .map(Arc::new)
-            .map_err(Reject::Resolve)
-    }
-
-    pub(crate) fn check_rtx_from_proposed(&self, rtx: &ResolvedTransaction) -> Result<(), Reject> {
-        let snapshot = self.snapshot();
-        let cell_checker = OverlayCellChecker::new(&self.pool_map, snapshot);
-        let mut seen_inputs = HashSet::new();
-        rtx.check(&mut seen_inputs, &cell_checker, snapshot)
             .map_err(Reject::Resolve)
     }
 
@@ -338,7 +308,7 @@ impl TxPool {
         let snapshot = self.cloned_snapshot();
         let tip_header = snapshot.tip_header();
         let tx_env = Arc::new(TxVerifyEnv::new_proposed(tip_header, 0));
-        self.check_rtx_from_pending_and_proposed(&rtx)?;
+        self.check_rtx(&rtx)?;
 
         let max_cycles = snapshot.consensus().max_block_cycles();
         let verified = verify_rtx(
@@ -369,7 +339,7 @@ impl TxPool {
         let snapshot = self.cloned_snapshot();
         let tip_header = snapshot.tip_header();
         let tx_env = Arc::new(TxVerifyEnv::new_proposed(tip_header, 1));
-        self.check_rtx_from_proposed(&rtx)?;
+        self.check_rtx(&rtx)?;
 
         let max_cycles = snapshot.consensus().max_block_cycles();
         let verified = verify_rtx(
@@ -391,6 +361,8 @@ impl TxPool {
     }
 
     /// Get to-be-proposal transactions that may be included in the next block.
+    /// TODO: do we need to consider the something like score, so that we can
+    ///      provide best transactions to be proposed.
     pub fn get_proposals(
         &self,
         limit: usize,
@@ -409,13 +381,11 @@ impl TxPool {
         &self,
         proposal_id: &ProposalShortId,
     ) -> Option<TransactionView> {
-        self.get_tx_from_proposed_and_others(proposal_id)
-            .cloned()
-            .or_else(|| {
-                self.committed_txs_hash_cache
-                    .peek(proposal_id)
-                    .and_then(|tx_hash| self.snapshot().get_transaction(tx_hash).map(|(tx, _)| tx))
-            })
+        self.get_tx_from_pool(proposal_id).cloned().or_else(|| {
+            self.committed_txs_hash_cache
+                .peek(proposal_id)
+                .and_then(|tx_hash| self.snapshot().get_transaction(tx_hash).map(|(tx, _)| tx))
+        })
     }
 
     pub(crate) fn get_ids(&self) -> TxPoolIds {

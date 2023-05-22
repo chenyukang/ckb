@@ -961,20 +961,14 @@ fn check_rtx(
     rtx: &ResolvedTransaction,
 ) -> Result<TxStatus, Reject> {
     let short_id = rtx.transaction.proposal_short_id();
-    if snapshot.proposals().contains_proposed(&short_id) {
-        tx_pool
-            .check_rtx_from_proposed(rtx)
-            .map(|_| TxStatus::Proposed)
+    let tx_status = if snapshot.proposals().contains_proposed(&short_id) {
+        TxStatus::Proposed
+    } else if snapshot.proposals().contains_gap(&short_id) {
+        TxStatus::Gap
     } else {
-        let tx_status = if snapshot.proposals().contains_gap(&short_id) {
-            TxStatus::Gap
-        } else {
-            TxStatus::Fresh
-        };
-        tx_pool
-            .check_rtx_from_pending_and_proposed(rtx)
-            .map(|_| tx_status)
-    }
+        TxStatus::Fresh
+    };
+    tx_pool.check_rtx(rtx).map(|_| tx_status)
 }
 
 fn resolve_tx(tx_pool: &TxPool, snapshot: &Snapshot, tx: TransactionView) -> ResolveResult {
@@ -986,9 +980,7 @@ fn resolve_tx(tx_pool: &TxPool, snapshot: &Snapshot, tx: TransactionView) -> Res
     } else {
         TxStatus::Fresh
     };
-    tx_pool
-        .resolve_tx_from_pool(tx)
-        .map(|rtx| (rtx, tx_status))
+    tx_pool.resolve_tx(tx).map(|rtx| (rtx, tx_status))
 }
 
 fn _submit_entry(

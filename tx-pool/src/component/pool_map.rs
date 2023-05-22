@@ -8,7 +8,6 @@ use crate::component::links::{Relation, TxLinksMap};
 use crate::error::Reject;
 use crate::TxEntry;
 use std::collections::hash_map::Entry as HashMapEntry;
-
 use ckb_logger::trace;
 use ckb_types::core::error::OutPointError;
 use ckb_types::packed::OutPoint;
@@ -133,6 +132,10 @@ impl PoolMap {
 
     pub fn get(&self, id: &ProposalShortId) -> Option<&TxEntry> {
         self.entries.get_by_id(id).map(|entry| &entry.inner)
+    }
+
+    pub fn get_pool_entry(&self, id: &ProposalShortId) -> Option<&PoolEntry> {
+        self.entries.get_by_id(id)
     }
 
     pub fn get_proposed(&self, id: &ProposalShortId) -> Option<&TxEntry> {
