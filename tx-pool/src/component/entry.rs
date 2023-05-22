@@ -1,4 +1,4 @@
-use crate::component::container::AncestorsScoreSortKey;
+use crate::component::score_key::AncestorsScoreSortKey;
 use ckb_systemtime::unix_time_as_millis;
 use ckb_types::{
     core::{

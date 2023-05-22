@@ -1,13 +1,12 @@
 //! Top-level Pool type, methods, and tests
 extern crate rustc_hash;
 extern crate slab;
-use crate::component::container::AncestorsScoreSortKey;
+use crate::component::score_key::AncestorsScoreSortKey;
 use crate::component::edges::Edges;
 use crate::component::entry::EvictKey;
 use crate::component::links::{Relation, TxLinksMap};
 use crate::error::Reject;
 use crate::TxEntry;
-use std::collections::hash_map::Entry as HashMapEntry;
 use ckb_logger::trace;
 use ckb_types::core::error::OutPointError;
 use ckb_types::packed::OutPoint;
@@ -22,6 +21,7 @@ use ckb_types::{
 };
 use multi_index_map::MultiIndexMap;
 use std::borrow::Cow;
+use std::collections::hash_map::Entry as HashMapEntry;
 use std::collections::HashSet;
 
 use super::links::TxLinks;
@@ -118,8 +118,26 @@ impl PoolMap {
         self.entries.get_by_id(id).is_some()
     }
 
+    #[cfg(test)]
+    pub(crate) fn get_tx(&self, id: &ProposalShortId) -> Option<&TransactionView> {
+        self.entries
+            .get_by_id(id)
+            .map(|entry| entry.inner.transaction())
+    }
+
+    #[cfg(test)]
+    pub fn add_proposed(&mut self, entry: TxEntry) -> Result<bool, Reject> {
+        self.add_entry(entry, Status::Proposed)
+    }
+
+    #[cfg(test)]
+    pub fn remove_committed_tx(&mut self, tx: &TransactionView) -> Option<TxEntry> {
+        self.remove_entry(&tx.proposal_short_id())
+    }
+
     pub fn pending_size(&self) -> usize {
         self.entries.get_by_status(&Status::Pending).len()
+            + self.entries.get_by_status(&Status::Gap).len()
     }
 
     pub fn proposed_size(&self) -> usize {
@@ -131,15 +149,11 @@ impl PoolMap {
     }
 
     pub fn get(&self, id: &ProposalShortId) -> Option<&TxEntry> {
-        self.entries.get_by_id(id).map(|entry| &entry.inner)
-    }
-
-    pub fn get_pool_entry(&self, id: &ProposalShortId) -> Option<&PoolEntry> {
-        self.entries.get_by_id(id)
+        self.get_by_id(id).map(|entry| &entry.inner)
     }
 
     pub fn get_proposed(&self, id: &ProposalShortId) -> Option<&TxEntry> {
-        if let Some(entry) = self.entries.get_by_id(id) {
+        if let Some(entry) = self.get_by_id(id) {
             if entry.status == Status::Proposed {
                 Some(&entry.inner)
             } else {
@@ -148,13 +162,6 @@ impl PoolMap {
         } else {
             None
         }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn get_tx(&self, id: &ProposalShortId) -> Option<&TransactionView> {
-        self.entries
-            .get_by_id(id)
-            .map(|entry| entry.inner.transaction())
     }
 
     /// calculate all ancestors from pool
@@ -272,12 +279,12 @@ impl PoolMap {
     // the descendants for a single transaction that has been added to the
     // pool but may have child transactions in the pool, eg during a
     // chain reorg.
-    pub fn update_descendants_from_detached(
+    fn update_descendants_from_detached(
         &mut self,
         id: &ProposalShortId,
         children: HashSet<ProposalShortId>,
     ) {
-        if let Some(entry) = self.entries.get_by_id(id).cloned() {
+        if let Some(entry) = self.get_by_id(id).cloned() {
             for child in &children {
                 self.links.add_parent(child, id.clone());
             }
@@ -290,7 +297,7 @@ impl PoolMap {
     }
 
     pub fn get_by_id(&self, id: &ProposalShortId) -> Option<&PoolEntry> {
-        self.entries.get_by_id(id).map(|entry| entry)
+        self.entries.get_by_id(id)
     }
 
     /// Record the links for entry
@@ -385,11 +392,6 @@ impl PoolMap {
         self.edges.header_deps.remove(&id);
     }
 
-    #[cfg(test)]
-    pub fn add_proposed(&mut self, entry: TxEntry) -> Result<bool, Reject> {
-        self.add_entry(entry, Status::Proposed)
-    }
-
     pub fn add_entry(&mut self, mut entry: TxEntry, status: Status) -> Result<bool, Reject> {
         trace!(
             "add entry with status: {:?} status: {:?}",
@@ -434,11 +436,6 @@ impl PoolMap {
         removed.map(|e| e.inner)
     }
 
-    #[cfg(test)]
-    pub fn remove_committed_tx(&mut self, tx: &TransactionView) -> Option<TxEntry> {
-        self.remove_entry(&tx.proposal_short_id())
-    }
-
     fn update_deps_for_remove(&mut self, entry: &TxEntry) {
         for cell_dep in entry.transaction().cell_deps() {
             let dep_pt = cell_dep.out_point();
@@ -458,7 +455,7 @@ impl PoolMap {
         })
     }
 
-    pub fn remove_entry_and_descendants(&mut self, id: &ProposalShortId) -> Vec<TxEntry> {
+    pub(crate) fn remove_entry_and_descendants(&mut self, id: &ProposalShortId) -> Vec<TxEntry> {
         let mut removed_ids = vec![id.to_owned()];
         let mut removed = vec![];
         let descendants = self.calc_descendants(id);

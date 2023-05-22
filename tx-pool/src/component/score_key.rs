@@ -1,5 +1,3 @@
-//! The primary module containing the implementations of the transaction pool
-//! and its top-level members.
 use ckb_types::{core::Capacity, packed::ProposalShortId};
 use std::cmp::Ordering;
 

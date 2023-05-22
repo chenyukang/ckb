@@ -741,7 +741,7 @@ async fn process(mut service: TxPoolService, message: Message) {
                 status,
                 inner: entry,
                 ..
-            }) = tx_pool.pool_map.get_pool_entry(&id)
+            }) = tx_pool.pool_map.get_by_id(&id)
             {
                 let status = if status == &Status::Proposed {
                     TxStatus::Proposed
@@ -778,7 +778,7 @@ async fn process(mut service: TxPoolService, message: Message) {
                 status,
                 inner: entry,
                 ..
-            }) = tx_pool.pool_map.get_pool_entry(&id)
+            }) = tx_pool.pool_map.get_by_id(&id)
             {
                 let trans_status = if status == &Status::Proposed {
                     TransactionWithStatus::with_proposed
