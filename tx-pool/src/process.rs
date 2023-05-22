@@ -1,6 +1,7 @@
 use crate::callback::Callbacks;
 use crate::component::entry::TxEntry;
 use crate::component::orphan::Entry as OrphanEntry;
+use crate::component::pool_map::Status;
 use crate::error::Reject;
 use crate::pool::TxPool;
 use crate::service::{BlockAssemblerMessage, TxPoolService, TxVerificationResult};
@@ -122,10 +123,7 @@ impl TxPoolService {
                     time_relative_verify(snapshot, Arc::clone(&entry.rtx), tx_env)?;
                 }
 
-                eprintln!("real ............. submit_entry status: {:?}", &status);
                 _submit_entry(tx_pool, status, entry.clone(), &self.callbacks)?;
-                eprintln!("end ................ submit_entry status: {:?}", &status);
-
                 Ok(())
             })
             .await;
@@ -135,7 +133,6 @@ impl TxPoolService {
 
     pub(crate) async fn notify_block_assembler(&self, status: TxStatus) {
         if self.should_notify_block_assembler() {
-            //eprintln!("notify_block_assembler .....");
             match status {
                 TxStatus::Fresh => {
                     if self
@@ -246,17 +243,13 @@ impl TxPoolService {
             return Err(Reject::Duplicated(tx.hash()));
         }
 
-        eprintln!("begin resumeble_process_tx");
         if let Some((ret, snapshot)) = self._resumeble_process_tx(tx.clone(), remote).await {
-            eprintln!("ret: {:?}", &ret);
-
             match ret {
                 Ok(processed) => {
                     if let ProcessResult::Completed(completed) = processed {
                         self.after_process(tx, remote, &snapshot, &Ok(completed))
                             .await;
                     }
-                    eprintln!("return resumeble_process_tx here with Ok");
                     Ok(())
                 }
                 Err(e) => {
@@ -609,7 +602,6 @@ impl TxPoolService {
                     .resumable_verify(limit_cycles)
                     .map_err(Reject::Verification)?;
 
-                eprintln!("verify ret: {:?}", ret);
                 match ret {
                     ScriptVerifyResult::Completed(cycles) => {
                         if let Some((declared, _)) = remote {
@@ -645,9 +637,7 @@ impl TxPoolService {
 
         let entry = TxEntry::new(rtx, completed.cycles, fee, tx_size);
 
-        //eprintln!("begin submit_entry: {:?} status:{:?}", entry, status);
         let (ret, submit_snapshot) = self.submit_entry(tip_hash, entry, status).await;
-        eprintln!("ret: {:?} submit_snapshot: {:?}", ret, submit_snapshot);
         try_or_return_with_snapshot!(ret, submit_snapshot);
 
         self.notify_block_assembler(status).await;
@@ -1014,11 +1004,7 @@ fn _submit_entry(
     let tx_hash = entry.transaction().hash();
     match status {
         TxStatus::Fresh => {
-            eprintln!("hahahahah submit_entry fresh {}", tx_hash);
-            let res = tx_pool.add_pending(entry.clone());
-            eprintln!("xxxxxxx submit_entry pending {}, result: {:?}", tx_hash, res);
-            if res.unwrap_or(false) {
-                debug!("submit_entry pending {}", tx_hash);
+            if tx_pool.add_pending(entry.clone()).unwrap_or(false) {
                 callbacks.call_pending(tx_pool, &entry);
             } else {
                 return Err(Reject::Duplicated(tx_hash));
@@ -1026,23 +1012,15 @@ fn _submit_entry(
         }
 
         TxStatus::Gap => {
-            let res = tx_pool.add_gap(entry.clone());
-            debug!("submit_entry gap {}, result: {:?}", tx_hash, res);
-            if res.unwrap_or(false) {
-                debug!("submit_entry gap {}", tx_hash);
+            if tx_pool.add_gap(entry.clone()).unwrap_or(false) {
                 callbacks.call_pending(tx_pool, &entry);
             } else {
                 return Err(Reject::Duplicated(tx_hash));
             }
         }
         TxStatus::Proposed => {
-            let res = tx_pool.add_proposed(entry.clone());
-            debug!("submit_entry proposed {}, result: {:?}", tx_hash, res);
-            if res? {
-                debug!("submit_entry proposed {}", tx_hash);
+            if tx_pool.add_proposed(entry.clone())? {
                 callbacks.call_proposed(tx_pool, &entry, true);
-            } else {
-                return Err(Reject::Duplicated(tx_hash));
             }
         }
     }
@@ -1075,35 +1053,37 @@ fn _update_tx_pool_for_reorg(
         let mut entries = Vec::new();
         let mut gaps = Vec::new();
 
-        tx_pool.pool_map.remove_entries_by_filter(|id, tx_entry| {
-            if snapshot.proposals().contains_proposed(id) {
-                entries.push(tx_entry.clone());
-                true
-            } else {
-                false
-            }
-        });
+        tx_pool
+            .pool_map
+            .remove_entries_by_filter(|id, tx_entry, status| {
+                if snapshot.proposals().contains_proposed(id) && status == &Status::Gap {
+                    entries.push(tx_entry.clone());
+                    true
+                } else {
+                    false
+                }
+            });
 
-        tx_pool.pool_map.remove_entries_by_filter(|id, tx_entry| {
-            if snapshot.proposals().contains_proposed(id) {
-                entries.push(tx_entry.clone());
-                true
-            } else if snapshot.proposals().contains_gap(id) {
-                gaps.push(tx_entry.clone());
-                true
-            } else {
-                false
-            }
-        });
+        tx_pool
+            .pool_map
+            .remove_entries_by_filter(|id, tx_entry, status| {
+                if snapshot.proposals().contains_proposed(id) && status == &Status::Pending {
+                    entries.push(tx_entry.clone());
+                    true
+                } else if snapshot.proposals().contains_gap(id) {
+                    gaps.push(tx_entry.clone());
+                    true
+                } else {
+                    false
+                }
+            });
 
         for entry in entries {
             debug!("tx move to proposed {}", entry.transaction().hash());
             let cached = CacheEntry::completed(entry.cycles, entry.fee);
-            let tx_hash = entry.transaction().hash();
             if let Err(e) =
                 tx_pool.proposed_rtx(cached, entry.size, entry.timestamp, Arc::clone(&entry.rtx))
             {
-                debug!("Failed to add proposed tx {}, reason: {}", tx_hash, e);
                 callbacks.call_reject(tx_pool, &entry, e.clone());
             } else {
                 callbacks.call_proposed(tx_pool, &entry, false);

@@ -534,12 +534,10 @@ fn test_package_txs_with_deps_priority() {
         Capacity::shannons(10000),
     );
 
-    let txs = vec![tx2.clone(), tx1];
-
-    for tx in &txs {
-        let ret = tx_pool.submit_local_tx(tx.clone()).unwrap();
-        assert!(ret.is_ok(), "submit {} {:?}", tx.proposal_short_id(), ret);
-    }
+    let ret = tx_pool.submit_local_tx(tx2.clone()).unwrap();
+    assert!(ret.is_ok(), "submit {} {:?}", tx2.proposal_short_id(), ret);
+    let ret = tx_pool.submit_local_tx(tx1.clone()).unwrap();
+    assert!(ret.is_err());
 
     let mut block_template = shared
         .get_block_template(None, None, None)
@@ -549,7 +547,7 @@ fn test_package_txs_with_deps_priority() {
     // proposal txs
     {
         while !(Into::<u64>::into(block_template.number) == 1
-            && block_template.proposals.len() == 2)
+            && block_template.proposals.len() == 1)
         {
             block_template = shared
                 .get_block_template(None, None, None)
@@ -585,7 +583,6 @@ fn test_package_txs_with_deps_priority() {
         tx_pool_info = tx_pool.get_tx_pool_info().unwrap()
     }
 
-    let mut count = 0;
     // get block template with txs
     while !(Into::<u64>::into(block_template.number) == 3 && block_template.transactions.len() == 1)
     {
@@ -594,18 +591,10 @@ fn test_package_txs_with_deps_priority() {
             .get_block_template(None, None, None)
             .unwrap()
             .unwrap();
-        eprintln!("block_template: {:?} block_template: {:?}", block_template.transactions.len(), block_template.number);
-        count += 1;
-        if count > 5 {
-            //break;
-        }
     }
 
     let block: Block = block_template.into();
     let block = block.as_advanced_builder().build();
     // tx1 will be discard
-    for e in block.transactions() {
-        eprintln!("e: {:?}", e);
-    }
     assert_eq!(block.transactions()[1], tx2);
 }

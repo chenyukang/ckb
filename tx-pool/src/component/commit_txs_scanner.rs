@@ -179,7 +179,7 @@ impl<'a> CommitTxsScanner<'a> {
     fn retrieve_entry(&self, short_id: &ProposalShortId) -> Option<&TxEntry> {
         self.modified_entries
             .get(short_id)
-            .or_else(|| self.pool_map.get(short_id))
+            .or_else(|| self.pool_map.get_proposed(short_id))
     }
 
     // Skip entries in `proposed` that are already in a block or are present

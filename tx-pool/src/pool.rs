@@ -302,7 +302,7 @@ impl TxPool {
         tx: TransactionView,
     ) -> Result<Arc<ResolvedTransaction>, Reject> {
         let snapshot = self.snapshot();
-        let provider = OverlayCellProvider::new(&self.pool_map.entries, snapshot);
+        let provider = OverlayCellProvider::new(&self.pool_map, snapshot);
         let mut seen_inputs = HashSet::new();
         resolve_transaction(tx, &mut seen_inputs, &provider, snapshot)
             .map(Arc::new)
@@ -314,7 +314,7 @@ impl TxPool {
         rtx: &ResolvedTransaction,
     ) -> Result<(), Reject> {
         let snapshot = self.snapshot();
-        let checker = OverlayCellChecker::new(&self.pool_map.entries, snapshot);
+        let checker = OverlayCellChecker::new(&self.pool_map, snapshot);
         let mut seen_inputs = HashSet::new();
         rtx.check(&mut seen_inputs, &checker, snapshot)
             .map_err(Reject::Resolve)
@@ -325,7 +325,7 @@ impl TxPool {
         tx: TransactionView,
     ) -> Result<Arc<ResolvedTransaction>, Reject> {
         let snapshot = self.snapshot();
-        let cell_provider = OverlayCellProvider::new(&self.pool_map.entries, snapshot);
+        let cell_provider = OverlayCellProvider::new(&self.pool_map, snapshot);
         let mut seen_inputs = HashSet::new();
         resolve_transaction(tx, &mut seen_inputs, &cell_provider, snapshot)
             .map(Arc::new)
@@ -334,7 +334,7 @@ impl TxPool {
 
     pub(crate) fn check_rtx_from_proposed(&self, rtx: &ResolvedTransaction) -> Result<(), Reject> {
         let snapshot = self.snapshot();
-        let cell_checker = OverlayCellChecker::new(&self.pool_map.entries, snapshot);
+        let cell_checker = OverlayCellChecker::new(&self.pool_map, snapshot);
         let mut seen_inputs = HashSet::new();
         rtx.check(&mut seen_inputs, &cell_checker, snapshot)
             .map_err(Reject::Resolve)

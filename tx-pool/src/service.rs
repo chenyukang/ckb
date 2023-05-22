@@ -684,7 +684,6 @@ async fn process(mut service: TxPoolService, message: Message) {
             arguments: tx,
         }) => {
             let result = service.resumeble_process_tx(tx, None).await;
-            eprintln!("result: {:?}", result);
             if let Err(e) = responder.send(result) {
                 error!("responder send submit_tx result failed {:?}", e);
             };

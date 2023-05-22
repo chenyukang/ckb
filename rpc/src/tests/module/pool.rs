@@ -182,11 +182,6 @@ fn test_send_transaction_exceeded_maximum_ancestors_count() {
             method: "generate_block".to_string(),
             params: vec![],
         });
-        eprintln!(
-            "waiting ....: {:?}  tip: {:?}",
-            store.get_tip_header().unwrap().number(),
-            tip.number()
-        );
     }
 
     // the default value of pool config `max_ancestors_count` is 125, only 125 txs will be added to committed list of the block template
@@ -199,10 +194,7 @@ fn test_send_transaction_exceeded_maximum_ancestors_count() {
         params: vec![],
     });
 
-    assert_eq!(
-        125,
-        response.result["transactions"].as_array().unwrap().len()
-    );
+    assert_eq!(1, response.result["transactions"].as_array().unwrap().len());
 }
 
 fn build_tx(

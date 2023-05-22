@@ -62,6 +62,10 @@ impl Edges {
         self.deps.get(out_point)
     }
 
+    pub(crate) fn get_output_ref(&self, out_point: &OutPoint) -> Option<&Option<ProposalShortId>> {
+        self.outputs.get(out_point)
+    }
+
     pub(crate) fn get_mut_output(
         &mut self,
         out_point: &OutPoint,

@@ -180,7 +180,9 @@ fn test_remove_entries_by_filter() {
     assert!(pool.add_entry(entry2, Status::Pending).unwrap());
     assert!(pool.add_entry(entry3, Status::Pending).unwrap());
 
-    pool.remove_entries_by_filter(|id, _tx_entry| id == &tx1.proposal_short_id());
+    pool.remove_entries_by_filter(|id, _tx_entry, status| {
+        id == &tx1.proposal_short_id() && status == &Status::Pending
+    });
 
     assert!(!pool.contains_key(&tx1.proposal_short_id()));
     assert!(pool.contains_key(&tx2.proposal_short_id()));

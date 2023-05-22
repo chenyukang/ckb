@@ -361,7 +361,7 @@ impl BlockAssembler {
             current.size.proposals = new_proposals_size;
             current.size.total = new_total_size;
 
-            eprintln!(
+            trace!(
                 "[BlockAssembler] update_proposals-{} epoch-{} uncles-{} proposals-{} txs-{}",
                 current.template.number,
                 current.template.epoch.number(),
@@ -430,7 +430,7 @@ impl BlockAssembler {
             current.size.txs = new_txs_size;
             current.size.total = new_total_size;
 
-            eprintln!(
+            trace!(
                 "[BlockAssembler] update_transactions-{} epoch-{} uncles-{} proposals-{} txs-{}",
                 current.template.number,
                 current.template.epoch.number(),

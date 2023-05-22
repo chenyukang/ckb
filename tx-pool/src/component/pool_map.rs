@@ -13,12 +13,13 @@ use ckb_logger::trace;
 use ckb_types::core::error::OutPointError;
 use ckb_types::packed::OutPoint;
 use ckb_types::{
-    core::cell::{CellMetaBuilder, CellProvider, CellStatus},
-    prelude::*,
+    bytes::Bytes,
+    core::{cell::CellChecker, TransactionView},
+    packed::{Byte32, CellOutput, ProposalShortId},
 };
 use ckb_types::{
-    core::{cell::CellChecker, TransactionView},
-    packed::{Byte32, ProposalShortId},
+    core::cell::{CellMetaBuilder, CellProvider, CellStatus},
+    prelude::*,
 };
 use multi_index_map::MultiIndexMap;
 use std::borrow::Cow;
@@ -156,6 +157,15 @@ impl PoolMap {
     /// calculate all ancestors from pool
     pub fn calc_ancestors(&self, short_id: &ProposalShortId) -> HashSet<ProposalShortId> {
         self.links.calc_ancestors(short_id)
+    }
+
+    pub(crate) fn get_output_with_data(&self, out_point: &OutPoint) -> Option<(CellOutput, Bytes)> {
+        self.get(&ProposalShortId::from_tx_hash(&out_point.tx_hash()))
+            .and_then(|entry| {
+                entry
+                    .transaction()
+                    .output_with_data(out_point.index().unpack())
+            })
     }
 
     /// calculate all descendants from pool
@@ -320,13 +330,6 @@ impl PoolMap {
                 .expect("pool consistent");
             entry.add_entry_weight(&ancestor.inner);
         }
-
-        /*
-        eprintln!(
-            "entry.ancestors_count: {}  self.max_ancestors_count: {}",
-            entry.ancestors_count, self.max_ancestors_count
-        );
-        */
         if *status == Status::Proposed && entry.ancestors_count > self.max_ancestors_count {
             return Err(Reject::ExceededMaximumAncestorsCount);
         }
@@ -385,6 +388,11 @@ impl PoolMap {
     }
 
     pub fn add_entry(&mut self, mut entry: TxEntry, status: Status) -> Result<bool, Reject> {
+        trace!(
+            "add entry with status: {:?} status: {:?}",
+            entry.proposal_short_id(),
+            status
+        );
         let tx_short_id = entry.proposal_short_id();
         if self.entries.get_by_id(&tx_short_id).is_some() {
             return Ok(false);
@@ -543,13 +551,13 @@ impl PoolMap {
         }
     }
 
-    pub fn remove_entries_by_filter<P: FnMut(&ProposalShortId, &TxEntry) -> bool>(
+    pub fn remove_entries_by_filter<P: FnMut(&ProposalShortId, &TxEntry, &Status) -> bool>(
         &mut self,
         mut predicate: P,
     ) -> Vec<TxEntry> {
         let mut removed = Vec::new();
         for (_, entry) in self.entries.iter() {
-            if predicate(&entry.id, &entry.inner) {
+            if predicate(&entry.id, &entry.inner, &entry.status) {
                 removed.push(entry.inner.clone());
             }
         }
@@ -582,40 +590,40 @@ impl PoolMap {
     }
 }
 
-impl CellProvider for MultiIndexPoolEntryMap {
+impl CellProvider for PoolMap {
     fn cell(&self, out_point: &OutPoint, _eager_load: bool) -> CellStatus {
-        let tx_hash = out_point.tx_hash();
-        if let Some(entry) = self.get_by_id(&ProposalShortId::from_tx_hash(&tx_hash)) {
-            match entry
-                .inner
-                .transaction()
-                .output_with_data(out_point.index().unpack())
-            {
-                Some((output, data)) => {
-                    let cell_meta = CellMetaBuilder::from_cell_output(output, data)
-                        .out_point(out_point.to_owned())
-                        .build();
-                    CellStatus::live_cell(cell_meta)
-                }
-                None => CellStatus::Unknown,
-            }
-        } else {
-            CellStatus::Unknown
+        if self.edges.get_input_ref(out_point).is_some() {
+            return CellStatus::Dead;
         }
+        if let Some(x) = self.edges.get_output_ref(out_point) {
+            // output consumed
+            if x.is_some() {
+                return CellStatus::Dead;
+            } else {
+                let (output, data) = self.get_output_with_data(out_point).expect("output");
+                let cell_meta = CellMetaBuilder::from_cell_output(output, data)
+                    .out_point(out_point.to_owned())
+                    .build();
+                return CellStatus::live_cell(cell_meta);
+            }
+        }
+        CellStatus::Unknown
     }
 }
 
-impl CellChecker for MultiIndexPoolEntryMap {
+impl CellChecker for PoolMap {
     fn is_live(&self, out_point: &OutPoint) -> Option<bool> {
-        let tx_hash = out_point.tx_hash();
-        if let Some(entry) = self.get_by_id(&ProposalShortId::from_tx_hash(&tx_hash)) {
-            entry
-                .inner
-                .transaction()
-                .output(out_point.index().unpack())
-                .map(|_| true)
-        } else {
-            None
+        if self.edges.get_input_ref(out_point).is_some() {
+            return Some(false);
         }
+        if let Some(x) = self.edges.get_output_ref(out_point) {
+            // output consumed
+            if x.is_some() {
+                return Some(false);
+            } else {
+                return Some(true);
+            }
+        }
+        None
     }
 }
