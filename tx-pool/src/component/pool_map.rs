@@ -131,6 +131,18 @@ impl PoolMap {
         self.entries.get_by_id(id).map(|entry| &entry.inner)
     }
 
+    pub fn get_proposed(&self, id: &ProposalShortId) -> Option<&TxEntry> {
+        if let Some(entry) = self.entries.get_by_id(id) {
+            if entry.status == Status::Proposed {
+                Some(&entry.inner)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn get_tx(&self, id: &ProposalShortId) -> Option<&TransactionView> {
         self.entries
@@ -174,22 +186,21 @@ impl PoolMap {
         }
     }
 
-    fn update_descendants_index_key(&mut self, entry: &TxEntry, op: EntryOp) {
+    fn update_descendants_index_key(&mut self, parent: &TxEntry, op: EntryOp) {
         let descendants: HashSet<ProposalShortId> =
-            self.links.calc_descendants(&entry.proposal_short_id());
+            self.links.calc_descendants(&parent.proposal_short_id());
         for desc_id in &descendants {
-            if let Some(desc_entry) = self.entries.get_by_id(desc_id) {
-                let mut desc_entry = desc_entry.inner.clone();
-                match op {
-                    EntryOp::Remove => desc_entry.sub_entry_weight(entry),
-                    EntryOp::Add => desc_entry.add_entry_weight(entry),
-                }
-                self.entries
-                    .modify_by_id(&desc_entry.proposal_short_id(), |pool_entry| {
-                        pool_entry.score = desc_entry.as_score_key();
-                        pool_entry.inner = desc_entry;
-                    });
+            // update child score
+            let entry = self.entries.get_by_id(desc_id).unwrap().clone();
+            let mut child = entry.inner.clone();
+            match op {
+                EntryOp::Remove => child.sub_entry_weight(parent),
+                EntryOp::Add => child.add_entry_weight(parent),
             }
+            let short_id = child.proposal_short_id();
+            self.entries.remove_by_id(&short_id);
+            self.insert_entry(&child, entry.status)
+                .expect("pool consistent");
         }
     }
 
@@ -267,7 +278,7 @@ impl PoolMap {
     }
 
     /// Record the links for entry
-    fn record_entry_links(&mut self, entry: &mut TxEntry) -> Result<bool, Reject> {
+    fn record_entry_links(&mut self, entry: &mut TxEntry, status: &Status) -> Result<bool, Reject> {
         // find in pool parents
         let mut parents: HashSet<ProposalShortId> = HashSet::with_capacity(
             entry.transaction().inputs().len() + entry.transaction().cell_deps().len(),
@@ -307,7 +318,13 @@ impl PoolMap {
             entry.add_entry_weight(&ancestor.inner);
         }
 
-        if entry.ancestors_count > self.max_ancestors_count {
+        /*
+        eprintln!(
+            "entry.ancestors_count: {}  self.max_ancestors_count: {}",
+            entry.ancestors_count, self.max_ancestors_count
+        );
+        */
+        if *status == Status::Proposed && entry.ancestors_count > self.max_ancestors_count {
             return Err(Reject::ExceededMaximumAncestorsCount);
         }
 
@@ -370,8 +387,14 @@ impl PoolMap {
             return Ok(false);
         }
         trace!("add_{:?} {}", status, entry.transaction().hash());
-        self.record_entry_links(&mut entry)?;
+        self.record_entry_links(&mut entry, &status)?;
+        self.insert_entry(&entry, status)?;
+        self.record_entry_edges(&entry);
+        Ok(true)
+    }
 
+    fn insert_entry(&mut self, entry: &TxEntry, status: Status) -> Result<bool, Reject> {
+        let tx_short_id = entry.proposal_short_id();
         let score = entry.as_score_key();
         let evict_key = entry.as_evict_key();
         self.entries.insert(PoolEntry {
@@ -381,7 +404,6 @@ impl PoolMap {
             inner: entry.clone(),
             evict_key,
         });
-        self.record_entry_edges(&entry);
         Ok(true)
     }
 

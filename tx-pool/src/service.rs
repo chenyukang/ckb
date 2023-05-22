@@ -684,6 +684,7 @@ async fn process(mut service: TxPoolService, message: Message) {
             arguments: tx,
         }) => {
             let result = service.resumeble_process_tx(tx, None).await;
+            eprintln!("result: {:?}", result);
             if let Err(e) = responder.send(result) {
                 error!("responder send submit_tx result failed {:?}", e);
             };
@@ -736,7 +737,7 @@ async fn process(mut service: TxPoolService, message: Message) {
         }) => {
             let id = ProposalShortId::from_tx_hash(&hash);
             let tx_pool = service.tx_pool.read().await;
-            let ret = if let Some(entry) = tx_pool.pool_map.get(&id) {
+            let ret = if let Some(entry) = tx_pool.pool_map.get_proposed(&id) {
                 Ok((TxStatus::Proposed, Some(entry.cycles)))
             } else if let Some(entry) = tx_pool.get_entry_from_pending_or_gap(&id) {
                 Ok((TxStatus::Pending, Some(entry.cycles)))
@@ -765,7 +766,7 @@ async fn process(mut service: TxPoolService, message: Message) {
         }) => {
             let id = ProposalShortId::from_tx_hash(&hash);
             let tx_pool = service.tx_pool.read().await;
-            let ret = if let Some(entry) = tx_pool.pool_map.get(&id) {
+            let ret = if let Some(entry) = tx_pool.pool_map.get_proposed(&id) {
                 Ok(TransactionWithStatus::with_proposed(
                     Some(entry.transaction().clone()),
                     entry.cycles,

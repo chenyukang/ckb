@@ -76,6 +76,10 @@ impl TxPool {
         (self.total_tx_size + tx_size) > self.config.max_tx_pool_size
     }
 
+    pub fn status_size(&self, status: &Status) -> usize {
+        self.pool_map.entries.get_by_status(&status).len()
+    }
+
     /// Update size and cycles statics for add tx
     pub fn update_statics_for_add_tx(&mut self, tx_size: usize, cycles: Cycle) {
         self.total_tx_size += tx_size;
