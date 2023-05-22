@@ -297,18 +297,6 @@ impl TxPool {
         false
     }
 
-    pub(crate) fn resolve_tx_from_pending_and_proposed(
-        &self,
-        tx: TransactionView,
-    ) -> Result<Arc<ResolvedTransaction>, Reject> {
-        let snapshot = self.snapshot();
-        let provider = OverlayCellProvider::new(&self.pool_map, snapshot);
-        let mut seen_inputs = HashSet::new();
-        resolve_transaction(tx, &mut seen_inputs, &provider, snapshot)
-            .map(Arc::new)
-            .map_err(Reject::Resolve)
-    }
-
     pub(crate) fn check_rtx_from_pending_and_proposed(
         &self,
         rtx: &ResolvedTransaction,
@@ -320,14 +308,14 @@ impl TxPool {
             .map_err(Reject::Resolve)
     }
 
-    pub(crate) fn resolve_tx_from_proposed(
+    pub(crate) fn resolve_tx_from_pool(
         &self,
         tx: TransactionView,
     ) -> Result<Arc<ResolvedTransaction>, Reject> {
         let snapshot = self.snapshot();
-        let cell_provider = OverlayCellProvider::new(&self.pool_map, snapshot);
+        let provider = OverlayCellProvider::new(&self.pool_map, snapshot);
         let mut seen_inputs = HashSet::new();
-        resolve_transaction(tx, &mut seen_inputs, &cell_provider, snapshot)
+        resolve_transaction(tx, &mut seen_inputs, &provider, snapshot)
             .map(Arc::new)
             .map_err(Reject::Resolve)
     }
