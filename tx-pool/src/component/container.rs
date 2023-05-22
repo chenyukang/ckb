@@ -1,7 +1,6 @@
 //! The primary module containing the implementations of the transaction pool
 //! and its top-level members.
 use ckb_types::{core::Capacity, packed::ProposalShortId};
-use multi_index_map::MultiIndexMap;
 use std::cmp::Ordering;
 
 /// A struct to use as a sorted key
@@ -54,16 +53,4 @@ impl Ord for AncestorsScoreSortKey {
             self_weight.cmp(&other_weight)
         }
     }
-}
-
-/// MultiIndexMap is used for multiple sort strategies,
-/// to add any new sort strategy, you need to follow `AncestorsScoreSortKey`
-/// and add logic to update the sort column in `insert_index_key` and `update_*_index_key`
-#[derive(MultiIndexMap, Clone)]
-pub struct IndexKey {
-    #[multi_index(hashed_unique)]
-    pub id: ProposalShortId,
-    #[multi_index(ordered_non_unique)]
-    pub score: AncestorsScoreSortKey,
-    // other sort key
 }
