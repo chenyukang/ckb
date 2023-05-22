@@ -1,10 +1,10 @@
 //! Top-level Pool type, methods, and tests
 extern crate rustc_hash;
 extern crate slab;
-use crate::component::score_key::AncestorsScoreSortKey;
 use crate::component::edges::Edges;
 use crate::component::entry::EvictKey;
 use crate::component::links::{Relation, TxLinksMap};
+use crate::component::score_key::AncestorsScoreSortKey;
 use crate::error::Reject;
 use crate::TxEntry;
 use ckb_logger::trace;
@@ -135,6 +135,10 @@ impl PoolMap {
         self.remove_entry(&tx.proposal_short_id())
     }
 
+    pub fn get_by_id(&self, id: &ProposalShortId) -> Option<&PoolEntry> {
+        self.entries.get_by_id(id)
+    }
+
     pub fn pending_size(&self) -> usize {
         self.entries.get_by_status(&Status::Pending).len()
             + self.entries.get_by_status(&Status::Gap).len()
@@ -169,6 +173,11 @@ impl PoolMap {
         self.links.calc_ancestors(short_id)
     }
 
+    /// calculate all descendants from pool
+    pub fn calc_descendants(&self, short_id: &ProposalShortId) -> HashSet<ProposalShortId> {
+        self.links.calc_descendants(short_id)
+    }
+
     pub(crate) fn get_output_with_data(&self, out_point: &OutPoint) -> Option<(CellOutput, Bytes)> {
         self.get(&ProposalShortId::from_tx_hash(&out_point.tx_hash()))
             .and_then(|entry| {
@@ -178,23 +187,8 @@ impl PoolMap {
             })
     }
 
-    /// calculate all descendants from pool
-    pub fn calc_descendants(&self, short_id: &ProposalShortId) -> HashSet<ProposalShortId> {
-        self.links.calc_descendants(short_id)
-    }
-
-    /// find children from pool
-    pub fn get_children(&self, short_id: &ProposalShortId) -> Option<&HashSet<ProposalShortId>> {
-        self.links.get_children(short_id)
-    }
-
-    /// find parents from pool
-    pub fn get_parents(&self, short_id: &ProposalShortId) -> Option<&HashSet<ProposalShortId>> {
-        self.links.get_parents(short_id)
-    }
-
     fn update_parents_for_remove(&mut self, id: &ProposalShortId) {
-        if let Some(parents) = self.get_parents(id).cloned() {
+        if let Some(parents) = self.links.get_parents(id).cloned() {
             for parent in parents {
                 self.links.remove_child(&parent, id);
             }
@@ -202,7 +196,7 @@ impl PoolMap {
     }
 
     fn update_children_for_remove(&mut self, id: &ProposalShortId) {
-        if let Some(children) = self.get_children(id).cloned() {
+        if let Some(children) = self.links.get_children(id).cloned() {
             for child in children {
                 self.links.remove_parent(&child, id);
             }
@@ -227,7 +221,7 @@ impl PoolMap {
         }
     }
 
-    fn record_entry_edges(&mut self, entry: &TxEntry) {
+    fn record_entry_relations(&mut self, entry: &TxEntry) {
         let tx_short_id = entry.proposal_short_id();
         let inputs = entry.transaction().input_pts_iter();
         let outputs = entry.transaction().output_pts();
@@ -294,10 +288,6 @@ impl PoolMap {
 
             self.update_descendants_index_key(&entry.inner, EntryOp::Add);
         }
-    }
-
-    pub fn get_by_id(&self, id: &ProposalShortId) -> Option<&PoolEntry> {
-        self.entries.get_by_id(id)
     }
 
     /// Record the links for entry
@@ -392,7 +382,7 @@ impl PoolMap {
         self.edges.header_deps.remove(&id);
     }
 
-    pub fn add_entry(&mut self, mut entry: TxEntry, status: Status) -> Result<bool, Reject> {
+    pub(crate) fn add_entry(&mut self, mut entry: TxEntry, status: Status) -> Result<bool, Reject> {
         trace!(
             "add entry with status: {:?} status: {:?}",
             entry.proposal_short_id(),
@@ -405,7 +395,7 @@ impl PoolMap {
         trace!("add_{:?} {}", status, entry.transaction().hash());
         self.record_entry_links(&mut entry, &status)?;
         self.insert_entry(&entry, status)?;
-        self.record_entry_edges(&entry);
+        self.record_entry_relations(&entry);
         Ok(true)
     }
 
