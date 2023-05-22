@@ -5,8 +5,12 @@ use jsonrpc_core::{Metadata, Result};
 use jsonrpc_derive::rpc;
 use jsonrpc_pubsub::{
     typed::{Sink, Subscriber},
-    PubSubMetadata, Session, SubscriptionId,
+    PubSubMetadata, SubscriptionId,
 };
+
+use jsonrpc_core::MetaIoHandler;
+use jsonrpc_utils::{axum_utils::handle_jsonrpc, pub_sub::Session};
+
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -18,7 +22,7 @@ use tokio::runtime::Handle;
 
 const SUBSCRIBER_NAME: &str = "TcpSubscription";
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct SubscriptionSession {
     pub(crate) subscription_ids: Arc<RwLock<HashSet<SubscriptionId>>>,
     pub(crate) session: Arc<Session>,
@@ -35,11 +39,6 @@ impl SubscriptionSession {
 
 impl Metadata for SubscriptionSession {}
 
-impl PubSubMetadata for SubscriptionSession {
-    fn session(&self) -> Option<Arc<Session>> {
-        Some(Arc::clone(&self.session))
-    }
-}
 
 /// RPC Module Subscription that CKB node will push new messages to subscribers.
 ///

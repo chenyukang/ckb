@@ -39,6 +39,9 @@ use ckb_types::prelude::*;
 use ckb_verification::GenesisVerifier;
 use ckb_verification_traits::Verifier;
 use std::sync::Arc;
+use jsonrpc_utils::{
+    axum_utils::jsonrpc_router, pub_sub::PublishMsg, rpc, stream::StreamServerConfig,
+};
 
 pub use crate::shared_builder::{SharedBuilder, SharedPackage};
 
@@ -263,7 +266,7 @@ impl Launcher {
     }
 
     /// Start network service and rpc serve
-    pub fn start_network_and_rpc(
+    pub async fn start_network_and_rpc(
         &self,
         shared: &Shared,
         chain_controller: ChainController,

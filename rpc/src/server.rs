@@ -6,8 +6,18 @@ use ckb_notify::NotifyController;
 use jsonrpc_pubsub::Session;
 use jsonrpc_server_utils::cors::AccessControlAllowOrigin;
 use jsonrpc_server_utils::hosts::DomainsValidation;
+use jsonrpc_utils::axum_utils::jsonrpc_router;
+use jsonrpc_utils::stream::StreamServerConfig;
 use std::net::{SocketAddr, ToSocketAddrs};
+use std::sync::{Arc, Mutex};
 use tokio::runtime::Handle;
+use axum::{
+    extract::State,
+    http::{header, HeaderMap, StatusCode},
+    response::IntoResponse,
+    routing::{get, post},
+    Extension, Router,
+};
 
 #[doc(hidden)]
 pub struct RpcServer {
@@ -16,6 +26,7 @@ pub struct RpcServer {
     pub(crate) _ws: Option<jsonrpc_ws_server::Server>,
 }
 
+#[tokio::main]
 impl RpcServer {
     /// Creates an RPC server.
     ///
@@ -59,6 +70,14 @@ impl RpcServer {
                 if config.subscription_enable() {
                     handler.extend_with(subscription_rpc_impl.to_delegate());
                 }
+                let stream_config = StreamServerConfig::default().with_keep_alive(true);
+                let handler = Arc::new(handler);
+                let app = jsonrpc_router("/", handler, stream_config);
+                axum::Server::bind(&"127.0.0.1:8115".parse().unwrap())
+                    .serve(app.into_make_service())
+                    .await
+                    .unwrap();
+
                 let tcp_server = jsonrpc_tcp_server::ServerBuilder::with_meta_extractor(
                     handler,
                     |context: &jsonrpc_tcp_server::RequestContext| {

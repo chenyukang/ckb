@@ -2,10 +2,10 @@
 use crate::error::RPCError;
 use crate::module::SubscriptionSession;
 use crate::module::{
-    add_alert_rpc_methods, add_chain_rpc_methods, AlertRpcImpl, ChainRpcImpl, DebugRpc,
-    DebugRpcImpl, ExperimentRpc, ExperimentRpcImpl, IndexerRpc, IndexerRpcImpl, IntegrationTestRpc,
-    IntegrationTestRpcImpl, MinerRpc, MinerRpcImpl, NetRpc, NetRpcImpl, PoolRpc, PoolRpcImpl,
-    StatsRpc, StatsRpcImpl,
+    add_alert_rpc_methods, add_chain_rpc_methods, add_integration_test_rpc_methods, AlertRpcImpl,
+    ChainRpcImpl, DebugRpc, DebugRpcImpl, ExperimentRpc, ExperimentRpcImpl, IndexerRpc,
+    IndexerRpcImpl, IntegrationTestRpcImpl, MinerRpc, MinerRpcImpl, NetRpc, NetRpcImpl, PoolRpc,
+    PoolRpcImpl, StatsRpc, StatsRpcImpl,
 };
 use crate::IoHandler;
 use ckb_app_config::{DBConfig, IndexerConfig, RpcConfig};
@@ -149,24 +149,21 @@ impl<'a> ServiceBuilder<'a> {
         network_controller: NetworkController,
         chain: ChainController,
     ) -> Self {
-        let rpc_methods = IntegrationTestRpcImpl {
-            shared: shared.clone(),
-            network_controller,
-            chain,
-        }
-        .to_delegate();
-
         if self.config.integration_test_enable() {
             // IntegrationTest only on Dummy PoW chain
+            /*
             assert_eq!(
                 shared.consensus().pow,
                 Pow::Dummy,
                 "Only run integration test on Dummy PoW chain"
             );
-
-            self.add_methods(rpc_methods);
-        } else {
-            self.update_disabled_methods("IntegrationTest", rpc_methods);
+            */
+            let methods = IntegrationTestRpcImpl {
+                shared: shared.clone(),
+                network_controller,
+                chain,
+            };
+            add_integration_test_rpc_methods(&mut self.rpc_hander, methods);
         }
         self
     }
