@@ -60,7 +60,10 @@ impl MultiIndexPoolEntryMap {
     pub fn score_sorted_iter(&self) -> impl Iterator<Item = &TxEntry> {
         // Note: multi_index don't support reverse order iteration now
         // so we need to collect and reverse
-        let entries = self.iter_by_score().collect::<Vec<_>>();
+        let entries = self
+            .iter_by_score()
+            .filter(|entry| entry.status == Status::Proposed)
+            .collect::<Vec<_>>();
         entries.into_iter().rev().map(move |entry| &entry.inner)
     }
 }

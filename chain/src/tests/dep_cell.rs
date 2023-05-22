@@ -597,7 +597,7 @@ fn test_package_txs_with_deps_priority() {
         eprintln!("block_template: {:?} block_template: {:?}", block_template.transactions.len(), block_template.number);
         count += 1;
         if count > 5 {
-            break;
+            //break;
         }
     }
 
@@ -607,5 +607,5 @@ fn test_package_txs_with_deps_priority() {
     for e in block.transactions() {
         eprintln!("e: {:?}", e);
     }
-    assert_eq!(block.transactions()[2], tx2);
+    assert_eq!(block.transactions()[1], tx2);
 }
