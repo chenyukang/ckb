@@ -50,6 +50,7 @@ impl<'a> ServiceBuilder<'a> {
         self
     }
 
+     /*
     /// Mounts methods from module Pool if it is enabled in the config.
     pub fn enable_pool(
         mut self,
@@ -248,6 +249,7 @@ impl<'a> ServiceBuilder<'a> {
                 }
             }));
     }
+    */
 
     /// Builds the RPC methods handler used in the RPC server.
     pub fn build(self) -> IoHandler {

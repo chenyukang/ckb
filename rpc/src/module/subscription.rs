@@ -5,10 +5,9 @@ use jsonrpc_core::{Metadata, Result};
 use jsonrpc_derive::rpc;
 use jsonrpc_pubsub::{
     typed::{Sink, Subscriber},
-    PubSubMetadata, SubscriptionId,
+    SubscriptionId,
 };
 
-use jsonrpc_core::MetaIoHandler;
 use jsonrpc_utils::{axum_utils::handle_jsonrpc, pub_sub::Session};
 
 use std::collections::HashMap;

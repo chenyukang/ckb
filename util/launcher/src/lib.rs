@@ -272,7 +272,7 @@ impl Launcher {
         chain_controller: ChainController,
         miner_enable: bool,
         relay_tx_receiver: Receiver<TxVerificationResult>,
-    ) -> (NetworkController, RpcServer) {
+    ) -> NetworkController {
         let sync_shared = Arc::new(SyncShared::with_tmpdir(
             shared.clone(),
             self.args.config.network.sync.clone(),
@@ -422,13 +422,13 @@ impl Launcher {
             .enable_debug();
         let io_handler = builder.build();
 
-        let rpc_server = RpcServer::new(
+        RpcServer::start_jsonrpc_server(
             rpc_config.clone(),
             io_handler,
             shared.notify_controller(),
             self.async_handle.clone().into_inner(),
-        );
+        ).expect("Start rpc server failed");
 
-        (network_controller, rpc_server)
+        network_controller
     }
 }
