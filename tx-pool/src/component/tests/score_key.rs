@@ -6,7 +6,7 @@ use ckb_types::{
 };
 use std::mem::size_of;
 
-use crate::component::{score_key::AncestorsScoreSortKey, entry::TxEntry, pool_map::PoolMap};
+use crate::component::{entry::TxEntry, pool_map::PoolMap, score_key::AncestorsScoreSortKey};
 
 const DEFAULT_MAX_ANCESTORS_COUNT: usize = 125;
 

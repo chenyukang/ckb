@@ -3,12 +3,12 @@ extern crate rustc_hash;
 extern crate slab;
 use super::component::{commit_txs_scanner::CommitTxsScanner, TxEntry};
 use crate::callback::Callbacks;
-use crate::component::pool_map::{PoolMap, Status};
+use crate::component::pool_map::{PoolEntry, PoolMap, Status};
 use crate::component::recent_reject::RecentReject;
 use crate::error::Reject;
 use crate::util::verify_rtx;
 use ckb_app_config::TxPoolConfig;
-use ckb_logger::{debug, error, trace, warn};
+use ckb_logger::{debug, error, warn};
 use ckb_snapshot::Snapshot;
 use ckb_store::ChainStore;
 use ckb_types::{
@@ -62,22 +62,21 @@ impl TxPool {
     }
 
     /// Tx-pool owned snapshot, it may not consistent with chain cause tx-pool update snapshot asynchronously
-    pub fn snapshot(&self) -> &Snapshot {
+    pub(crate) fn snapshot(&self) -> &Snapshot {
         &self.snapshot
     }
 
     /// Makes a clone of the `Arc<Snapshot>`
-    pub fn cloned_snapshot(&self) -> Arc<Snapshot> {
+    pub(crate) fn cloned_snapshot(&self) -> Arc<Snapshot> {
         Arc::clone(&self.snapshot)
     }
 
-    /// Whether Tx-pool reach size limit
-    pub fn reach_size_limit(&self, tx_size: usize) -> bool {
-        (self.total_tx_size + tx_size) > self.config.max_tx_pool_size
+    fn get_by_status(&self, status: &Status) -> Vec<&PoolEntry> {
+        self.pool_map.entries.get_by_status(status)
     }
 
     pub fn status_size(&self, status: &Status) -> usize {
-        self.pool_map.entries.get_by_status(&status).len()
+        self.get_by_status(&status).len()
     }
 
     /// Update size and cycles statics for add tx
@@ -109,38 +108,30 @@ impl TxPool {
 
     /// Add tx with pending status
     /// If did have this value present, false is returned.
-    pub fn add_pending(&mut self, entry: TxEntry) -> Result<bool, Reject> {
+    pub(crate) fn add_pending(&mut self, entry: TxEntry) -> Result<bool, Reject> {
         self.pool_map.add_entry(entry, Status::Pending)
     }
 
     /// Add tx which proposed but still uncommittable to gap
-    pub fn add_gap(&mut self, entry: TxEntry) -> Result<bool, Reject> {
+    pub(crate) fn add_gap(&mut self, entry: TxEntry) -> Result<bool, Reject> {
         self.pool_map.add_entry(entry, Status::Gap)
     }
 
     /// Add tx with proposed status
-    pub fn add_proposed(&mut self, entry: TxEntry) -> Result<bool, Reject> {
-        trace!("add_proposed {}", entry.transaction().hash());
+    pub(crate) fn add_proposed(&mut self, entry: TxEntry) -> Result<bool, Reject> {
         self.pool_map.add_entry(entry, Status::Proposed)
     }
 
     /// Returns true if the tx-pool contains a tx with specified id.
-    pub fn contains_proposal_id(&self, id: &ProposalShortId) -> bool {
+    pub(crate) fn contains_proposal_id(&self, id: &ProposalShortId) -> bool {
         self.pool_map.get_by_id(id).is_some()
     }
 
     /// Returns tx with cycles corresponding to the id.
-    pub fn get_tx_with_cycles(&self, id: &ProposalShortId) -> Option<(TransactionView, Cycle)> {
+    pub(crate) fn get_tx_with_cycles(&self, id: &ProposalShortId) -> Option<(TransactionView, Cycle)> {
         self.pool_map
             .get_by_id(id)
             .map(|entry| (entry.inner.transaction().clone(), entry.inner.cycles))
-    }
-
-    /// Returns tx corresponding to the id.
-    pub fn get_tx(&self, id: &ProposalShortId) -> Option<&TransactionView> {
-        self.pool_map
-            .get_by_id(id)
-            .map(|entry| entry.inner.transaction())
     }
 
     pub(crate) fn get_tx_from_pool(&self, id: &ProposalShortId) -> Option<&TransactionView> {
@@ -363,7 +354,7 @@ impl TxPool {
     /// Get to-be-proposal transactions that may be included in the next block.
     /// TODO: do we need to consider the something like score, so that we can
     ///      provide best transactions to be proposed.
-    pub fn get_proposals(
+    pub(crate) fn get_proposals(
         &self,
         limit: usize,
         exclusion: &HashSet<ProposalShortId>,
@@ -377,7 +368,7 @@ impl TxPool {
     }
 
     /// Returns tx from tx-pool or storage corresponding to the id.
-    pub fn get_tx_from_pool_or_store(
+    pub(crate) fn get_tx_from_pool_or_store(
         &self,
         proposal_id: &ProposalShortId,
     ) -> Option<TransactionView> {
@@ -390,18 +381,14 @@ impl TxPool {
 
     pub(crate) fn get_ids(&self) -> TxPoolIds {
         let pending: Vec<Byte32> = self
-            .pool_map
-            .entries
             .get_by_status(&Status::Pending)
             .iter()
-            .chain(self.pool_map.entries.get_by_status(&Status::Gap).iter())
+            .chain(self.get_by_status(&Status::Gap).iter())
             .map(|entry| entry.inner.transaction().hash())
             .collect();
 
         let proposed: Vec<Byte32> = self
-            .pool_map
-            .entries
-            .get_by_status(&&Status::Proposed)
+            .get_by_status(&Status::Proposed)
             .iter()
             .map(|entry| entry.inner.transaction().hash())
             .collect();
@@ -411,17 +398,13 @@ impl TxPool {
 
     pub(crate) fn get_all_entry_info(&self) -> TxPoolEntryInfo {
         let pending = self
-            .pool_map
-            .entries
             .get_by_status(&Status::Pending)
             .iter()
-            .chain(self.pool_map.entries.get_by_status(&Status::Gap).iter())
+            .chain(self.get_by_status(&Status::Gap).iter())
             .map(|entry| (entry.inner.transaction().hash(), entry.inner.to_info()))
             .collect();
 
         let proposed = self
-            .pool_map
-            .entries
             .get_by_status(&Status::Proposed)
             .iter()
             .map(|entry| (entry.inner.transaction().hash(), entry.inner.to_info()))

@@ -109,12 +109,12 @@ impl PoolMap {
     }
 
     #[cfg(test)]
-    pub fn size(&self) -> usize {
+    pub(crate) fn size(&self) -> usize {
         self.entries.len()
     }
 
     #[cfg(test)]
-    pub fn contains_key(&self, id: &ProposalShortId) -> bool {
+    pub(crate) fn contains_key(&self, id: &ProposalShortId) -> bool {
         self.entries.get_by_id(id).is_some()
     }
 
@@ -126,37 +126,37 @@ impl PoolMap {
     }
 
     #[cfg(test)]
-    pub fn add_proposed(&mut self, entry: TxEntry) -> Result<bool, Reject> {
+    pub(crate) fn add_proposed(&mut self, entry: TxEntry) -> Result<bool, Reject> {
         self.add_entry(entry, Status::Proposed)
     }
 
     #[cfg(test)]
-    pub fn remove_committed_tx(&mut self, tx: &TransactionView) -> Option<TxEntry> {
+    pub(crate) fn remove_committed_tx(&mut self, tx: &TransactionView) -> Option<TxEntry> {
         self.remove_entry(&tx.proposal_short_id())
     }
 
-    pub fn get_by_id(&self, id: &ProposalShortId) -> Option<&PoolEntry> {
+    pub(crate) fn get_by_id(&self, id: &ProposalShortId) -> Option<&PoolEntry> {
         self.entries.get_by_id(id)
     }
 
-    pub fn pending_size(&self) -> usize {
+    pub(crate) fn pending_size(&self) -> usize {
         self.entries.get_by_status(&Status::Pending).len()
             + self.entries.get_by_status(&Status::Gap).len()
     }
 
-    pub fn proposed_size(&self) -> usize {
+    pub(crate) fn proposed_size(&self) -> usize {
         self.entries.get_by_status(&Status::Proposed).len()
     }
 
-    pub fn score_sorted_iter(&self) -> impl Iterator<Item = &TxEntry> {
+    pub(crate) fn score_sorted_iter(&self) -> impl Iterator<Item = &TxEntry> {
         self.entries.score_sorted_iter()
     }
 
-    pub fn get(&self, id: &ProposalShortId) -> Option<&TxEntry> {
+    pub(crate) fn get(&self, id: &ProposalShortId) -> Option<&TxEntry> {
         self.get_by_id(id).map(|entry| &entry.inner)
     }
 
-    pub fn get_proposed(&self, id: &ProposalShortId) -> Option<&TxEntry> {
+    pub(crate) fn get_proposed(&self, id: &ProposalShortId) -> Option<&TxEntry> {
         if let Some(entry) = self.get_by_id(id) {
             if entry.status == Status::Proposed {
                 Some(&entry.inner)
@@ -169,12 +169,12 @@ impl PoolMap {
     }
 
     /// calculate all ancestors from pool
-    pub fn calc_ancestors(&self, short_id: &ProposalShortId) -> HashSet<ProposalShortId> {
+    pub(crate) fn calc_ancestors(&self, short_id: &ProposalShortId) -> HashSet<ProposalShortId> {
         self.links.calc_ancestors(short_id)
     }
 
     /// calculate all descendants from pool
-    pub fn calc_descendants(&self, short_id: &ProposalShortId) -> HashSet<ProposalShortId> {
+    pub(crate) fn calc_descendants(&self, short_id: &ProposalShortId) -> HashSet<ProposalShortId> {
         self.links.calc_descendants(short_id)
     }
 
@@ -413,7 +413,7 @@ impl PoolMap {
         Ok(true)
     }
 
-    pub fn remove_entry(&mut self, id: &ProposalShortId) -> Option<TxEntry> {
+    pub(crate) fn remove_entry(&mut self, id: &ProposalShortId) -> Option<TxEntry> {
         let removed = self.entries.remove_by_id(id);
 
         if let Some(ref entry) = removed {
@@ -469,7 +469,10 @@ impl PoolMap {
         removed
     }
 
-    pub fn resolve_conflict_header_dep(&mut self, headers: &HashSet<Byte32>) -> Vec<ConflictEntry> {
+    pub(crate) fn resolve_conflict_header_dep(
+        &mut self,
+        headers: &HashSet<Byte32>,
+    ) -> Vec<ConflictEntry> {
         let mut conflicts = Vec::new();
 
         // invalid header deps
@@ -524,7 +527,7 @@ impl PoolMap {
     }
 
     // fill proposal txs
-    pub fn fill_proposals(
+    pub(crate) fn fill_proposals(
         &self,
         limit: usize,
         exclusion: &HashSet<ProposalShortId>,
@@ -541,7 +544,9 @@ impl PoolMap {
         }
     }
 
-    pub fn remove_entries_by_filter<P: FnMut(&ProposalShortId, &TxEntry, &Status) -> bool>(
+    pub(crate) fn remove_entries_by_filter<
+        P: FnMut(&ProposalShortId, &TxEntry, &Status) -> bool,
+    >(
         &mut self,
         mut predicate: P,
     ) -> Vec<TxEntry> {
@@ -558,21 +563,21 @@ impl PoolMap {
         removed
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &PoolEntry> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &PoolEntry> {
         self.entries.iter().map(|(_, entry)| entry)
     }
 
-    pub fn iter_by_evict_key(&self) -> impl Iterator<Item = &PoolEntry> {
+    pub(crate) fn iter_by_evict_key(&self) -> impl Iterator<Item = &PoolEntry> {
         self.entries.iter_by_evict_key()
     }
 
-    pub fn next_evict_entry(&self) -> Option<ProposalShortId> {
+    pub(crate) fn next_evict_entry(&self) -> Option<ProposalShortId> {
         self.iter_by_evict_key()
             .next()
             .map(|entry| entry.id.clone())
     }
 
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.entries = MultiIndexPoolEntryMap::default();
         self.edges.clear();
         self.links.clear();

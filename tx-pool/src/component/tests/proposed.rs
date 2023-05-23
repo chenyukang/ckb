@@ -658,7 +658,8 @@ fn test_max_ancestors() {
     assert!(pool.add_proposed(entry1).is_ok());
     assert!(pool.add_proposed(entry2).is_err());
     assert_eq!(
-        pool.links.get_children(&tx1_id)
+        pool.links
+            .get_children(&tx1_id)
             .map(|children| children.is_empty()),
         Some(true)
     );
