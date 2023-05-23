@@ -234,7 +234,6 @@ impl TxPool {
         for id in ids {
             if let Some(e) = self.pool_map.get_by_id(id) {
                 let status = e.status;
-                // TODO: double check this
                 if status == Status::Pending {
                     continue;
                 }
