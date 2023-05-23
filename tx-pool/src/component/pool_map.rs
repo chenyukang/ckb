@@ -568,7 +568,6 @@ impl PoolMap {
 
     pub fn next_evict_entry(&self) -> Option<ProposalShortId> {
         self.iter_by_evict_key()
-            .into_iter()
             .next()
             .map(|entry| entry.id.clone())
     }
