@@ -47,6 +47,7 @@ macro_rules! evict_for_trim_size {
                 ));
                 $callbacks.call_reject($self, &entry, reject);
             }
+            $pool.inner.shrink_to_fit();
         }
     };
 }

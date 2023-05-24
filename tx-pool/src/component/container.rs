@@ -246,6 +246,10 @@ impl SortedTxMap {
         self.entries.iter()
     }
 
+    pub fn shrink_to_fit(&mut self) {
+        self.entries.shrink_to_fit();
+    }
+
     fn insert_index_key(&mut self, entry: &TxEntry) {
         self.sorted_index.insert(entry.as_index_key());
     }

@@ -273,7 +273,6 @@ impl TxPoolService {
 
         if let Some((ret, snapshot)) = self._process_tx(tx.clone(), remote.map(|r| r.0)).await {
             self.after_process(tx, remote, &snapshot, &ret).await;
-
             ret
         } else {
             // currently, the returned cycles is not been used, mock 0 if delay
