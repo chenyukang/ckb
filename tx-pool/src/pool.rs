@@ -128,7 +128,10 @@ impl TxPool {
     }
 
     /// Returns tx with cycles corresponding to the id.
-    pub(crate) fn get_tx_with_cycles(&self, id: &ProposalShortId) -> Option<(TransactionView, Cycle)> {
+    pub(crate) fn get_tx_with_cycles(
+        &self,
+        id: &ProposalShortId,
+    ) -> Option<(TransactionView, Cycle)> {
         self.pool_map
             .get_by_id(id)
             .map(|entry| (entry.inner.transaction().clone(), entry.inner.cycles))
