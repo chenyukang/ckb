@@ -95,8 +95,6 @@ impl Edges {
     }
 
     pub(crate) fn clear(&mut self) {
-        self.outputs.clear();
-        self.inputs.clear();
         self.inputs.clear();
         self.outputs.clear();
         self.deps.clear();
