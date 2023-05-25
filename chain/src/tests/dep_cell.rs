@@ -586,11 +586,10 @@ fn test_package_txs_with_deps_priority() {
     // get block template with txs
     while !(Into::<u64>::into(block_template.number) == 3 && block_template.transactions.len() == 1)
     {
-        //TODO: Fix this testcase
         block_template = shared
             .get_block_template(None, None, None)
             .unwrap()
-            .unwrap();
+            .unwrap()
     }
 
     let block: Block = block_template.into();
