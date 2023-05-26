@@ -55,7 +55,7 @@ pub struct PoolEntry {
     #[multi_index(ordered_non_unique)]
     pub evict_key: EvictKey,
     #[multi_index(ordered_unique)]
-    pub order_id: usize,
+    pub stamp_id: u64,
     // other sort key
     pub inner: TxEntry,
 }
@@ -81,7 +81,7 @@ pub struct PoolMap {
     /// All the parent/children relationships
     pub(crate) links: TxLinksMap,
     pub(crate) max_ancestors_count: usize,
-    entry_cur: Arc<AtomicU64>,
+    entry_stamp: Arc<AtomicU64>,
 }
 
 impl PoolMap {
@@ -91,7 +91,7 @@ impl PoolMap {
             edges: Edges::default(),
             links: TxLinksMap::new(),
             max_ancestors_count,
-            entry_cur: Arc::new(AtomicU64::new(0)),
+            entry_stamp: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -235,7 +235,7 @@ impl PoolMap {
             //TODO: this is a bug from multi_index_map
             self.entries.remove_by_id(&short_id);
             for e in self.entries.iter() {
-                eprintln!("now : {:?} order_id: {:?}", e.1.inner.proposal_short_id(), e.1.order_id);
+                eprintln!("now : {:?} order_id: {:?}", e.1.inner.proposal_short_id(), e.1.stamp_id);
             }
             eprintln!("finished 1 update_descendants_index_key: {:?}", desc_id);
             self.insert_entry(&child, entry.status)
@@ -434,8 +434,7 @@ impl PoolMap {
         let tx_short_id = entry.proposal_short_id();
         let score = entry.as_score_key();
         let evict_key = entry.as_evict_key();
-        //let order_id = self.entry_cur.fetch_add(1, Ordering::SeqCst);
-        let order_id = self.entries.len();
+        let stamp_id = self.entry_stamp.fetch_add(1, Ordering::SeqCst);
         eprintln!("insert entry: {:?} len:{:?}", entry.proposal_short_id(), self.entries.len());
         self.entries.insert(PoolEntry {
             id: tx_short_id,
@@ -443,7 +442,7 @@ impl PoolMap {
             status,
             inner: entry.clone(),
             evict_key,
-            order_id,
+            stamp_id,
         });
         eprintln!("end insert entry: {:?}", entry.proposal_short_id());
         Ok(true)
@@ -595,7 +594,7 @@ impl PoolMap {
     ) -> Vec<TxEntry> {
         eprintln!("begin remove_entries_by_filter");
         let mut removed = Vec::new();
-        for entry in self.entries.iter_by_order_id() {
+        for entry in self.entries.iter_by_stamp_id() {
             if predicate(&entry.id, &entry.inner, &entry.status) {
                 removed.push(entry.inner.clone());
             }
