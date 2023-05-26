@@ -203,6 +203,10 @@ impl BlockAssembler {
             current_template.cellbase.clone(),
             txs,
         )?;
+        eprintln!("update_full checked txs: {} txs", checked_txs.len());
+        for e in &checked_txs {
+            eprintln!("update_full checked txs: {:?}", e);
+        }
         let txs_size = checked_txs.iter().map(|tx| tx.size).sum();
         let total_size = basic_size + txs_size;
 
@@ -373,6 +377,7 @@ impl BlockAssembler {
                 current.template.transactions.len(),
             );
         }
+        eprintln!("finished update_proposals");
     }
 
     pub(crate) async fn update_transactions(

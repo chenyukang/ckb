@@ -1067,6 +1067,7 @@ fn _update_tx_pool_for_reorg(
                 }
             });
 
+        eprintln!("111111 tx move to proposed {}", entries.len());
         tx_pool
             .pool_map
             .remove_entries_by_filter(|id, tx_entry, status| {
@@ -1080,7 +1081,9 @@ fn _update_tx_pool_for_reorg(
                     false
                 }
             });
+        eprintln!("222222 tx move to proposed {}", entries.len());
 
+        eprintln!("tx move to proposed {}", entries.len());
         for entry in entries {
             eprintln!("tx move to proposed {}", entry.transaction().hash());
             let cached = CacheEntry::completed(entry.cycles, entry.fee);
