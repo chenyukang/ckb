@@ -316,22 +316,30 @@ impl ResolvedTransaction {
             }
 
             if checked_cells.contains(out_point) {
+                eprintln!("skip check cell: {:?}", out_point);
                 return Ok(());
             }
 
             match cell_checker.is_live(out_point) {
                 Some(true) => {
                     checked_cells.insert(out_point.clone());
+                    eprintln!("check cell okkkkkk: {:?}", out_point);
+                    eprintln!("check is live: {:?}", cell_checker.is_live(out_point));
                     Ok(())
                 }
                 Some(false) => Err(OutPointError::Dead(out_point.clone())),
-                None => Err(OutPointError::Unknown(out_point.clone())),
+                None => {
+                    eprintln!("check cell unknown: {:?}", out_point);
+                    Err(OutPointError::Unknown(out_point.clone()))
+                },
             }
         };
 
         // // check input
         for cell_meta in &self.resolved_inputs {
-            check_cell(&cell_meta.out_point)?;
+            let res = check_cell(&cell_meta.out_point);
+            eprintln!("check input result: {:?} {:?}", cell_meta, res);
+            res?;
         }
 
         let mut resolved_system_deps: HashSet<&OutPoint> = HashSet::new();
@@ -696,7 +704,10 @@ pub fn resolve_transaction<CP: CellProvider, HC: HeaderChecker, S: BuildHasher>(
                 Entry::Vacant(entry) => {
                     let cell_status = cell_provider.cell(out_point, eager_load);
                     match cell_status {
-                        CellStatus::Dead => Err(OutPointError::Dead(out_point.clone())),
+                        CellStatus::Dead => {
+                            eprintln!("resolve_transaction: cell {:?} is dead", out_point);
+                            Err(OutPointError::Dead(out_point.clone()))
+                        },
                         CellStatus::Unknown => Err(OutPointError::Unknown(out_point.clone())),
                         CellStatus::Live(cell_meta) => {
                             entry.insert(cell_meta.clone());

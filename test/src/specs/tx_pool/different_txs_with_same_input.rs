@@ -17,6 +17,7 @@ impl Spec for DifferentTxsWithSameInput {
         node0.new_block_with_blocking(|template| template.number.value() != 13);
         let tx_hash_0 = node0.generate_transaction();
         info!("Generate 2 txs with same input");
+        let tx0_hash = tx_hash_0.clone();
         let tx1 = node0.new_transaction(tx_hash_0.clone());
         let tx2_temp = node0.new_transaction(tx_hash_0);
         // Set tx2 fee to a higher value, tx1 capacity is 100, set tx2 capacity to 80 for +20 fee.
@@ -43,20 +44,23 @@ impl Spec for DifferentTxsWithSameInput {
             .collect();
 
         // RBF (Replace-By-Fees) is not implemented
+        assert!(commit_txs_hash.contains(&tx0_hash));
         assert!(commit_txs_hash.contains(&tx1.hash()));
         assert!(!commit_txs_hash.contains(&tx2.hash()));
 
         // when tx1 was confirmed, tx2 should be rejected
         let ret = node0.rpc_client().get_transaction(tx2.hash());
+        eprintln!("ret: {:?}", ret);
         assert!(
             matches!(ret.tx_status.status, Status::Rejected),
-            "tx2 should be rejected"
+            "tx2 should be unknown"
         );
 
         // verbosity = 1
         let ret = node0
             .rpc_client()
             .get_transaction_with_verbosity(tx1.hash(), 1);
+        eprintln!("tx1: {:?}", ret);
         assert!(ret.transaction.is_none());
         assert!(matches!(ret.tx_status.status, Status::Committed));
 

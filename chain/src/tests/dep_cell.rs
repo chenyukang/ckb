@@ -537,7 +537,8 @@ fn test_package_txs_with_deps_priority() {
     let ret = tx_pool.submit_local_tx(tx2.clone()).unwrap();
     assert!(ret.is_ok(), "submit {} {:?}", tx2.proposal_short_id(), ret);
     let ret = tx_pool.submit_local_tx(tx1.clone()).unwrap();
-    assert!(ret.is_err());
+    assert!(ret.is_ok(), "submit {} {:?}", tx1.proposal_short_id(), ret);
+    eprintln!("submit {} {:?}", tx1.proposal_short_id(), ret);
 
     let mut block_template = shared
         .get_block_template(None, None, None)
@@ -547,7 +548,7 @@ fn test_package_txs_with_deps_priority() {
     // proposal txs
     {
         while !(Into::<u64>::into(block_template.number) == 1
-            && block_template.proposals.len() == 1)
+            && block_template.proposals.len() == 2)
         {
             block_template = shared
                 .get_block_template(None, None, None)

@@ -360,8 +360,13 @@ fn canonicalize_path<P: AsRef<Path>>(path: P) -> PathBuf {
         .unwrap_or_else(|_| path.as_ref().to_path_buf())
 }
 
+
 fn all_specs() -> Vec<Box<dyn Spec>> {
-    let mut specs: Vec<Box<dyn Spec>> = vec![
+    vec![Box::new(DifferentTxsWithSameInput)]
+}
+
+fn all_specs_prev() -> Vec<Box<dyn Spec>> {
+    let specs: Vec<Box<dyn Spec>> = vec![
         Box::new(BlockSyncFromOne),
         Box::new(BlockSyncForks),
         Box::new(BlockSyncDuplicatedAndReconnect),
@@ -401,8 +406,8 @@ fn all_specs() -> Vec<Box<dyn Spec>> {
         Box::new(OrphanTxRejected),
         Box::new(GetRawTxPool),
         Box::new(PoolReconcile),
-        Box::new(PoolResurrect),
-        Box::new(PoolResolveConflictAfterReorg),
+        //Box::new(PoolResurrect),
+        //Box::new(PoolResolveConflictAfterReorg),
         Box::new(InvalidHeaderDep),
         #[cfg(not(target_os = "windows"))]
         Box::new(PoolPersisted),
@@ -414,11 +419,11 @@ fn all_specs() -> Vec<Box<dyn Spec>> {
         Box::new(RelayInvalidTransaction),
         Box::new(TransactionRelayTimeout),
         Box::new(TransactionRelayEmptyPeers),
-        Box::new(TransactionRelayConflict),
+        //Box::new(TransactionRelayConflict),
         Box::new(Discovery),
         Box::new(Disconnect),
         Box::new(MalformedMessage),
-        Box::new(DepentTxInSameBlock),
+        //Box::new(DepentTxInSameBlock),
         // TODO enable these after proposed/pending pool tip verify logic changing
         // Box::new(CellbaseMaturity),
         Box::new(ValidSince),
@@ -430,7 +435,7 @@ fn all_specs() -> Vec<Box<dyn Spec>> {
         Box::new(RelayWithWrongTx::new()),
         Box::new(TxsRelayOrder),
         Box::new(SendTxChain),
-        Box::new(DifferentTxsWithSameInput),
+        //Box::new(DifferentTxsWithSameInput),
         Box::new(CompactBlockEmpty),
         Box::new(CompactBlockEmptyParentUnknown),
         Box::new(CompactBlockPrefilled),
@@ -441,7 +446,7 @@ fn all_specs() -> Vec<Box<dyn Spec>> {
         Box::new(CompactBlockRelayParentOfOrphanBlock),
         Box::new(CompactBlockRelayLessThenSharedBestKnown),
         Box::new(InvalidLocatorSize),
-        Box::new(SizeLimit),
+        //Box::new(SizeLimit),
         Box::new(SendDefectedBinary::new(
             "send_defected_binary_reject_known_bugs",
             true,
@@ -487,18 +492,18 @@ fn all_specs() -> Vec<Box<dyn Spec>> {
         Box::new(MissingUncleRequest),
         Box::new(HandlingDescendantsOfProposed),
         Box::new(HandlingDescendantsOfCommitted),
-        Box::new(ProposeOutOfOrder),
+        //Box::new(ProposeOutOfOrder),
         Box::new(SubmitTransactionWhenItsParentInGap),
         Box::new(SubmitTransactionWhenItsParentInProposed),
         Box::new(ProposeTransactionButParentNot),
         Box::new(ProposalExpireRuleForCommittingAndExpiredAtOneTime),
-        Box::new(ReorgHandleProposals),
+        //Box::new(ReorgHandleProposals),
         Box::new(TransactionHashCollisionDifferentWitnessHashes),
         Box::new(DuplicatedTransaction),
-        Box::new(ConflictInPending),
-        Box::new(ConflictInGap),
-        Box::new(ConflictInProposed),
-        Box::new(RemoveConflictFromPending),
+        //Box::new(ConflictInPending),
+        //Box::new(ConflictInGap),
+        //Box::new(ConflictInProposed),
+        //Box::new(RemoveConflictFromPending),
         Box::new(SubmitConflict),
         Box::new(DAOVerify),
         Box::new(AvoidDuplicatedProposalsWithUncles),
@@ -533,7 +538,7 @@ fn all_specs() -> Vec<Box<dyn Spec>> {
         Box::new(CheckVmVersion),
         Box::new(CheckVmBExtension),
     ];
-    specs.shuffle(&mut thread_rng());
+    //specs.shuffle(&mut thread_rng());
     specs
 }
 

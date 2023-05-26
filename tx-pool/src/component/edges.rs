@@ -14,6 +14,15 @@ pub(crate) struct Edges {
 }
 
 impl Edges {
+    pub(crate) fn debug(&self) {
+        eprintln!("Edges:  debug: =================");
+        eprintln!("inputs: {:?}", self.inputs);
+        eprintln!("outputs: {:?}", self.outputs);
+        eprintln!("deps: {:?}", self.deps);
+        eprintln!("header_deps: {:?}", self.header_deps);
+        eprintln!("end .....................");
+    }
+
     #[cfg(test)]
     pub(crate) fn outputs_len(&self) -> usize {
         self.outputs.len()

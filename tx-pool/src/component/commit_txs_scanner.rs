@@ -92,6 +92,9 @@ impl<'a> CommitTxsScanner<'a> {
                 }
             }
 
+            let next = iter.peek();
+            eprintln!("next: {:?}", next);
+
             // First try to find a new transaction in `proposed_pool` to evaluate.
             let tx_entry: TxEntry = match (iter.peek(), self.modified_entries.next_best_entry()) {
                 (Some(entry), Some(best_modified)) => {

@@ -547,10 +547,12 @@ impl TxPoolService {
         tx: TransactionView,
         remote: Option<(Cycle, PeerIndex)>,
     ) -> Option<(Result<ProcessResult, Reject>, Arc<Snapshot>)> {
+        eprintln!("begin _resumeble_process_tx for tx : {:?}", tx);
         let limit_cycles = self.tx_pool_config.max_tx_verify_cycles;
         let tx_hash = tx.hash();
 
         let (ret, snapshot) = self.pre_check(&tx).await;
+        eprintln!("ret hhhhhhhhhhhhhhhhhhhhhhhhh: {:?}", ret);
 
         let (tip_hash, rtx, status, fee, tx_size) = try_or_return_with_snapshot!(ret, snapshot);
 
@@ -637,10 +639,10 @@ impl TxPoolService {
         let entry = TxEntry::new(rtx, completed.cycles, fee, tx_size);
 
         let (ret, submit_snapshot) = self.submit_entry(tip_hash, entry, status).await;
+        eprintln!("submit_snapshot result: {:?}", ret);
         try_or_return_with_snapshot!(ret, submit_snapshot);
 
         self.notify_block_assembler(status).await;
-
         if cached.is_none() {
             // update cache
             let txs_verify_cache = Arc::clone(&self.txs_verify_cache);
@@ -967,7 +969,12 @@ fn check_rtx(
     } else {
         TxStatus::Fresh
     };
-    tx_pool.check_rtx(rtx).map(|_| tx_status)
+    if tx_status == TxStatus::Proposed {
+        tx_pool.check_rtx_from_proposed(rtx)
+    } else {
+        tx_pool.check_rtx_from_pending_and_proposed(rtx)
+    }
+    .map(|_| tx_status)
 }
 
 fn resolve_tx(tx_pool: &TxPool, snapshot: &Snapshot, tx: TransactionView) -> ResolveResult {
@@ -979,7 +986,12 @@ fn resolve_tx(tx_pool: &TxPool, snapshot: &Snapshot, tx: TransactionView) -> Res
     } else {
         TxStatus::Fresh
     };
-    tx_pool.resolve_tx(tx).map(|rtx| (rtx, tx_status))
+    if tx_status == TxStatus::Proposed {
+        tx_pool.resolve_tx_from_proposed(tx)
+    } else {
+        tx_pool.resolve_tx_from_pending_and_proposed(tx)
+    }
+    .map(|rtx| (rtx, tx_status))
 }
 
 fn _submit_entry(
@@ -1033,6 +1045,10 @@ fn _update_tx_pool_for_reorg(
     tx_pool.remove_committed_txs(attached.iter(), callbacks, detached_headers);
     tx_pool.remove_by_detached_proposal(detached_proposal_id.iter());
 
+    eprintln!(
+        "call _update_tx_pool_for_reorg ....................: {:?}",
+        mine_mode
+    );
     // mine mode:
     // pending ---> gap ----> proposed
     // try move gap to proposed
@@ -1057,7 +1073,7 @@ fn _update_tx_pool_for_reorg(
                 if snapshot.proposals().contains_proposed(id) && status == &Status::Pending {
                     entries.push(tx_entry.clone());
                     true
-                } else if snapshot.proposals().contains_gap(id) {
+                } else if snapshot.proposals().contains_gap(id) && status == &Status::Pending {
                     gaps.push(tx_entry.clone());
                     true
                 } else {
@@ -1066,7 +1082,7 @@ fn _update_tx_pool_for_reorg(
             });
 
         for entry in entries {
-            debug!("tx move to proposed {}", entry.transaction().hash());
+            eprintln!("tx move to proposed {}", entry.transaction().hash());
             let cached = CacheEntry::completed(entry.cycles, entry.fee);
             if let Err(e) =
                 tx_pool.proposed_rtx(cached, entry.size, entry.timestamp, Arc::clone(&entry.rtx))
@@ -1078,7 +1094,7 @@ fn _update_tx_pool_for_reorg(
         }
 
         for entry in gaps {
-            debug!("tx move to gap {}", entry.transaction().hash());
+            eprintln!("tx move to gap {}", entry.transaction().hash());
             let tx_hash = entry.transaction().hash();
             let cached = CacheEntry::completed(entry.cycles, entry.fee);
             if let Err(e) =

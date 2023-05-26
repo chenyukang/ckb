@@ -248,6 +248,7 @@ impl CellProvider for Snapshot {
 impl CellChecker for Snapshot {
     fn is_live(&self, out_point: &OutPoint) -> Option<bool> {
         if self.have_cell(out_point) {
+            eprintln!("Snapshot have cell: {:?}", out_point);
             Some(true)
         } else {
             None

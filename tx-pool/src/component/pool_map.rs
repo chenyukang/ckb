@@ -51,6 +51,8 @@ pub struct PoolEntry {
     pub status: Status,
     #[multi_index(ordered_non_unique)]
     pub evict_key: EvictKey,
+    #[multi_index(ordered_unique)]
+    pub order_id: usize,
     // other sort key
     pub inner: TxEntry,
 }
@@ -222,7 +224,7 @@ impl PoolMap {
     }
 
     fn record_entry_relations(&mut self, entry: &TxEntry) {
-        let tx_short_id = entry.proposal_short_id();
+        let tx_short_id: ProposalShortId = entry.proposal_short_id();
         let inputs = entry.transaction().input_pts_iter();
         let outputs = entry.transaction().output_pts();
         let related_dep_out_points: Vec<_> = entry.related_dep_out_points().cloned().collect();
@@ -383,7 +385,7 @@ impl PoolMap {
     }
 
     pub(crate) fn add_entry(&mut self, mut entry: TxEntry, status: Status) -> Result<bool, Reject> {
-        trace!(
+        eprintln!(
             "add entry with status: {:?} status: {:?}",
             entry.proposal_short_id(),
             status
@@ -393,9 +395,16 @@ impl PoolMap {
             return Ok(false);
         }
         trace!("add_{:?} {}", status, entry.transaction().hash());
-        self.record_entry_links(&mut entry, &status)?;
+        if status == Status::Proposed {
+            self.record_entry_links(&mut entry, &status)?;
+        }
         self.insert_entry(&entry, status)?;
-        self.record_entry_relations(&entry);
+        if status == Status::Proposed {
+            self.record_entry_relations(&entry);
+        }
+        for (id, e) in self.entries.iter() {
+            eprintln!("iter id {:?} entry: {:?}", id, e.id);
+        }
         Ok(true)
     }
 
@@ -403,12 +412,14 @@ impl PoolMap {
         let tx_short_id = entry.proposal_short_id();
         let score = entry.as_score_key();
         let evict_key = entry.as_evict_key();
+        let order_id = self.entries.len();
         self.entries.insert(PoolEntry {
             id: tx_short_id,
             score,
             status,
             inner: entry.clone(),
             evict_key,
+            order_id,
         });
         Ok(true)
     }
@@ -418,10 +429,12 @@ impl PoolMap {
 
         if let Some(ref entry) = removed {
             self.update_descendants_index_key(&entry.inner, EntryOp::Remove);
-            self.remove_entry_edges(&entry.inner);
-            self.update_parents_for_remove(id);
-            self.update_children_for_remove(id);
-            self.links.remove(id);
+            if entry.status == Status::Proposed {
+                self.remove_entry_edges(&entry.inner);
+                self.update_parents_for_remove(id);
+                self.update_children_for_remove(id);
+                self.links.remove(id);
+            }
         }
         removed.map(|e| e.inner)
     }
@@ -551,7 +564,7 @@ impl PoolMap {
         mut predicate: P,
     ) -> Vec<TxEntry> {
         let mut removed = Vec::new();
-        for (_, entry) in self.entries.iter() {
+        for entry in self.entries.iter_by_order_id() {
             if predicate(&entry.id, &entry.inner, &entry.status) {
                 removed.push(entry.inner.clone());
             }
@@ -607,17 +620,23 @@ impl CellProvider for PoolMap {
 
 impl CellChecker for PoolMap {
     fn is_live(&self, out_point: &OutPoint) -> Option<bool> {
+        eprintln!("is_live: {:?}", out_point);
+        self.edges.debug();
         if self.edges.get_input_ref(out_point).is_some() {
+            eprintln!("is_live: {:?} return Some(false)", out_point);
             return Some(false);
         }
         if let Some(x) = self.edges.get_output_ref(out_point) {
             // output consumed
             if x.is_some() {
+                eprintln!("is_live: {:?} return Some(false) later ", out_point);
                 return Some(false);
             } else {
+                eprintln!("is_live: {:?} return Some(true)", out_point);
                 return Some(true);
             }
         }
+        eprintln!("is_live: {:?} return None", out_point);
         None
     }
 }
