@@ -1,3 +1,4 @@
+use crate::component::edges::Edges;
 use crate::component::tests::util::{
     build_tx, build_tx_with_dep, build_tx_with_header_dep, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE,
 };
@@ -5,6 +6,7 @@ use crate::component::{
     entry::TxEntry,
     pool_map::{PoolMap, Status},
 };
+use ckb_types::packed::OutPoint;
 use ckb_types::{h256, packed::Byte32, prelude::*};
 use std::collections::HashSet;
 
@@ -36,6 +38,7 @@ fn test_basic() {
         entry1
     );
     assert_eq!(pool.get_tx(&tx2.proposal_short_id()).unwrap(), &tx2);
+    assert_eq!(pool.edges.deps.len(), 0);
 
     pool.clear();
     assert!(pool.entries.is_empty());
@@ -239,4 +242,22 @@ fn test_fill_proposals() {
     exclusion.insert(id2);
     pool.fill_proposals(2, &exclusion, &mut ret, &Status::Pending);
     assert_eq!(ret, HashSet::from_iter(vec![id1, id3]));
+}
+
+#[test]
+fn test_edges() {
+    let tx1 = build_tx(vec![(&Byte32::zero(), 1), (&h256!("0x1").pack(), 1)], 1);
+    let tx2 = build_tx(vec![(&h256!("0x1").pack(), 1)], 1);
+
+    let short_id1 = tx1.proposal_short_id();
+    let short_id2 = tx2.proposal_short_id();
+    let mut edges = Edges::default();
+    let outpoint = OutPoint::default();
+    edges.insert_deps(outpoint.clone(), short_id1.clone());
+    edges.insert_deps(outpoint.clone(), short_id2.clone());
+    assert!(edges.deps.contains_key(&outpoint));
+    edges.delete_txid_by_dep(outpoint.clone(), &short_id1);
+    assert!(!edges.deps.is_empty());
+    edges.delete_txid_by_dep(outpoint.clone(), &short_id2);
+    assert!(edges.deps.is_empty());
 }

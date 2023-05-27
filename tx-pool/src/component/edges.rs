@@ -101,12 +101,9 @@ impl Edges {
 
     pub(crate) fn delete_txid_by_dep(&mut self, out_point: OutPoint, txid: &ProposalShortId) {
         if let Entry::Occupied(mut occupied) = self.deps.entry(out_point) {
-            let empty = {
-                let ids = occupied.get_mut();
-                ids.remove(txid);
-                ids.is_empty()
-            };
-            if empty {
+            let ids = occupied.get_mut();
+            ids.remove(txid);
+            if ids.is_empty() {
                 occupied.remove();
             }
         }

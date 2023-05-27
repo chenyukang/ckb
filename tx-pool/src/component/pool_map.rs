@@ -616,7 +616,6 @@ impl CellProvider for PoolMap {
             return CellStatus::Dead;
         }
         match self.edges.get_output_ref(out_point) {
-            Some(OutPointStatus::Consumed(_)) => CellStatus::Dead,
             Some(OutPointStatus::UnConsumed) => {
                 let (output, data) = self.get_output_with_data(out_point).expect("output");
                 let cell_meta = CellMetaBuilder::from_cell_output(output, data)
@@ -624,6 +623,7 @@ impl CellProvider for PoolMap {
                     .build();
                 CellStatus::live_cell(cell_meta)
             }
+            Some(OutPointStatus::Consumed(_)) => CellStatus::Dead,
             None => CellStatus::Unknown,
         }
     }
