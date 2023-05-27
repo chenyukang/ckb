@@ -165,13 +165,11 @@ impl Spec for PoolResolveConflictAfterReorg {
                 .build()])
             .build();
 
-        // TODO: (yukang) review this
         let ret = node0
             .rpc_client()
             .send_transaction_result(conflict_tx.data().into());
-        assert!(ret.is_ok());
-        //let err_msg = ret.err().unwrap().to_string();
-        //assert!(err_msg.contains("Resolve failed Dead"));
+        let err_msg = ret.err().unwrap().to_string();
+        assert!(err_msg.contains("Resolve failed Dead"));
     }
 
     fn modify_app_config(&self, config: &mut ckb_app_config::CKBAppConfig) {

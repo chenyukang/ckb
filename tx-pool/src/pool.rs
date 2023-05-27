@@ -274,8 +274,8 @@ impl TxPool {
         rtx: &ResolvedTransaction,
     ) -> Result<(), Reject> {
         let snapshot = self.snapshot();
-        //let proposal_checker = OverlayCellChecker::new(&self.pool_map, snapshot);
-        let checker = OverlayCellChecker::new(self, snapshot);
+        let proposal_checker = OverlayCellChecker::new(&self.pool_map, snapshot);
+        let checker = OverlayCellChecker::new(self, &proposal_checker);
         let mut seen_inputs = HashSet::new();
         rtx.check(&mut seen_inputs, &checker, snapshot)
             .map_err(Reject::Resolve)
@@ -294,8 +294,8 @@ impl TxPool {
         tx: TransactionView,
     ) -> Result<Arc<ResolvedTransaction>, Reject> {
         let snapshot = self.snapshot();
-        //let proposed_provider = OverlayCellProvider::new(&self.pool_map, snapshot);
-        let provider = OverlayCellProvider::new(self, snapshot);
+        let proposed_provider = OverlayCellProvider::new(&self.pool_map, snapshot);
+        let provider = OverlayCellProvider::new(self, &proposed_provider);
         let mut seen_inputs = HashSet::new();
         resolve_transaction(tx, &mut seen_inputs, &provider, snapshot)
             .map(Arc::new)
@@ -544,21 +544,30 @@ impl TxPool {
 impl CellProvider for TxPool {
     fn cell(&self, out_point: &OutPoint, _eager_load: bool) -> CellStatus {
         let tx_hash = out_point.tx_hash();
-        if let Some(entry) = self.pool_map.get(&ProposalShortId::from_tx_hash(&tx_hash)) {
-            match entry
-                .transaction()
-                .output_with_data(out_point.index().unpack())
-            {
-                Some((output, data)) => {
-                    let cell_meta = CellMetaBuilder::from_cell_output(output, data)
-                        .out_point(out_point.to_owned())
-                        .build();
-                    CellStatus::live_cell(cell_meta)
+        match self
+            .pool_map
+            .get_by_id(&ProposalShortId::from_tx_hash(&tx_hash))
+        {
+            Some(pool_entry) => {
+                if pool_entry.status != Status::Proposed {
+                    match pool_entry
+                        .inner
+                        .transaction()
+                        .output_with_data(out_point.index().unpack())
+                    {
+                        Some((output, data)) => {
+                            let cell_meta = CellMetaBuilder::from_cell_output(output, data)
+                                .out_point(out_point.to_owned())
+                                .build();
+                            CellStatus::live_cell(cell_meta)
+                        }
+                        None => CellStatus::Unknown,
+                    }
+                } else {
+                    CellStatus::Unknown
                 }
-                None => CellStatus::Unknown,
             }
-        } else {
-            CellStatus::Unknown
+            None => CellStatus::Unknown,
         }
     }
 }
@@ -566,13 +575,22 @@ impl CellProvider for TxPool {
 impl CellChecker for TxPool {
     fn is_live(&self, out_point: &OutPoint) -> Option<bool> {
         let tx_hash = out_point.tx_hash();
-        if let Some(entry) = self.pool_map.get(&ProposalShortId::from_tx_hash(&tx_hash)) {
-            entry
-                .transaction()
-                .output(out_point.index().unpack())
-                .map(|_| true)
-        } else {
-            None
+        match self
+            .pool_map
+            .get_by_id(&ProposalShortId::from_tx_hash(&tx_hash))
+        {
+            Some(pool_entry) => {
+                if pool_entry.status != Status::Proposed {
+                    pool_entry
+                        .inner
+                        .transaction()
+                        .output_with_data(out_point.index().unpack())
+                        .map(|_| true)
+                } else {
+                    None
+                }
+            }
+            None => None,
         }
     }
 }

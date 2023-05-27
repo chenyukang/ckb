@@ -55,7 +55,7 @@ impl Edges {
         }
     }
 
-    pub(crate) fn insert_output(&mut self, out_point: OutPoint) {
+    pub(crate) fn insert_unconsumed_output(&mut self, out_point: OutPoint) {
         self.outputs.insert(out_point, OutPointStatus::UnConsumed);
     }
 

@@ -984,7 +984,9 @@ fn resolve_tx(tx_pool: &TxPool, snapshot: &Snapshot, tx: TransactionView) -> Res
     if tx_status == TxStatus::Proposed {
         tx_pool.resolve_tx_from_proposed(tx)
     } else {
-        tx_pool.resolve_tx_from_pending_and_proposed(tx)
+        let res = tx_pool.resolve_tx_from_pending_and_proposed(tx);
+        //eprintln!("resolve_tx_from_pending_and_proposed: {:?} => {:?}", short_id, res);
+        res
     }
     .map(|rtx| (rtx, tx_status))
 }

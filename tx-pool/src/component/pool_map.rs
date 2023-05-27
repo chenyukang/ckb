@@ -282,7 +282,7 @@ impl PoolMap {
                 self.edges.insert_consumed_output(o, id.clone());
                 children.insert(id);
             } else {
-                self.edges.insert_output(o);
+                self.edges.insert_unconsumed_output(o);
             }
         }
         // update children
