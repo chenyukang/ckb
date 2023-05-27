@@ -527,7 +527,7 @@ impl PoolMap {
         let mut conflicts = Vec::new();
 
         for i in inputs {
-            eprintln!("input: {:?}", i);
+            //eprintln!("input: {:?}", i);
             if let Some(id) = self.edges.remove_input(&i) {
                 let entries = self.remove_entry_and_descendants(&id);
                 if !entries.is_empty() {

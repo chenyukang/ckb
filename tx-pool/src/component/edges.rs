@@ -71,7 +71,11 @@ impl Edges {
         self.deps.get(out_point)
     }
 
-    pub(crate) fn set_output_consumed(&mut self, out_point: &OutPoint, tx_short_id: &ProposalShortId) {
+    pub(crate) fn set_output_consumed(
+        &mut self,
+        out_point: &OutPoint,
+        tx_short_id: &ProposalShortId,
+    ) {
         if let Some(status) = self.outputs.get_mut(out_point) {
             *status = OutPointStatus::Consumed(tx_short_id.clone());
         }
