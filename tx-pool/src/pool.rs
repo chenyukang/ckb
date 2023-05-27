@@ -549,6 +549,7 @@ impl CellProvider for TxPool {
             .get_by_id(&ProposalShortId::from_tx_hash(&tx_hash))
         {
             Some(pool_entry) => {
+                //eprintln!("cell for point: {:?} status: {:?}", out_point, pool_entry.status);
                 if pool_entry.status != Status::Proposed {
                     match pool_entry
                         .inner

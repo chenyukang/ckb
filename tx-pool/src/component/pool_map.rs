@@ -410,14 +410,14 @@ impl PoolMap {
             return Ok(false);
         }
         trace!("add_{:?} {}", status, entry.transaction().hash());
-        if status == Status::Proposed {
-            self.record_entry_links(&mut entry, &status)?;
-        }
+        //if status == Status::Proposed {
+        self.record_entry_links(&mut entry, &status)?;
+        //}
         self.insert_entry(&entry, status)?;
         self.record_entry_deps(&entry);
-        if status == Status::Proposed {
-            self.record_entry_edges(&entry);
-        }
+        //if status == Status::Proposed {
+        self.record_entry_edges(&entry);
+        //}
         Ok(true)
     }
 
@@ -442,12 +442,12 @@ impl PoolMap {
         if let Some(ref entry) = removed {
             self.update_descendants_index_key(&entry.inner, EntryOp::Remove);
             self.remove_entry_deps(&entry.inner);
-            if entry.status == Status::Proposed {
-                self.remove_entry_edges(&entry.inner);
-                self.update_parents_for_remove(id);
-                self.update_children_for_remove(id);
-                self.links.remove(id);
-            }
+            //if entry.status == Status::Proposed {
+            self.remove_entry_edges(&entry.inner);
+            self.update_parents_for_remove(id);
+            self.update_children_for_remove(id);
+            self.links.remove(id);
+            //}
         }
         removed.map(|e| e.inner)
     }
@@ -612,8 +612,10 @@ impl PoolMap {
 
 impl CellProvider for PoolMap {
     fn cell(&self, out_point: &OutPoint, _eager_load: bool) -> CellStatus {
-        if self.edges.get_input_ref(out_point).is_some() {
-            return CellStatus::Dead;
+        if let Some(id) = self.edges.get_input_ref(out_point) {
+            if self.get_proposed(id).is_some() {
+                return CellStatus::Dead;
+            }
         }
         match self.edges.get_output_ref(out_point) {
             Some(OutPointStatus::UnConsumed) => {
@@ -623,21 +625,25 @@ impl CellProvider for PoolMap {
                     .build();
                 CellStatus::live_cell(cell_meta)
             }
-            Some(OutPointStatus::Consumed(_)) => CellStatus::Dead,
-            None => CellStatus::Unknown,
+            Some(OutPointStatus::Consumed(id)) if self.get_proposed(id).is_some() => {
+                CellStatus::Dead
+            }
+            _ => CellStatus::Unknown,
         }
     }
 }
 
 impl CellChecker for PoolMap {
     fn is_live(&self, out_point: &OutPoint) -> Option<bool> {
-        if self.edges.get_input_ref(out_point).is_some() {
-            return Some(false);
+        if let Some(id) = self.edges.get_input_ref(out_point) {
+            if self.get_proposed(id).is_some() {
+                return Some(false);
+            }
         }
         match self.edges.get_output_ref(out_point) {
-            Some(OutPointStatus::Consumed(_)) => Some(false),
+            Some(OutPointStatus::Consumed(id)) if self.get_proposed(id).is_some() => Some(false),
             Some(OutPointStatus::UnConsumed) => Some(true),
-            None => None,
+            _ => None,
         }
     }
 }

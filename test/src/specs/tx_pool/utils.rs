@@ -90,6 +90,7 @@ fn print_proposals_in_window(node: &Node) {
 
 pub fn assert_new_block_committed(node: &Node, committed: &[TransactionView]) {
     let block = node.new_block(None, None, None);
+    //eprintln!("===================== {:?}", node.get_tip_block_number());
     if committed != &block.transactions()[1..] {
         print_proposals_in_window(node);
         assert_eq!(committed, &block.transactions()[1..]);

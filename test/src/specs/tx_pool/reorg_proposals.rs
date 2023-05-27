@@ -50,7 +50,7 @@ impl Spec for ReorgHandleProposals {
         });
 
         assert_new_block_committed(node_a, &[family.a().clone()]);
-        //assert_new_block_committed(node_b, &[]);
+        assert_new_block_committed(node_b, &[]);
 
         // 3. `node_a` switches the main-fork from fork-A to fork-B;
         // `node_b` switches the main-fork from fork-B to fork-A;
@@ -77,10 +77,10 @@ impl Spec for ReorgHandleProposals {
         // 4. At this point, `node_a` maintains fork-B, whose valid proposals are `[]`, as
         // `tx_family.b` is invalid because of lacking its parent transaction; `node_b` maintains
         // fork-A, whose valid proposals are `[tx_family.a]` which be able to be committed.
-        //assert_new_block_committed(node_a, &[]);
+        assert_new_block_committed(node_a, &[]);
         //assert_new_block_committed(node_b, &[family.a().clone()]);
-        //node_a.mine(1);
-        //node_b.mine(1);
+        node_a.mine(1);
+        node_b.mine(1);
     }
 }
 

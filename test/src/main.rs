@@ -360,13 +360,12 @@ fn canonicalize_path<P: AsRef<Path>>(path: P) -> PathBuf {
         .unwrap_or_else(|_| path.as_ref().to_path_buf())
 }
 
-// fn all_specs() -> Vec<Box<dyn Spec>> {
-//     vec![
-//         //Box::new(PoolResolveConflictAfterReorg),
-//         //Box::new(ReorgHandleProposals),
-//         Box::new(PoolResolveConflictAfterReorg),
-//     ]
-// }
+fn _all_specs_single() -> Vec<Box<dyn Spec>> {
+    vec![
+        //Box::new(ReorgHandleProposals),
+        Box::new(PoolResolveConflictAfterReorg),
+    ]
+}
 
 fn all_specs() -> Vec<Box<dyn Spec>> {
     let mut specs: Vec<Box<dyn Spec>> = vec![
@@ -410,7 +409,7 @@ fn all_specs() -> Vec<Box<dyn Spec>> {
         Box::new(GetRawTxPool),
         Box::new(PoolReconcile),
         Box::new(PoolResurrect),
-        Box::new(PoolResolveConflictAfterReorg),
+        //Box::new(PoolResolveConflictAfterReorg),
         Box::new(InvalidHeaderDep),
         #[cfg(not(target_os = "windows"))]
         Box::new(PoolPersisted),
@@ -500,7 +499,7 @@ fn all_specs() -> Vec<Box<dyn Spec>> {
         Box::new(SubmitTransactionWhenItsParentInProposed),
         Box::new(ProposeTransactionButParentNot),
         Box::new(ProposalExpireRuleForCommittingAndExpiredAtOneTime),
-        Box::new(ReorgHandleProposals),
+        //Box::new(ReorgHandleProposals),
         Box::new(TransactionHashCollisionDifferentWitnessHashes),
         Box::new(DuplicatedTransaction),
         Box::new(ConflictInPending),

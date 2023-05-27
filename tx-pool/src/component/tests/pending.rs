@@ -27,8 +27,8 @@ fn test_basic() {
     assert!(pool.contains_key(&tx1.proposal_short_id()));
     assert!(pool.contains_key(&tx2.proposal_short_id()));
 
-    assert_eq!(pool.inputs_len(), 0);
-    assert_eq!(pool.outputs_len(), 0);
+    assert_eq!(pool.inputs_len(), 4);
+    assert_eq!(pool.outputs_len(), 4);
 
     assert_eq!(
         pool.entries
@@ -70,22 +70,22 @@ fn test_resolve_conflict() {
     let entry1 = TxEntry::dummy_resolve(tx1, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry2 = TxEntry::dummy_resolve(tx2, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry3 = TxEntry::dummy_resolve(tx3, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
-    assert!(pool.add_entry(entry1, Status::Pending).unwrap());
-    assert!(pool.add_entry(entry2, Status::Pending).unwrap());
-    assert!(pool.add_entry(entry3, Status::Pending).unwrap());
+    assert!(pool.add_entry(entry1.clone(), Status::Pending).unwrap());
+    assert!(pool.add_entry(entry2.clone(), Status::Pending).unwrap());
+    assert!(pool.add_entry(entry3.clone(), Status::Pending).unwrap());
 
     //TODO: (yukang) review this failed
     let conflicts = pool.resolve_conflict(&tx4);
     assert_eq!(
         conflicts.into_iter().map(|i| i.0).collect::<HashSet<_>>(),
-        HashSet::from_iter(vec![])
+        HashSet::from_iter(vec![entry1, entry2])
     );
 
-    let _conflicts = pool.resolve_conflict(&tx5);
-    // assert_eq!(
-    //     conflicts.into_iter().map(|i| i.0).collect::<HashSet<_>>(),
-    //     HashSet::from_iter(vec![entry3])
-    // );
+    let conflicts = pool.resolve_conflict(&tx5);
+    assert_eq!(
+        conflicts.into_iter().map(|i| i.0).collect::<HashSet<_>>(),
+        HashSet::from_iter(vec![entry3])
+    );
 }
 
 #[test]
@@ -101,15 +101,15 @@ fn test_resolve_conflict_descendants() {
     let entry3 = TxEntry::dummy_resolve(tx3, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry4 = TxEntry::dummy_resolve(tx4, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     assert!(pool.add_entry(entry1, Status::Pending).unwrap());
-    assert!(pool.add_entry(entry3, Status::Pending).unwrap());
-    assert!(pool.add_entry(entry4, Status::Pending).unwrap());
+    assert!(pool.add_entry(entry3.clone(), Status::Pending).unwrap());
+    assert!(pool.add_entry(entry4.clone(), Status::Pending).unwrap());
 
     //TODO: (yukang) review this failed
-    let _conflicts = pool.resolve_conflict(&tx2);
-    // assert_eq!(
-    //     conflicts.into_iter().map(|i| i.0).collect::<HashSet<_>>(),
-    //     HashSet::from_iter(vec![entry3, entry4])
-    // );
+    let conflicts = pool.resolve_conflict(&tx2);
+    assert_eq!(
+        conflicts.into_iter().map(|i| i.0).collect::<HashSet<_>>(),
+        HashSet::from_iter(vec![entry3, entry4])
+    );
 }
 
 #[test]
@@ -127,11 +127,11 @@ fn test_resolve_conflict_header_dep() {
     let entry = TxEntry::dummy_resolve(tx, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry1 = TxEntry::dummy_resolve(tx1, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     assert!(pool.add_entry(entry.clone(), Status::Pending).unwrap());
-    assert!(pool.add_entry(entry1, Status::Pending).unwrap());
+    assert!(pool.add_entry(entry1.clone(), Status::Pending).unwrap());
 
-    assert_eq!(pool.inputs_len(), 0);
+    assert_eq!(pool.inputs_len(), 3);
     assert_eq!(pool.header_deps_len(), 1);
-    assert_eq!(pool.outputs_len(), 0);
+    assert_eq!(pool.outputs_len(), 2);
 
     let mut headers = HashSet::new();
     headers.insert(header);
@@ -139,7 +139,7 @@ fn test_resolve_conflict_header_dep() {
     let conflicts = pool.resolve_conflict_header_dep(&headers);
     assert_eq!(
         conflicts.into_iter().map(|i| i.0).collect::<HashSet<_>>(),
-        HashSet::from_iter(vec![entry])
+        HashSet::from_iter(vec![entry, entry1])
     );
 }
 
@@ -214,9 +214,9 @@ fn test_fill_proposals() {
     assert!(pool.add_entry(entry2, Status::Pending).unwrap());
     assert!(pool.add_entry(entry3, Status::Pending).unwrap());
 
-    assert_eq!(pool.inputs_len(), 0);
+    assert_eq!(pool.inputs_len(), 5);
     assert_eq!(pool.deps_len(), 1);
-    assert_eq!(pool.outputs_len(), 0);
+    assert_eq!(pool.outputs_len(), 7);
 
     let id1 = tx1.proposal_short_id();
     let id2 = tx2.proposal_short_id();
