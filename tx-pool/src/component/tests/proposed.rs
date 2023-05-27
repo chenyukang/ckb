@@ -142,7 +142,6 @@ fn test_add_entry_from_detached() {
     assert_eq!(pool.edges.inputs_len(), 2);
     assert_eq!(pool.entries.len(), 2);
 
-    //TODO: yukang verify this
     let left = vec![(id2.clone(), 1), (id3.clone(), 2)];
     let got = pool
         .entries
