@@ -360,7 +360,6 @@ impl TxPoolService {
                     self.process_orphan_tx(&tx).await;
                 }
                 Err(reject) => {
-                    debug!("after_process {} reject: {} ", tx_hash, reject);
                     if is_missing_input(reject) && all_inputs_is_unknown(snapshot, &tx) {
                         self.add_orphan(tx, peer, declared_cycle).await;
                     } else {
@@ -547,13 +546,10 @@ impl TxPoolService {
         tx: TransactionView,
         remote: Option<(Cycle, PeerIndex)>,
     ) -> Option<(Result<ProcessResult, Reject>, Arc<Snapshot>)> {
-        //debug!("begin _resumeble_process_tx for tx : {:?}", tx);
         let limit_cycles = self.tx_pool_config.max_tx_verify_cycles;
         let tx_hash = tx.hash();
 
         let (ret, snapshot) = self.pre_check(&tx).await;
-        //debug!("ret hhhhhhhhhhhhhhhhhhhhhhhhh: {:?}", ret);
-
         let (tip_hash, rtx, status, fee, tx_size) = try_or_return_with_snapshot!(ret, snapshot);
 
         if self.is_in_delay_window(&snapshot) {
@@ -1067,7 +1063,6 @@ fn _update_tx_pool_for_reorg(
                 }
             });
 
-        //debug!("111111 tx move to proposed {}", entries.len());
         tx_pool
             .pool_map
             .remove_entries_by_filter(|id, tx_entry, status| {
@@ -1081,11 +1076,8 @@ fn _update_tx_pool_for_reorg(
                     false
                 }
             });
-        debug!("222222 tx move to proposed {}", entries.len());
 
-        debug!("tx move to proposed {}", entries.len());
         for entry in entries {
-            debug!("tx move to proposed {}", entry.transaction().hash());
             let cached = CacheEntry::completed(entry.cycles, entry.fee);
             if let Err(e) =
                 tx_pool.proposed_rtx(cached, entry.size, entry.timestamp, Arc::clone(&entry.rtx))
@@ -1097,7 +1089,6 @@ fn _update_tx_pool_for_reorg(
         }
 
         for entry in gaps {
-            debug!("tx move to gap {}", entry.transaction().hash());
             let tx_hash = entry.transaction().hash();
             let cached = CacheEntry::completed(entry.cycles, entry.fee);
             if let Err(e) =

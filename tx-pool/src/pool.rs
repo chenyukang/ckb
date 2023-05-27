@@ -153,7 +153,6 @@ impl TxPool {
     ) {
         for tx in txs {
             let tx_hash = tx.hash();
-            debug!("try remove_committed_tx {}", tx_hash);
             self.remove_committed_tx(tx, callbacks);
 
             self.committed_txs_hash_cache
@@ -176,10 +175,8 @@ impl TxPool {
     }
 
     pub(crate) fn remove_committed_tx(&mut self, tx: &TransactionView, callbacks: &Callbacks) {
-        let hash = tx.hash();
         let short_id = tx.proposal_short_id();
         if let Some(entry) = self.pool_map.remove_entry(&short_id) {
-            debug!("remove_committed_tx from gap {}", hash);
             callbacks.call_committed(self, &entry)
         }
         {
@@ -202,8 +199,6 @@ impl TxPool {
 
         for entry in removed {
             self.pool_map.remove_entry(&entry.proposal_short_id());
-            let tx_hash = entry.transaction().hash();
-            debug!("remove_expired {} timestamp({})", tx_hash, entry.timestamp);
             let reject = Reject::Expiry(entry.timestamp);
             callbacks.call_reject(self, &entry, reject);
         }
@@ -328,7 +323,6 @@ impl TxPool {
         let snapshot = self.cloned_snapshot();
         let tip_header = snapshot.tip_header();
         let tx_env = Arc::new(TxVerifyEnv::new_proposed(tip_header, 0));
-        //debug!("trying to add rt to gap: {:?}", rtx);
         self.check_rtx_from_pending_and_proposed(&rtx)?;
 
         let max_cycles = snapshot.consensus().max_block_cycles();
@@ -340,15 +334,8 @@ impl TxPool {
             max_cycles,
         )?;
 
-        /*
-        for cell_meta in &rtx.resolved_inputs {
-            debug!("input: {:?}", &cell_meta.out_point);
-        }
-        */
-
         let entry =
             TxEntry::new_with_timestamp(rtx, verified.cycles, verified.fee, size, timestamp);
-        debug!("gap success for : {:?}", entry.proposal_short_id());
 
         let tx_hash = entry.transaction().hash();
         if self.add_gap(entry).unwrap_or(false) {
@@ -368,9 +355,7 @@ impl TxPool {
         let snapshot = self.cloned_snapshot();
         let tip_header = snapshot.tip_header();
         let tx_env = Arc::new(TxVerifyEnv::new_proposed(tip_header, 1));
-        let res = self.check_rtx_from_proposed(&rtx);
-        debug!("check_rtx: trx {:?} => {:?} ", rtx, res);
-        res?;
+        self.check_rtx_from_proposed(&rtx)?;
 
         let max_cycles = snapshot.consensus().max_block_cycles();
         let verified = verify_rtx(
@@ -567,9 +552,7 @@ impl CellProvider for TxPool {
                     let cell_meta = CellMetaBuilder::from_cell_output(output, data)
                         .out_point(out_point.to_owned())
                         .build();
-                    let res = CellStatus::live_cell(cell_meta);
-                    //debug!("output: {:?} status: {:?}", out_point, res);
-                    res
+                    CellStatus::live_cell(cell_meta)
                 }
                 None => CellStatus::Unknown,
             }

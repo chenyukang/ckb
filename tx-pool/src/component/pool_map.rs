@@ -6,7 +6,6 @@ use crate::component::entry::EvictKey;
 use crate::component::links::{Relation, TxLinksMap};
 use crate::component::score_key::AncestorsScoreSortKey;
 use crate::error::Reject;
-use ckb_logger::debug;
 
 use crate::TxEntry;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -215,10 +214,8 @@ impl PoolMap {
     fn update_descendants_index_key(&mut self, parent: &TxEntry, op: EntryOp) {
         let descendants: HashSet<ProposalShortId> =
             self.links.calc_descendants(&parent.proposal_short_id());
-        debug!("update_descendants_index_key: {:?}", descendants.len());
         for desc_id in &descendants {
             // update child score
-            debug!("update_descendants_index_key: {:?}", desc_id);
             let entry = self.entries.get_by_id(desc_id).unwrap().clone();
             let mut child = entry.inner.clone();
             match op {
@@ -246,12 +243,27 @@ impl PoolMap {
         }
     }
 
-    fn record_entry_relations(&mut self, entry: &TxEntry) {
+    fn record_entry_deps(&mut self, entry: &TxEntry) {
+        let tx_short_id: ProposalShortId = entry.proposal_short_id();
+        let header_deps = entry.transaction().header_deps();
+        let related_dep_out_points: Vec<_> = entry.related_dep_out_points().cloned().collect();
+
+        // record dep-txid
+        for d in related_dep_out_points {
+            self.edges.insert_deps(d.to_owned(), tx_short_id.clone());
+        }
+        // record header_deps
+        if !header_deps.is_empty() {
+            self.edges
+                .header_deps
+                .insert(tx_short_id.clone(), header_deps.into_iter().collect());
+        }
+    }
+
+    fn record_entry_edges(&mut self, entry: &TxEntry) {
         let tx_short_id: ProposalShortId = entry.proposal_short_id();
         let inputs = entry.transaction().input_pts_iter();
         let outputs = entry.transaction().output_pts();
-        let related_dep_out_points: Vec<_> = entry.related_dep_out_points().cloned().collect();
-        let header_deps = entry.transaction().header_deps();
 
         let mut children = HashSet::new();
         // if input reference a in-pool output, connect it
@@ -261,11 +273,6 @@ impl PoolMap {
                 *id = Some(tx_short_id.clone());
             }
             self.edges.insert_input(i.to_owned(), tx_short_id.clone());
-        }
-
-        // record dep-txid
-        for d in related_dep_out_points {
-            self.edges.insert_deps(d.to_owned(), tx_short_id.clone());
         }
 
         // record tx output
@@ -280,14 +287,6 @@ impl PoolMap {
                 self.edges.insert_output(o);
             }
         }
-
-        // record header_deps
-        if !header_deps.is_empty() {
-            self.edges
-                .header_deps
-                .insert(tx_short_id.clone(), header_deps.into_iter().collect());
-        }
-
         // update children
         if !children.is_empty() {
             self.update_descendants_from_detached(&tx_short_id, children);
@@ -383,9 +382,8 @@ impl PoolMap {
         Ok(true)
     }
 
-    pub(crate) fn remove_entry_edges(&mut self, entry: &TxEntry) {
+    fn remove_entry_edges(&mut self, entry: &TxEntry) {
         let inputs = entry.transaction().input_pts_iter();
-        let id = entry.proposal_short_id();
         let outputs = entry.transaction().output_pts();
 
         for o in outputs {
@@ -399,7 +397,10 @@ impl PoolMap {
                 *id = None;
             }
         }
+    }
 
+    fn remove_entry_deps(&mut self, entry: &TxEntry) {
+        let id = entry.proposal_short_id();
         for d in entry.related_dep_out_points().cloned() {
             self.edges.delete_txid_by_dep(d, &id);
         }
@@ -408,11 +409,6 @@ impl PoolMap {
     }
 
     pub(crate) fn add_entry(&mut self, mut entry: TxEntry, status: Status) -> Result<bool, Reject> {
-        debug!(
-            "add entry with status: {:?} status: {:?}",
-            entry.proposal_short_id(),
-            status
-        );
         let tx_short_id = entry.proposal_short_id();
         if self.entries.get_by_id(&tx_short_id).is_some() {
             return Ok(false);
@@ -422,11 +418,9 @@ impl PoolMap {
             self.record_entry_links(&mut entry, &status)?;
         }
         self.insert_entry(&entry, status)?;
+        self.record_entry_deps(&entry);
         if status == Status::Proposed {
-            self.record_entry_relations(&entry);
-        }
-        for (id, e) in self.entries.iter() {
-            debug!("iter id {:?} entry: {:?}", id, e.id);
+            self.record_entry_edges(&entry);
         }
         Ok(true)
     }
@@ -436,11 +430,6 @@ impl PoolMap {
         let score = entry.as_score_key();
         let evict_key = entry.as_evict_key();
         let stamp_id = self.entry_stamp.fetch_add(1, Ordering::SeqCst);
-        debug!(
-            "insert entry: {:?} len:{:?}",
-            entry.proposal_short_id(),
-            self.entries.len()
-        );
         self.entries.insert(PoolEntry {
             id: tx_short_id,
             score,
@@ -449,27 +438,21 @@ impl PoolMap {
             evict_key,
             stamp_id,
         });
-        debug!("end insert entry: {:?}", entry.proposal_short_id());
         Ok(true)
     }
 
     pub(crate) fn remove_entry(&mut self, id: &ProposalShortId) -> Option<TxEntry> {
         let removed = self.entries.remove_by_id(id);
-
-        debug!("remove entry deps: {:?}", id);
         if let Some(ref entry) = removed {
             self.update_descendants_index_key(&entry.inner, EntryOp::Remove);
+            self.remove_entry_deps(&entry.inner);
             if entry.status == Status::Proposed {
-                debug!("here for: {:?}", id);
-
                 self.remove_entry_edges(&entry.inner);
-                debug!("here finished remove edges for: {:?}", id);
                 self.update_parents_for_remove(id);
                 self.update_children_for_remove(id);
                 self.links.remove(id);
             }
         }
-        debug!("removed: {:?}", id);
         removed.map(|e| e.inner)
     }
 
@@ -597,7 +580,6 @@ impl PoolMap {
         &mut self,
         mut predicate: P,
     ) -> Vec<TxEntry> {
-        debug!("begin remove_entries_by_filter");
         let mut removed = Vec::new();
         for entry in self.entries.iter_by_stamp_id() {
             if predicate(&entry.id, &entry.inner, &entry.status) {
@@ -605,14 +587,8 @@ impl PoolMap {
             }
         }
         for entry in &removed {
-            debug!(
-                "trying remove_entries_by_filter: {:?}",
-                entry.proposal_short_id()
-            );
             self.remove_entry(&entry.proposal_short_id());
         }
-
-        debug!("end remove_entries_by_filter: {:?}", removed.len());
         removed
     }
 
@@ -640,13 +616,11 @@ impl PoolMap {
 impl CellProvider for PoolMap {
     fn cell(&self, out_point: &OutPoint, _eager_load: bool) -> CellStatus {
         if self.edges.get_input_ref(out_point).is_some() {
-            debug!("yukang check here first: {:?} => Dead", out_point);
             return CellStatus::Dead;
         }
         if let Some(x) = self.edges.get_output_ref(out_point) {
             // output consumed
             if x.is_some() {
-                debug!("yukang check here: {:?} => Dead", out_point);
                 return CellStatus::Dead;
             } else {
                 let (output, data) = self.get_output_with_data(out_point).expect("output");
@@ -662,23 +636,17 @@ impl CellProvider for PoolMap {
 
 impl CellChecker for PoolMap {
     fn is_live(&self, out_point: &OutPoint) -> Option<bool> {
-        debug!("is_live: {:?}", out_point);
-        self.edges.debug();
         if self.edges.get_input_ref(out_point).is_some() {
-            debug!("is_live: {:?} return Some(false)", out_point);
             return Some(false);
         }
         if let Some(x) = self.edges.get_output_ref(out_point) {
             // output consumed
             if x.is_some() {
-                debug!("is_live: {:?} return Some(false) later ", out_point);
                 return Some(false);
             } else {
-                debug!("is_live: {:?} return Some(true)", out_point);
                 return Some(true);
             }
         }
-        debug!("is_live: {:?} return None", out_point);
         None
     }
 }

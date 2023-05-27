@@ -361,14 +361,7 @@ fn canonicalize_path<P: AsRef<Path>>(path: P) -> PathBuf {
 }
 
 fn all_specs() -> Vec<Box<dyn Spec>> {
-    vec![
-        //Box::new(InvalidHeaderDep),
-        //Box::new(FeeOfMultipleMaxBlockProposalsLimit),
-    ]
-}
-
-fn all_specs_a() -> Vec<Box<dyn Spec>> {
-    let specs: Vec<Box<dyn Spec>> = vec![
+    let mut specs: Vec<Box<dyn Spec>> = vec![
         Box::new(BlockSyncFromOne),
         Box::new(BlockSyncForks),
         Box::new(BlockSyncDuplicatedAndReconnect),
@@ -410,7 +403,7 @@ fn all_specs_a() -> Vec<Box<dyn Spec>> {
         Box::new(PoolReconcile),
         Box::new(PoolResurrect),
         Box::new(PoolResolveConflictAfterReorg),
-        //Box::new(InvalidHeaderDep),
+        Box::new(InvalidHeaderDep),
         #[cfg(not(target_os = "windows"))]
         Box::new(PoolPersisted),
         Box::new(TransactionRelayBasic),
@@ -487,7 +480,7 @@ fn all_specs_a() -> Vec<Box<dyn Spec>> {
         Box::new(PackUnclesIntoEpochStarting),
         Box::new(FeeOfTransaction),
         Box::new(FeeOfMaxBlockProposalsLimit),
-        //Box::new(FeeOfMultipleMaxBlockProposalsLimit),
+        Box::new(FeeOfMultipleMaxBlockProposalsLimit),
         Box::new(ProposeButNotCommit),
         Box::new(ProposeDuplicated),
         Box::new(ForkedTransaction),
@@ -540,7 +533,7 @@ fn all_specs_a() -> Vec<Box<dyn Spec>> {
         Box::new(CheckVmVersion),
         Box::new(CheckVmBExtension),
     ];
-    //specs.shuffle(&mut thread_rng());
+    specs.shuffle(&mut thread_rng());
     specs
 }
 

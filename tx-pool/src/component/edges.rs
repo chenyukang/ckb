@@ -1,7 +1,5 @@
 use ckb_types::packed::{Byte32, OutPoint, ProposalShortId};
 use std::collections::{hash_map::Entry, HashMap, HashSet};
-use ckb_logger::debug;
-
 
 #[derive(Default, Debug, Clone)]
 pub(crate) struct Edges {
@@ -16,15 +14,6 @@ pub(crate) struct Edges {
 }
 
 impl Edges {
-    pub(crate) fn debug(&self) {
-        debug!("Edges:  debug: =================");
-        debug!("inputs: {:?}", self.inputs);
-        debug!("outputs: {:?}", self.outputs);
-        debug!("deps: {:?}", self.deps);
-        debug!("header_deps: {:?}", self.header_deps);
-        debug!("end .....................");
-    }
-
     #[cfg(test)]
     pub(crate) fn outputs_len(&self) -> usize {
         self.outputs.len()

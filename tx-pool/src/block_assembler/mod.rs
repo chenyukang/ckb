@@ -16,7 +16,7 @@ use ckb_error::{AnyError, InternalErrorKind};
 use ckb_jsonrpc_types::{
     BlockTemplate as JsonBlockTemplate, CellbaseTemplate, TransactionTemplate, UncleTemplate,
 };
-use ckb_logger::{debug, error};
+use ckb_logger::{debug, error, trace};
 use ckb_reward_calculator::RewardCalculator;
 use ckb_snapshot::Snapshot;
 use ckb_store::ChainStore;
@@ -203,10 +203,7 @@ impl BlockAssembler {
             current_template.cellbase.clone(),
             txs,
         )?;
-        debug!("update_full checked txs: {} txs", checked_txs.len());
-        for e in &checked_txs {
-            debug!("update_full checked txs: {:?}", e);
-        }
+
         let txs_size = checked_txs.iter().map(|tx| tx.size).sum();
         let total_size = basic_size + txs_size;
 
@@ -348,10 +345,7 @@ impl BlockAssembler {
             }
             tx_pool_reader.package_proposals(consensus.max_block_proposals_limit(), uncles)
         };
-        debug!("update_proposals: {}", proposals.len());
-        for e in &proposals {
-            debug!("update_proposals: {}", e);
-        }
+
         let new_proposals_size = proposals.len() * ProposalShortId::serialized_size();
         let new_total_size = current.size.calc_total_by_proposals(new_proposals_size);
         let max_block_bytes = consensus.max_block_bytes() as usize;
@@ -368,7 +362,7 @@ impl BlockAssembler {
             current.size.proposals = new_proposals_size;
             current.size.total = new_total_size;
 
-            debug!(
+            trace!(
                 "[BlockAssembler] update_proposals-{} epoch-{} uncles-{} proposals-{} txs-{}",
                 current.template.number,
                 current.template.epoch.number(),
@@ -377,7 +371,6 @@ impl BlockAssembler {
                 current.template.transactions.len(),
             );
         }
-        debug!("finished update_proposals");
     }
 
     pub(crate) async fn update_transactions(

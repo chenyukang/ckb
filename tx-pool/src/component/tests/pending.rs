@@ -125,17 +125,17 @@ fn test_resolve_conflict_header_dep() {
     assert!(pool.add_entry(entry1.clone(), Status::Pending).unwrap());
 
     assert_eq!(pool.inputs_len(), 0);
-    assert_eq!(pool.header_deps_len(), 0);
+    assert_eq!(pool.header_deps_len(), 1);
     assert_eq!(pool.outputs_len(), 0);
 
     let mut headers = HashSet::new();
     headers.insert(header);
 
     let conflicts = pool.resolve_conflict_header_dep(&headers);
-    // assert_eq!(
-    //     conflicts.into_iter().map(|i| i.0).collect::<HashSet<_>>(),
-    //     HashSet::from_iter(vec![entry, entry1])
-    // );
+    assert_eq!(
+         conflicts.into_iter().map(|i| i.0).collect::<HashSet<_>>(),
+         HashSet::from_iter(vec![entry])
+    );
 }
 
 #[test]
@@ -210,7 +210,7 @@ fn test_fill_proposals() {
     assert!(pool.add_entry(entry3, Status::Pending).unwrap());
 
     assert_eq!(pool.inputs_len(), 0);
-    assert_eq!(pool.deps_len(), 0);
+    assert_eq!(pool.deps_len(), 1);
     assert_eq!(pool.outputs_len(), 0);
 
     let id1 = tx1.proposal_short_id();
