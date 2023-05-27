@@ -6,6 +6,8 @@ use crate::component::entry::EvictKey;
 use crate::component::links::{Relation, TxLinksMap};
 use crate::component::score_key::AncestorsScoreSortKey;
 use crate::error::Reject;
+use ckb_logger::debug;
+
 use crate::TxEntry;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -213,10 +215,10 @@ impl PoolMap {
     fn update_descendants_index_key(&mut self, parent: &TxEntry, op: EntryOp) {
         let descendants: HashSet<ProposalShortId> =
             self.links.calc_descendants(&parent.proposal_short_id());
-        eprintln!("update_descendants_index_key: {:?}", descendants.len());
+        debug!("update_descendants_index_key: {:?}", descendants.len());
         for desc_id in &descendants {
             // update child score
-            eprintln!("update_descendants_index_key: {:?}", desc_id);
+            debug!("update_descendants_index_key: {:?}", desc_id);
             let entry = self.entries.get_by_id(desc_id).unwrap().clone();
             let mut child = entry.inner.clone();
             match op {
@@ -234,13 +236,13 @@ impl PoolMap {
             */
             //TODO: this is a bug from multi_index_map
             self.entries.remove_by_id(&short_id);
-            for e in self.entries.iter() {
-                eprintln!("now : {:?} order_id: {:?}", e.1.inner.proposal_short_id(), e.1.stamp_id);
-            }
-            eprintln!("finished 1 update_descendants_index_key: {:?}", desc_id);
+            //for e in self.entries.iter() {
+            //   debug!("now : {:?} order_id: {:?}", e.1.inner.proposal_short_id(), e.1.stamp_id);
+            //}
+            //debug!("finished 1 update_descendants_index_key: {:?}", desc_id);
             self.insert_entry(&child, entry.status)
                 .expect("pool consistent");
-            eprintln!("finished update_descendants_index_key: {:?}", desc_id);
+            //debug!("finished update_descendants_index_key: {:?}", desc_id);
 
         }
     }
@@ -407,7 +409,7 @@ impl PoolMap {
     }
 
     pub(crate) fn add_entry(&mut self, mut entry: TxEntry, status: Status) -> Result<bool, Reject> {
-        eprintln!(
+        debug!(
             "add entry with status: {:?} status: {:?}",
             entry.proposal_short_id(),
             status
@@ -425,7 +427,7 @@ impl PoolMap {
         self.record_entry_relations(&entry);
         //}
         for (id, e) in self.entries.iter() {
-            eprintln!("iter id {:?} entry: {:?}", id, e.id);
+            debug!("iter id {:?} entry: {:?}", id, e.id);
         }
         Ok(true)
     }
@@ -435,7 +437,7 @@ impl PoolMap {
         let score = entry.as_score_key();
         let evict_key = entry.as_evict_key();
         let stamp_id = self.entry_stamp.fetch_add(1, Ordering::SeqCst);
-        eprintln!("insert entry: {:?} len:{:?}", entry.proposal_short_id(), self.entries.len());
+        debug!("insert entry: {:?} len:{:?}", entry.proposal_short_id(), self.entries.len());
         self.entries.insert(PoolEntry {
             id: tx_short_id,
             score,
@@ -444,27 +446,27 @@ impl PoolMap {
             evict_key,
             stamp_id,
         });
-        eprintln!("end insert entry: {:?}", entry.proposal_short_id());
+        debug!("end insert entry: {:?}", entry.proposal_short_id());
         Ok(true)
     }
 
     pub(crate) fn remove_entry(&mut self, id: &ProposalShortId) -> Option<TxEntry> {
         let removed = self.entries.remove_by_id(id);
 
-        eprintln!("remove entry deps: {:?}", id);
+        debug!("remove entry deps: {:?}", id);
         if let Some(ref entry) = removed {
             self.update_descendants_index_key(&entry.inner, EntryOp::Remove);
             //if entry.status == Status::Proposed {
-                eprintln!("here for: {:?}", id);
+                debug!("here for: {:?}", id);
 
             self.remove_entry_edges(&entry.inner);
-            eprintln!("here finished remove edges for: {:?}", id);
+            debug!("here finished remove edges for: {:?}", id);
             self.update_parents_for_remove(id);
             self.update_children_for_remove(id);
             self.links.remove(id);
             //}
         }
-        eprintln!("removed: {:?}", id);
+        debug!("removed: {:?}", id);
         removed.map(|e| e.inner)
     }
 
@@ -592,7 +594,7 @@ impl PoolMap {
         &mut self,
         mut predicate: P,
     ) -> Vec<TxEntry> {
-        eprintln!("begin remove_entries_by_filter");
+        debug!("begin remove_entries_by_filter");
         let mut removed = Vec::new();
         for entry in self.entries.iter_by_stamp_id() {
             if predicate(&entry.id, &entry.inner, &entry.status) {
@@ -600,14 +602,14 @@ impl PoolMap {
             }
         }
         for entry in &removed {
-            eprintln!(
+            debug!(
                 "trying remove_entries_by_filter: {:?}",
                 entry.proposal_short_id()
             );
             self.remove_entry(&entry.proposal_short_id());
         }
 
-        eprintln!("end remove_entries_by_filter: {:?}", removed.len());
+        debug!("end remove_entries_by_filter: {:?}", removed.len());
         removed
     }
 
@@ -635,13 +637,13 @@ impl PoolMap {
 impl CellProvider for PoolMap {
     fn cell(&self, out_point: &OutPoint, _eager_load: bool) -> CellStatus {
         if self.edges.get_input_ref(out_point).is_some() {
-            eprintln!("yukang check here first: {:?} => Dead", out_point);
+            debug!("yukang check here first: {:?} => Dead", out_point);
             return CellStatus::Dead;
         }
         if let Some(x) = self.edges.get_output_ref(out_point) {
             // output consumed
             if x.is_some() {
-                eprintln!("yukang check here: {:?} => Dead", out_point);
+                debug!("yukang check here: {:?} => Dead", out_point);
                 return CellStatus::Dead;
             } else {
                 let (output, data) = self.get_output_with_data(out_point).expect("output");
@@ -657,23 +659,23 @@ impl CellProvider for PoolMap {
 
 impl CellChecker for PoolMap {
     fn is_live(&self, out_point: &OutPoint) -> Option<bool> {
-        eprintln!("is_live: {:?}", out_point);
+        debug!("is_live: {:?}", out_point);
         self.edges.debug();
         if self.edges.get_input_ref(out_point).is_some() {
-            eprintln!("is_live: {:?} return Some(false)", out_point);
+            debug!("is_live: {:?} return Some(false)", out_point);
             return Some(false);
         }
         if let Some(x) = self.edges.get_output_ref(out_point) {
             // output consumed
             if x.is_some() {
-                eprintln!("is_live: {:?} return Some(false) later ", out_point);
+                debug!("is_live: {:?} return Some(false) later ", out_point);
                 return Some(false);
             } else {
-                eprintln!("is_live: {:?} return Some(true)", out_point);
+                debug!("is_live: {:?} return Some(true)", out_point);
                 return Some(true);
             }
         }
-        eprintln!("is_live: {:?} return None", out_point);
+        debug!("is_live: {:?} return None", out_point);
         None
     }
 }

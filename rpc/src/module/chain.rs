@@ -2118,10 +2118,8 @@ impl ChainRpcImpl {
         only_committed: bool,
     ) -> Result<TransactionWithStatus> {
         let snapshot = self.shared.snapshot();
-        eprintln!("begin get_transaction_verbosity1: {:?}", tx_hash);
 
         if let Some(tx_info) = snapshot.get_transaction_info(&tx_hash) {
-            eprintln!("get_transaction_verbosity1: {:?}", tx_info);
             let cycles = if tx_info.is_cellbase() {
                 None
             } else {
@@ -2158,7 +2156,6 @@ impl ChainRpcImpl {
             return Err(RPCError::ckb_internal_error(e));
         };
         let (tx_status, cycles) = tx_status.unwrap();
-        eprintln!("finally get_transaction_verbosity1 {:?}", tx_status);
         Ok(TransactionWithStatus::omit_transaction(tx_status, cycles))
     }
 
@@ -2167,12 +2164,8 @@ impl ChainRpcImpl {
         tx_hash: packed::Byte32,
         only_committed: bool,
     ) -> Result<TransactionWithStatus> {
-        eprintln!("begin get_transaction_verbosity2: {:?}", tx_hash);
-
         let snapshot = self.shared.snapshot();
         if let Some((tx, tx_info)) = snapshot.get_transaction_with_info(&tx_hash) {
-            eprintln!("get_transaction_verbosity2: {:?}", tx_info);
-
             let cycles = if tx_info.is_cellbase() {
                 None
             } else {
@@ -2209,7 +2202,6 @@ impl ChainRpcImpl {
             return Err(RPCError::ckb_internal_error(e));
         };
         let transaction_with_status = transaction_with_status.unwrap();
-        eprintln!("finally get_transaction_verbosity2 {:?}", transaction_with_status);
         Ok(transaction_with_status)
     }
 

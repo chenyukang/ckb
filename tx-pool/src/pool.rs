@@ -328,7 +328,7 @@ impl TxPool {
         let snapshot = self.cloned_snapshot();
         let tip_header = snapshot.tip_header();
         let tx_env = Arc::new(TxVerifyEnv::new_proposed(tip_header, 0));
-        eprintln!("trying to add rt to gap: {:?}", rtx);
+        //debug!("trying to add rt to gap: {:?}", rtx);
         self.check_rtx_from_pending_and_proposed(&rtx)?;
 
         let max_cycles = snapshot.consensus().max_block_cycles();
@@ -340,13 +340,15 @@ impl TxPool {
             max_cycles,
         )?;
 
+        /*
         for cell_meta in &rtx.resolved_inputs {
-            eprintln!("input: {:?}", &cell_meta.out_point);
+            debug!("input: {:?}", &cell_meta.out_point);
         }
+        */
 
         let entry =
             TxEntry::new_with_timestamp(rtx, verified.cycles, verified.fee, size, timestamp);
-        eprintln!("gap success for : {:?}", entry.proposal_short_id());
+        debug!("gap success for : {:?}", entry.proposal_short_id());
 
         let tx_hash = entry.transaction().hash();
         if self.add_gap(entry).unwrap_or(false) {
@@ -367,7 +369,7 @@ impl TxPool {
         let tip_header = snapshot.tip_header();
         let tx_env = Arc::new(TxVerifyEnv::new_proposed(tip_header, 1));
         let res = self.check_rtx_from_proposed(&rtx);
-        eprintln!("check_rtx: trx {:?} => {:?} ", rtx, res);
+        debug!("check_rtx: trx {:?} => {:?} ", rtx, res);
         res?;
 
         let max_cycles = snapshot.consensus().max_block_cycles();
@@ -382,7 +384,7 @@ impl TxPool {
         let entry =
             TxEntry::new_with_timestamp(rtx, verified.cycles, verified.fee, size, timestamp);
         let tx_hash = entry.transaction().hash();
-        eprintln!(
+        debug!(
             "proposed_rtx: {:?} => {:?}",
             tx_hash,
             entry.proposal_short_id()
@@ -566,7 +568,7 @@ impl CellProvider for TxPool {
                         .out_point(out_point.to_owned())
                         .build();
                     let res = CellStatus::live_cell(cell_meta);
-                    eprintln!("output: {:?} status: {:?}", out_point, res);
+                    //debug!("output: {:?} status: {:?}", out_point, res);
                     res
                 }
                 None => CellStatus::Unknown,

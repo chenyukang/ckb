@@ -1,6 +1,7 @@
 use ckb_types::packed::ProposalShortId;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
+use ckb_logger::debug;
 
 #[derive(Default, Debug, Clone)]
 pub struct TxLinks {
@@ -59,7 +60,7 @@ impl TxLinksMap {
         let mut relation_ids = HashSet::with_capacity(stage.len());
 
         while let Some(id) = stage.iter().next().cloned() {
-            eprintln!("calc_relation_ids: id: {:?}", id);
+            debug!("calc_relation_ids: id: {:?}", id);
             relation_ids.insert(id.clone());
             stage.remove(&id);
 

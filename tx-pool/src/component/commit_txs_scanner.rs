@@ -3,6 +3,7 @@ use crate::component::{entry::TxEntry, score_key::AncestorsScoreSortKey};
 use ckb_types::{core::Cycle, packed::ProposalShortId};
 use ckb_util::LinkedHashMap;
 use std::collections::{BTreeSet, HashMap, HashSet};
+use ckb_logger::debug;
 
 // A template data struct used to store modified entries when package txs
 #[derive(Default)]
@@ -93,7 +94,7 @@ impl<'a> CommitTxsScanner<'a> {
             }
 
             let next = iter.peek();
-            eprintln!("next: {:?}", next);
+            debug!("next: {:?}", next);
 
             // First try to find a new transaction in `proposed_pool` to evaluate.
             let tx_entry: TxEntry = match (iter.peek(), self.modified_entries.next_best_entry()) {

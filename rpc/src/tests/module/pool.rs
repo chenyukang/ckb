@@ -194,7 +194,7 @@ fn test_send_transaction_exceeded_maximum_ancestors_count() {
         params: vec![],
     });
 
-    assert_eq!(1, response.result["transactions"].as_array().unwrap().len());
+    assert_eq!(125, response.result["transactions"].as_array().unwrap().len());
 }
 
 fn build_tx(

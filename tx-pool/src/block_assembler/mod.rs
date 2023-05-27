@@ -203,9 +203,9 @@ impl BlockAssembler {
             current_template.cellbase.clone(),
             txs,
         )?;
-        eprintln!("update_full checked txs: {} txs", checked_txs.len());
+        debug!("update_full checked txs: {} txs", checked_txs.len());
         for e in &checked_txs {
-            eprintln!("update_full checked txs: {:?}", e);
+            debug!("update_full checked txs: {:?}", e);
         }
         let txs_size = checked_txs.iter().map(|tx| tx.size).sum();
         let total_size = basic_size + txs_size;
@@ -226,7 +226,7 @@ impl BlockAssembler {
         current.size.total = total_size;
         current.size.proposals = proposals_size;
 
-        eprintln!(
+        debug!(
             "[BlockAssembler] update_full {} uncles-{} proposals-{} txs-{}",
             current.template.number,
             current.template.uncles.len(),
@@ -270,7 +270,7 @@ impl BlockAssembler {
         }
         let template = builder.build();
 
-        eprintln!(
+        debug!(
             "[BlockAssembler] update_blank {} uncles-{} proposals-{} txs-{}",
             template.number,
             template.uncles.len(),
@@ -324,7 +324,7 @@ impl BlockAssembler {
                     current.size.uncles = new_uncle_size;
                     current.size.total = new_total_size;
 
-                    eprintln!(
+                    debug!(
                         "[BlockAssembler] update_uncles-{} epoch-{} uncles-{} proposals-{} txs-{}",
                         current.template.number,
                         current.template.epoch.number(),
@@ -348,9 +348,9 @@ impl BlockAssembler {
             }
             tx_pool_reader.package_proposals(consensus.max_block_proposals_limit(), uncles)
         };
-        eprintln!("update_proposals: {}", proposals.len());
+        debug!("update_proposals: {}", proposals.len());
         for e in &proposals {
-            eprintln!("update_proposals: {}", e);
+            debug!("update_proposals: {}", e);
         }
         let new_proposals_size = proposals.len() * ProposalShortId::serialized_size();
         let new_total_size = current.size.calc_total_by_proposals(new_proposals_size);
@@ -368,7 +368,7 @@ impl BlockAssembler {
             current.size.proposals = new_proposals_size;
             current.size.total = new_total_size;
 
-            eprintln!(
+            debug!(
                 "[BlockAssembler] update_proposals-{} epoch-{} uncles-{} proposals-{} txs-{}",
                 current.template.number,
                 current.template.epoch.number(),
@@ -377,7 +377,7 @@ impl BlockAssembler {
                 current.template.transactions.len(),
             );
         }
-        eprintln!("finished update_proposals");
+        debug!("finished update_proposals");
     }
 
     pub(crate) async fn update_transactions(
@@ -420,9 +420,9 @@ impl BlockAssembler {
             current_template.cellbase.clone(),
             txs,
         ) {
-            eprintln!("update_transactions checked txs: {} txs", checked_txs.len());
+            debug!("update_transactions checked txs: {} txs", checked_txs.len());
             for e in &checked_txs {
-                eprintln!("update_transactions checked txs: {:?}", e);
+                debug!("update_transactions checked txs: {:?}", e);
             }
             let new_txs_size = checked_txs.iter().map(|tx| tx.size).sum();
             let new_total_size = current.size.calc_total_by_txs(new_txs_size);
@@ -442,7 +442,7 @@ impl BlockAssembler {
             current.size.txs = new_txs_size;
             current.size.total = new_total_size;
 
-            eprintln!(
+            debug!(
                 "[BlockAssembler] update_transactions-{} epoch-{} uncles-{} proposals-{} txs-{}",
                 current.template.number,
                 current.template.epoch.number(),
