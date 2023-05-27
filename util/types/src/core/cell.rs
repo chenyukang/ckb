@@ -325,9 +325,7 @@ impl ResolvedTransaction {
                     Ok(())
                 }
                 Some(false) => Err(OutPointError::Dead(out_point.clone())),
-                None => {
-                    Err(OutPointError::Unknown(out_point.clone()))
-                },
+                None => Err(OutPointError::Unknown(out_point.clone())),
             }
         };
 
@@ -699,9 +697,7 @@ pub fn resolve_transaction<CP: CellProvider, HC: HeaderChecker, S: BuildHasher>(
                 Entry::Vacant(entry) => {
                     let cell_status = cell_provider.cell(out_point, eager_load);
                     match cell_status {
-                        CellStatus::Dead => {
-                            Err(OutPointError::Dead(out_point.clone()))
-                        },
+                        CellStatus::Dead => Err(OutPointError::Dead(out_point.clone())),
                         CellStatus::Unknown => Err(OutPointError::Unknown(out_point.clone())),
                         CellStatus::Live(cell_meta) => {
                             entry.insert(cell_meta.clone());

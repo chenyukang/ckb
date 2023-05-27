@@ -133,8 +133,8 @@ fn test_resolve_conflict_header_dep() {
 
     let conflicts = pool.resolve_conflict_header_dep(&headers);
     assert_eq!(
-         conflicts.into_iter().map(|i| i.0).collect::<HashSet<_>>(),
-         HashSet::from_iter(vec![entry])
+        conflicts.into_iter().map(|i| i.0).collect::<HashSet<_>>(),
+        HashSet::from_iter(vec![entry])
     );
 }
 

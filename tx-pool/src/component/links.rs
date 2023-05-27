@@ -1,7 +1,7 @@
+use ckb_logger::debug;
 use ckb_types::packed::ProposalShortId;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
-use ckb_logger::debug;
 
 #[derive(Default, Debug, Clone)]
 pub struct TxLinks {
