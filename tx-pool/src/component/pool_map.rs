@@ -256,7 +256,7 @@ impl PoolMap {
         if !header_deps.is_empty() {
             self.edges
                 .header_deps
-                .insert(tx_short_id.clone(), header_deps.into_iter().collect());
+                .insert(tx_short_id, header_deps.into_iter().collect());
         }
     }
 
@@ -377,7 +377,7 @@ impl PoolMap {
             parents,
             children: Default::default(),
         };
-        self.links.inner.insert(short_id.clone(), links);
+        self.links.inner.insert(short_id, links);
 
         Ok(true)
     }

@@ -64,7 +64,7 @@ impl<'a> CommitTxsScanner<'a> {
     pub fn new(pool_map: &'a PoolMap) -> CommitTxsScanner<'a> {
         CommitTxsScanner {
             entries: Vec::new(),
-            pool_map: pool_map,
+            pool_map,
             modified_entries: TxModifiedEntries::default(),
             fetched_txs: HashSet::default(),
             failed_txs: HashSet::default(),

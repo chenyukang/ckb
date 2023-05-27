@@ -67,17 +67,18 @@ fn test_resolve_conflict() {
     let entry1 = TxEntry::dummy_resolve(tx1, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry2 = TxEntry::dummy_resolve(tx2, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry3 = TxEntry::dummy_resolve(tx3, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
-    assert!(pool.add_entry(entry1.clone(), Status::Pending).unwrap());
-    assert!(pool.add_entry(entry2.clone(), Status::Pending).unwrap());
-    assert!(pool.add_entry(entry3.clone(), Status::Pending).unwrap());
+    assert!(pool.add_entry(entry1, Status::Pending).unwrap());
+    assert!(pool.add_entry(entry2, Status::Pending).unwrap());
+    assert!(pool.add_entry(entry3, Status::Pending).unwrap());
 
-    let conflicts = pool.resolve_conflict(&tx4);
+    //TODO: (yukang) review this failed
+    let _conflicts = pool.resolve_conflict(&tx4);
     // assert_eq!(
     //     conflicts.into_iter().map(|i| i.0).collect::<HashSet<_>>(),
     //     HashSet::from_iter(vec![entry1, entry2])
     // );
 
-    let conflicts = pool.resolve_conflict(&tx5);
+    let _conflicts = pool.resolve_conflict(&tx5);
     // assert_eq!(
     //     conflicts.into_iter().map(|i| i.0).collect::<HashSet<_>>(),
     //     HashSet::from_iter(vec![entry3])
@@ -97,10 +98,11 @@ fn test_resolve_conflict_descendants() {
     let entry3 = TxEntry::dummy_resolve(tx3, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry4 = TxEntry::dummy_resolve(tx4, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     assert!(pool.add_entry(entry1, Status::Pending).unwrap());
-    assert!(pool.add_entry(entry3.clone(), Status::Pending).unwrap());
-    assert!(pool.add_entry(entry4.clone(), Status::Pending).unwrap());
+    assert!(pool.add_entry(entry3, Status::Pending).unwrap());
+    assert!(pool.add_entry(entry4, Status::Pending).unwrap());
 
-    let conflicts = pool.resolve_conflict(&tx2);
+    //TODO: (yukang) review this failed
+    let _conflicts = pool.resolve_conflict(&tx2);
     // assert_eq!(
     //     conflicts.into_iter().map(|i| i.0).collect::<HashSet<_>>(),
     //     HashSet::from_iter(vec![entry3, entry4])
@@ -122,7 +124,7 @@ fn test_resolve_conflict_header_dep() {
     let entry = TxEntry::dummy_resolve(tx, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry1 = TxEntry::dummy_resolve(tx1, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     assert!(pool.add_entry(entry.clone(), Status::Pending).unwrap());
-    assert!(pool.add_entry(entry1.clone(), Status::Pending).unwrap());
+    assert!(pool.add_entry(entry1, Status::Pending).unwrap());
 
     assert_eq!(pool.inputs_len(), 0);
     assert_eq!(pool.header_deps_len(), 1);

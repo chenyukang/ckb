@@ -77,8 +77,9 @@ impl TxPool {
         self.pool_map.entries.get_by_status(status)
     }
 
+    /// Get tx-pool size
     pub fn status_size(&self, status: &Status) -> usize {
-        self.get_by_status(&status).len()
+        self.get_by_status(status).len()
     }
 
     /// Update size and cycles statics for add tx
