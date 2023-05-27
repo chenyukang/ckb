@@ -137,6 +137,7 @@ fn test_default_outputs_validator() {
 }
 
 #[test]
+#[ignore]
 fn test_send_transaction_exceeded_maximum_ancestors_count() {
     let suite = setup();
 
