@@ -534,11 +534,11 @@ fn test_package_txs_with_deps_priority() {
         Capacity::shannons(10000),
     );
 
-    let ret = tx_pool.submit_local_tx(tx2.clone()).unwrap();
-    assert!(ret.is_ok(), "submit {} {:?}", tx2.proposal_short_id(), ret);
-    let ret = tx_pool.submit_local_tx(tx1.clone()).unwrap();
-    assert!(ret.is_ok(), "submit {} {:?}", tx1.proposal_short_id(), ret);
-    eprintln!("submit {} {:?}", tx1.proposal_short_id(), ret);
+    let txs = vec![tx2.clone(), tx1];
+    for tx in &txs {
+        let ret = tx_pool.submit_local_tx(tx.clone()).unwrap();
+        assert!(ret.is_ok(), "submit {} {:?}", tx.proposal_short_id(), ret);
+    }
 
     let mut block_template = shared
         .get_block_template(None, None, None)
