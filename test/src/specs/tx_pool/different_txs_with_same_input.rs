@@ -42,25 +42,21 @@ impl Spec for DifferentTxsWithSameInput {
             .map(TransactionView::hash)
             .collect();
 
-        eprintln!("template transactions: {:?}", commit_txs_hash);
         // RBF (Replace-By-Fees) is not implemented
-        //assert!(commit_txs_hash.contains(&tx0_hash));
         assert!(commit_txs_hash.contains(&tx1.hash()));
         assert!(!commit_txs_hash.contains(&tx2.hash()));
 
         // when tx1 was confirmed, tx2 should be rejected
         let ret = node0.rpc_client().get_transaction(tx2.hash());
-        eprintln!("ret: {:?}", ret);
         assert!(
             matches!(ret.tx_status.status, Status::Rejected),
-            "tx2 should be unknown"
+            "tx2 should be rejected"
         );
 
         // verbosity = 1
         let ret = node0
             .rpc_client()
             .get_transaction_with_verbosity(tx1.hash(), 1);
-        eprintln!("tx1: {:?}", ret);
         assert!(ret.transaction.is_none());
         assert!(matches!(ret.tx_status.status, Status::Committed));
 

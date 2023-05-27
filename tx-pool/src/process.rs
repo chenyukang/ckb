@@ -635,7 +635,6 @@ impl TxPoolService {
         let entry = TxEntry::new(rtx, completed.cycles, fee, tx_size);
 
         let (ret, submit_snapshot) = self.submit_entry(tip_hash, entry, status).await;
-        debug!("submit_snapshot result: {:?}", ret);
         try_or_return_with_snapshot!(ret, submit_snapshot);
 
         self.notify_block_assembler(status).await;
@@ -1041,10 +1040,6 @@ fn _update_tx_pool_for_reorg(
     tx_pool.remove_committed_txs(attached.iter(), callbacks, detached_headers);
     tx_pool.remove_by_detached_proposal(detached_proposal_id.iter());
 
-    debug!(
-        "call _update_tx_pool_for_reorg ....................: {:?}",
-        mine_mode
-    );
     // mine mode:
     // pending ---> gap ----> proposed
     // try move gap to proposed

@@ -1,6 +1,5 @@
 use crate::component::pool_map::PoolMap;
 use crate::component::{entry::TxEntry, score_key::AncestorsScoreSortKey};
-use ckb_logger::debug;
 use ckb_types::{core::Cycle, packed::ProposalShortId};
 use ckb_util::LinkedHashMap;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -92,9 +91,6 @@ impl<'a> CommitTxsScanner<'a> {
                     continue;
                 }
             }
-
-            let next = iter.peek();
-            debug!("next: {:?}", next);
 
             // First try to find a new transaction in `proposed_pool` to evaluate.
             let tx_entry: TxEntry = match (iter.peek(), self.modified_entries.next_best_entry()) {

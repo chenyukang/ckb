@@ -73,6 +73,7 @@ impl Spec for ReorgHandleProposals {
                 node_b.submit_block(block);
             });
 
+        //TODO: (yukang) review this
         // 4. At this point, `node_a` maintains fork-B, whose valid proposals are `[]`, as
         // `tx_family.b` is invalid because of lacking its parent transaction; `node_b` maintains
         // fork-A, whose valid proposals are `[tx_family.a]` which be able to be committed.

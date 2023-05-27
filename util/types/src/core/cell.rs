@@ -331,8 +331,7 @@ impl ResolvedTransaction {
 
         // // check input
         for cell_meta in &self.resolved_inputs {
-            let res = check_cell(&cell_meta.out_point);
-            res?;
+            check_cell(&cell_meta.out_point)?;
         }
 
         let mut resolved_system_deps: HashSet<&OutPoint> = HashSet::new();

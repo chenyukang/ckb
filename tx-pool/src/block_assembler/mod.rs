@@ -223,7 +223,7 @@ impl BlockAssembler {
         current.size.total = total_size;
         current.size.proposals = proposals_size;
 
-        debug!(
+        trace!(
             "[BlockAssembler] update_full {} uncles-{} proposals-{} txs-{}",
             current.template.number,
             current.template.uncles.len(),
@@ -267,7 +267,7 @@ impl BlockAssembler {
         }
         let template = builder.build();
 
-        debug!(
+        trace!(
             "[BlockAssembler] update_blank {} uncles-{} proposals-{} txs-{}",
             template.number,
             template.uncles.len(),
@@ -321,7 +321,7 @@ impl BlockAssembler {
                     current.size.uncles = new_uncle_size;
                     current.size.total = new_total_size;
 
-                    debug!(
+                    trace!(
                         "[BlockAssembler] update_uncles-{} epoch-{} uncles-{} proposals-{} txs-{}",
                         current.template.number,
                         current.template.epoch.number(),
@@ -413,10 +413,6 @@ impl BlockAssembler {
             current_template.cellbase.clone(),
             txs,
         ) {
-            debug!("update_transactions checked txs: {} txs", checked_txs.len());
-            for e in &checked_txs {
-                debug!("update_transactions checked txs: {:?}", e);
-            }
             let new_txs_size = checked_txs.iter().map(|tx| tx.size).sum();
             let new_total_size = current.size.calc_total_by_txs(new_txs_size);
             let mut builder = BlockTemplateBuilder::from_template(&current.template);
@@ -435,7 +431,7 @@ impl BlockAssembler {
             current.size.txs = new_txs_size;
             current.size.total = new_total_size;
 
-            debug!(
+            trace!(
                 "[BlockAssembler] update_transactions-{} epoch-{} uncles-{} proposals-{} txs-{}",
                 current.template.number,
                 current.template.epoch.number(),
