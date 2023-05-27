@@ -1,7 +1,7 @@
 //! Top-level Pool type, methods, and tests
 extern crate rustc_hash;
 extern crate slab;
-use crate::component::edges::Edges;
+use crate::component::edges::{Edges, OutPointStatus};
 use crate::component::entry::EvictKey;
 use crate::component::links::{Relation, TxLinksMap};
 use crate::component::score_key::AncestorsScoreSortKey;
@@ -269,9 +269,7 @@ impl PoolMap {
         // if input reference a in-pool output, connect it
         // otherwise, record input for conflict check
         for i in inputs {
-            if let Some(id) = self.edges.get_mut_output(&i) {
-                *id = Some(tx_short_id.clone());
-            }
+            self.edges.set_output_consumed(&i, &tx_short_id);
             self.edges.insert_input(i.to_owned(), tx_short_id.clone());
         }
 
@@ -393,9 +391,7 @@ impl PoolMap {
         for i in inputs {
             // release input record
             self.edges.remove_input(&i);
-            if let Some(id) = self.edges.get_mut_output(&i) {
-                *id = None;
-            }
+            self.edges.set_output_unconsumed(&i);
         }
     }
 
@@ -531,6 +527,7 @@ impl PoolMap {
         let mut conflicts = Vec::new();
 
         for i in inputs {
+            eprintln!("input: {:?}", i);
             if let Some(id) = self.edges.remove_input(&i) {
                 let entries = self.remove_entry_and_descendants(&id);
                 if !entries.is_empty() {
@@ -618,19 +615,17 @@ impl CellProvider for PoolMap {
         if self.edges.get_input_ref(out_point).is_some() {
             return CellStatus::Dead;
         }
-        if let Some(x) = self.edges.get_output_ref(out_point) {
-            // output consumed
-            if x.is_some() {
-                return CellStatus::Dead;
-            } else {
+        match self.edges.get_output_ref(out_point) {
+            Some(OutPointStatus::Consumed(_)) => CellStatus::Dead,
+            Some(OutPointStatus::UnConsumed) => {
                 let (output, data) = self.get_output_with_data(out_point).expect("output");
                 let cell_meta = CellMetaBuilder::from_cell_output(output, data)
                     .out_point(out_point.to_owned())
                     .build();
-                return CellStatus::live_cell(cell_meta);
+                CellStatus::live_cell(cell_meta)
             }
+            None => CellStatus::Unknown,
         }
-        CellStatus::Unknown
     }
 }
 
@@ -639,14 +634,10 @@ impl CellChecker for PoolMap {
         if self.edges.get_input_ref(out_point).is_some() {
             return Some(false);
         }
-        if let Some(x) = self.edges.get_output_ref(out_point) {
-            // output consumed
-            if x.is_some() {
-                return Some(false);
-            } else {
-                return Some(true);
-            }
+        match self.edges.get_output_ref(out_point) {
+            Some(OutPointStatus::Consumed(_)) => Some(false),
+            Some(OutPointStatus::UnConsumed) => Some(true),
+            None => None,
         }
-        None
     }
 }

@@ -1,12 +1,18 @@
 use ckb_types::packed::{Byte32, OutPoint, ProposalShortId};
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 
+#[derive(Debug, PartialEq, Clone)]
+pub(crate) enum OutPointStatus {
+    UnConsumed,
+    Consumed(ProposalShortId),
+}
+
 #[derive(Default, Debug, Clone)]
 pub(crate) struct Edges {
     /// input-txid map represent in-pool tx's inputs
     pub(crate) inputs: HashMap<OutPoint, ProposalShortId>,
     /// output-op<txid> map represent in-pool tx's outputs
-    pub(crate) outputs: HashMap<OutPoint, Option<ProposalShortId>>,
+    pub(crate) outputs: HashMap<OutPoint, OutPointStatus>,
     /// dep-set<txid> map represent in-pool tx's deps
     pub(crate) deps: HashMap<OutPoint, HashSet<ProposalShortId>>,
     /// dep-set<txid-headers> map represent in-pool tx's header deps
@@ -43,15 +49,18 @@ impl Edges {
     }
 
     pub(crate) fn remove_output(&mut self, out_point: &OutPoint) -> Option<ProposalShortId> {
-        self.outputs.remove(out_point).unwrap_or(None)
+        match self.outputs.remove(out_point) {
+            Some(OutPointStatus::Consumed(id)) => Some(id),
+            _ => None,
+        }
     }
 
     pub(crate) fn insert_output(&mut self, out_point: OutPoint) {
-        self.outputs.insert(out_point, None);
+        self.outputs.insert(out_point, OutPointStatus::UnConsumed);
     }
 
     pub(crate) fn insert_consumed_output(&mut self, out_point: OutPoint, id: ProposalShortId) {
-        self.outputs.insert(out_point, Some(id));
+        self.outputs.insert(out_point, OutPointStatus::Consumed(id));
     }
 
     pub(crate) fn get_input_ref(&self, out_point: &OutPoint) -> Option<&ProposalShortId> {
@@ -62,15 +71,20 @@ impl Edges {
         self.deps.get(out_point)
     }
 
-    pub(crate) fn get_output_ref(&self, out_point: &OutPoint) -> Option<&Option<ProposalShortId>> {
-        self.outputs.get(out_point)
+    pub(crate) fn set_output_consumed(&mut self, out_point: &OutPoint, tx_short_id: &ProposalShortId) {
+        if let Some(status) = self.outputs.get_mut(out_point) {
+            *status = OutPointStatus::Consumed(tx_short_id.clone());
+        }
     }
 
-    pub(crate) fn get_mut_output(
-        &mut self,
-        out_point: &OutPoint,
-    ) -> Option<&mut Option<ProposalShortId>> {
-        self.outputs.get_mut(out_point)
+    pub(crate) fn set_output_unconsumed(&mut self, out_point: &OutPoint) {
+        if let Some(status) = self.outputs.get_mut(out_point) {
+            *status = OutPointStatus::UnConsumed;
+        }
+    }
+
+    pub(crate) fn get_output_ref(&self, out_point: &OutPoint) -> Option<&OutPointStatus> {
+        self.outputs.get(out_point)
     }
 
     pub(crate) fn remove_deps(&mut self, out_point: &OutPoint) -> Option<HashSet<ProposalShortId>> {
