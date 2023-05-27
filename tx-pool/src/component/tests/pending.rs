@@ -67,9 +67,9 @@ fn test_resolve_conflict() {
     let entry1 = TxEntry::dummy_resolve(tx1, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry2 = TxEntry::dummy_resolve(tx2, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
     let entry3 = TxEntry::dummy_resolve(tx3, MOCK_CYCLES, MOCK_FEE, MOCK_SIZE);
-    assert!(pool.add_entry(entry1.clone(), Status::Pending).unwrap());
-    assert!(pool.add_entry(entry2.clone(), Status::Pending).unwrap());
-    assert!(pool.add_entry(entry3.clone(), Status::Pending).unwrap());
+    assert!(pool.add_entry(entry1, Status::Pending).unwrap());
+    assert!(pool.add_entry(entry2, Status::Pending).unwrap());
+    assert!(pool.add_entry(entry3, Status::Pending).unwrap());
 
     //TODO: (yukang) review this failed
     let conflicts = pool.resolve_conflict(&tx4);
