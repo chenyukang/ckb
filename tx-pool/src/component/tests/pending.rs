@@ -258,6 +258,6 @@ fn test_edges() {
     assert!(edges.deps.contains_key(&outpoint));
     edges.delete_txid_by_dep(outpoint.clone(), &short_id1);
     assert!(!edges.deps.is_empty());
-    edges.delete_txid_by_dep(outpoint.clone(), &short_id2);
+    edges.delete_txid_by_dep(outpoint, &short_id2);
     assert!(edges.deps.is_empty());
 }
