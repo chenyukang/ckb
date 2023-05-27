@@ -9,8 +9,8 @@ use crate::error::Reject;
 use ckb_logger::debug;
 
 use crate::TxEntry;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 use ckb_logger::trace;
 use ckb_types::core::error::OutPointError;
@@ -243,7 +243,6 @@ impl PoolMap {
             self.insert_entry(&child, entry.status)
                 .expect("pool consistent");
             //debug!("finished update_descendants_index_key: {:?}", desc_id);
-
         }
     }
 
@@ -419,13 +418,13 @@ impl PoolMap {
             return Ok(false);
         }
         trace!("add_{:?} {}", status, entry.transaction().hash());
-        //if status == Status::Proposed {
-        self.record_entry_links(&mut entry, &status)?;
-        //}
+        if status == Status::Proposed {
+            self.record_entry_links(&mut entry, &status)?;
+        }
         self.insert_entry(&entry, status)?;
-        //if status == Status::Proposed {
-        self.record_entry_relations(&entry);
-        //}
+        if status == Status::Proposed {
+            self.record_entry_relations(&entry);
+        }
         for (id, e) in self.entries.iter() {
             debug!("iter id {:?} entry: {:?}", id, e.id);
         }
@@ -437,7 +436,11 @@ impl PoolMap {
         let score = entry.as_score_key();
         let evict_key = entry.as_evict_key();
         let stamp_id = self.entry_stamp.fetch_add(1, Ordering::SeqCst);
-        debug!("insert entry: {:?} len:{:?}", entry.proposal_short_id(), self.entries.len());
+        debug!(
+            "insert entry: {:?} len:{:?}",
+            entry.proposal_short_id(),
+            self.entries.len()
+        );
         self.entries.insert(PoolEntry {
             id: tx_short_id,
             score,
@@ -456,15 +459,15 @@ impl PoolMap {
         debug!("remove entry deps: {:?}", id);
         if let Some(ref entry) = removed {
             self.update_descendants_index_key(&entry.inner, EntryOp::Remove);
-            //if entry.status == Status::Proposed {
+            if entry.status == Status::Proposed {
                 debug!("here for: {:?}", id);
 
-            self.remove_entry_edges(&entry.inner);
-            debug!("here finished remove edges for: {:?}", id);
-            self.update_parents_for_remove(id);
-            self.update_children_for_remove(id);
-            self.links.remove(id);
-            //}
+                self.remove_entry_edges(&entry.inner);
+                debug!("here finished remove edges for: {:?}", id);
+                self.update_parents_for_remove(id);
+                self.update_children_for_remove(id);
+                self.links.remove(id);
+            }
         }
         debug!("removed: {:?}", id);
         removed.map(|e| e.inner)

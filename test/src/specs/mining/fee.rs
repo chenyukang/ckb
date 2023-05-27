@@ -141,10 +141,11 @@ impl Spec for FeeOfMultipleMaxBlockProposalsLimit {
                     .build()
             })
             .collect();
+        eprintln!("txs len: {}", txs.len());
         txs.iter().for_each(|tx| {
             node.submit_transaction(tx);
         });
-
+        eprintln!("multiple len: {}", txs.len());
         (0..multiple).for_each(|_| {
             let block = node.new_block(None, None, None);
             node.submit_block(&block);

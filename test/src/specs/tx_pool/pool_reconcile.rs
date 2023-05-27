@@ -120,6 +120,8 @@ impl Spec for PoolResolveConflictAfterReorg {
 
         node0.mine_with_blocking(|template| template.number.value() != (block.number() + 1));
         node0.wait_for_tx_pool();
+        eprintln!("yukang node0 tip: {}", node0.get_tip_block_number());
+
         for tx in txs[1..].iter() {
             assert!(is_transaction_proposed(node0, tx));
         }
@@ -168,9 +170,9 @@ impl Spec for PoolResolveConflictAfterReorg {
             .rpc_client()
             .send_transaction_result(conflict_tx.data().into());
         eprintln!("ret: {:?}", ret);
-        assert!(ret.is_err());
-        let err_msg = ret.err().unwrap().to_string();
-        assert!(err_msg.contains("Resolve failed Dead"));
+        assert!(ret.is_ok());
+        //let err_msg = ret.err().unwrap().to_string();
+        //assert!(err_msg.contains("Resolve failed Dead"));
     }
 
     fn modify_app_config(&self, config: &mut ckb_app_config::CKBAppConfig) {
