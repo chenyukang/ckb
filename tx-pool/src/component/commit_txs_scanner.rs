@@ -147,6 +147,7 @@ impl<'a> CommitTxsScanner<'a> {
             let ancestors_ids = self.pool_map.calc_ancestors(&short_id);
             let mut ancestors = ancestors_ids
                 .iter()
+                .filter(|id| self.pool_map.has_proposed(id))
                 .filter_map(only_unconfirmed)
                 .cloned()
                 .collect::<Vec<TxEntry>>();
@@ -199,7 +200,7 @@ impl<'a> CommitTxsScanner<'a> {
             let descendants = self.pool_map.calc_descendants(id);
             for desc_id in descendants
                 .iter()
-                .filter(|id| !already_added.contains_key(id))
+                .filter(|id| !already_added.contains_key(id) && self.pool_map.has_proposed(id))
             {
                 // Note: since https://github.com/nervosnetwork/ckb/pull/3706
                 // calc_descendants() may not consistent

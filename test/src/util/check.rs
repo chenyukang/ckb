@@ -9,7 +9,6 @@ pub fn is_transaction_pending(node: &Node, transaction: &TransactionView) -> boo
 
 pub fn is_transaction_proposed(node: &Node, transaction: &TransactionView) -> bool {
     let ret = node.rpc_client().get_transaction(transaction.hash());
-    //eprintln!("ret: {:?}", ret);
     ret.tx_status.status == Status::Proposed && ret.cycles.is_some()
 }
 

@@ -548,27 +548,22 @@ impl CellProvider for TxPool {
             .pool_map
             .get_by_id(&ProposalShortId::from_tx_hash(&tx_hash))
         {
-            Some(pool_entry) => {
-                //eprintln!("cell for point: {:?} status: {:?}", out_point, pool_entry.status);
-                if pool_entry.status != Status::Proposed {
-                    match pool_entry
-                        .inner
-                        .transaction()
-                        .output_with_data(out_point.index().unpack())
-                    {
-                        Some((output, data)) => {
-                            let cell_meta = CellMetaBuilder::from_cell_output(output, data)
-                                .out_point(out_point.to_owned())
-                                .build();
-                            CellStatus::live_cell(cell_meta)
-                        }
-                        None => CellStatus::Unknown,
+            Some(pool_entry) if pool_entry.status != Status::Proposed => {
+                match pool_entry
+                    .inner
+                    .transaction()
+                    .output_with_data(out_point.index().unpack())
+                {
+                    Some((output, data)) => {
+                        let cell_meta = CellMetaBuilder::from_cell_output(output, data)
+                            .out_point(out_point.to_owned())
+                            .build();
+                        CellStatus::live_cell(cell_meta)
                     }
-                } else {
-                    CellStatus::Unknown
+                    None => CellStatus::Unknown,
                 }
             }
-            None => CellStatus::Unknown,
+            _ => CellStatus::Unknown,
         }
     }
 }
@@ -580,18 +575,12 @@ impl CellChecker for TxPool {
             .pool_map
             .get_by_id(&ProposalShortId::from_tx_hash(&tx_hash))
         {
-            Some(pool_entry) => {
-                if pool_entry.status != Status::Proposed {
-                    pool_entry
-                        .inner
-                        .transaction()
-                        .output_with_data(out_point.index().unpack())
-                        .map(|_| true)
-                } else {
-                    None
-                }
-            }
-            None => None,
+            Some(pool_entry) if pool_entry.status != Status::Proposed => pool_entry
+                .inner
+                .transaction()
+                .output_with_data(out_point.index().unpack())
+                .map(|_| true),
+            _ => None,
         }
     }
 }

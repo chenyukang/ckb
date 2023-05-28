@@ -1044,14 +1044,14 @@ fn _update_tx_pool_for_reorg(
     // pending ---> gap ----> proposed
     // try move gap to proposed
     if mine_mode {
-        let mut entries = Vec::new();
+        let mut proposals = Vec::new();
         let mut gaps = Vec::new();
 
         tx_pool
             .pool_map
             .remove_entries_by_filter(|id, tx_entry, status| {
                 if snapshot.proposals().contains_proposed(id) && status == &Status::Gap {
-                    entries.push(tx_entry.clone());
+                    proposals.push(tx_entry.clone());
                     true
                 } else {
                     false
@@ -1061,18 +1061,19 @@ fn _update_tx_pool_for_reorg(
         tx_pool
             .pool_map
             .remove_entries_by_filter(|id, tx_entry, status| {
-                if snapshot.proposals().contains_proposed(id) && status == &Status::Pending {
-                    entries.push(tx_entry.clone());
-                    true
-                } else if snapshot.proposals().contains_gap(id) && status == &Status::Pending {
-                    gaps.push(tx_entry.clone());
+                if status == &Status::Pending {
+                    if snapshot.proposals().contains_proposed(id) {
+                        proposals.push(tx_entry.clone());
+                    } else if snapshot.proposals().contains_gap(id) {
+                        gaps.push(tx_entry.clone());
+                    }
                     true
                 } else {
                     false
                 }
             });
 
-        for entry in entries {
+        for entry in proposals {
             let cached = CacheEntry::completed(entry.cycles, entry.fee);
             if let Err(e) =
                 tx_pool.proposed_rtx(cached, entry.size, entry.timestamp, Arc::clone(&entry.rtx))

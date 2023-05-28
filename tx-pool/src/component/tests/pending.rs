@@ -74,7 +74,6 @@ fn test_resolve_conflict() {
     assert!(pool.add_entry(entry2.clone(), Status::Pending).unwrap());
     assert!(pool.add_entry(entry3.clone(), Status::Pending).unwrap());
 
-    //TODO: (yukang) review this failed
     let conflicts = pool.resolve_conflict(&tx4);
     assert_eq!(
         conflicts.into_iter().map(|i| i.0).collect::<HashSet<_>>(),
@@ -104,7 +103,6 @@ fn test_resolve_conflict_descendants() {
     assert!(pool.add_entry(entry3.clone(), Status::Pending).unwrap());
     assert!(pool.add_entry(entry4.clone(), Status::Pending).unwrap());
 
-    //TODO: (yukang) review this failed
     let conflicts = pool.resolve_conflict(&tx2);
     assert_eq!(
         conflicts.into_iter().map(|i| i.0).collect::<HashSet<_>>(),

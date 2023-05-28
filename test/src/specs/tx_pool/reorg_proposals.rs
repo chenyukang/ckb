@@ -1,6 +1,7 @@
 use crate::specs::tx_pool::utils::{assert_new_block_committed, prepare_tx_family};
 use crate::utils::{blank, propose};
 use crate::{Node, Spec};
+use ckb_jsonrpc_types::TxStatus;
 use ckb_types::core::BlockView;
 
 pub struct ReorgHandleProposals;
@@ -40,8 +41,13 @@ impl Spec for ReorgHandleProposals {
         node_a.submit_transaction(family.b());
         node_b.submit_transaction(family.a());
         node_b.submit_transaction(family.b());
+
         node_a.submit_block(&propose(node_a, &[family.a()]));
         node_b.submit_block(&propose(node_b, &[family.b()]));
+
+        assert!(node_a.get_transaction(family.a().hash()) == TxStatus::pending());
+        assert!(node_a.get_transaction(family.b().hash()) == TxStatus::pending());
+
         (0..window.closest()).for_each(|_| {
             node_a.submit_block(&blank(node_a));
         });
@@ -73,14 +79,13 @@ impl Spec for ReorgHandleProposals {
                 node_b.submit_block(block);
             });
 
-        //TODO: (yukang) review this
         // 4. At this point, `node_a` maintains fork-B, whose valid proposals are `[]`, as
         // `tx_family.b` is invalid because of lacking its parent transaction; `node_b` maintains
         // fork-A, whose valid proposals are `[tx_family.a]` which be able to be committed.
         assert_new_block_committed(node_a, &[]);
-        //assert_new_block_committed(node_b, &[family.a().clone()]);
-        node_a.mine(1);
-        node_b.mine(1);
+        assert_new_block_committed(node_b, &[family.a().clone()]);
+        node_a.mine(2);
+        node_b.mine(2);
     }
 }
 
