@@ -3113,8 +3113,7 @@ dependencies = [
 [[package]]
 name = "multi_index_map"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a58eea8dbf91e7420e0e843535f585491046d6017e669d36cb8342cfa4861e2"
+source = "git+https://github.com/wyjin/multi_index_map.git?branch=master#e6b7da51d89015edc99a00b79f31d9f038eddd2d"
 dependencies = [
  "convert_case 0.6.0",
  "proc-macro-error",

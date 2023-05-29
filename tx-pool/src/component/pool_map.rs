@@ -360,11 +360,12 @@ impl PoolMap {
                 EntryOp::Remove => child.sub_entry_weight(parent),
                 EntryOp::Add => child.add_entry_weight(parent),
             }
-            let short_id = child.proposal_short_id();
-            //TODO: optimize it
-            self.entries.remove_by_id(&short_id);
-            self.insert_entry(&child, entry.status)
-                .expect("pool consistent");
+            let child_id = child.proposal_short_id();
+            self.entries.modify_by_id(&child_id, |entry| {
+                entry.inner = child.clone();
+                entry.score = child.as_score_key();
+                entry.evict_key = child.as_evict_key();
+            });
         }
     }
 
