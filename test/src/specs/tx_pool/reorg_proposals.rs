@@ -84,8 +84,8 @@ impl Spec for ReorgHandleProposals {
         // fork-A, whose valid proposals are `[tx_family.a]` which be able to be committed.
         assert_new_block_committed(node_a, &[]);
         assert_new_block_committed(node_b, &[family.a().clone()]);
-        node_a.mine(2);
-        node_b.mine(2);
+        node_a.mine(1);
+        node_b.mine(1);
     }
 }
 
