@@ -168,6 +168,7 @@ impl Spec for PoolResolveConflictAfterReorg {
         let ret = node0
             .rpc_client()
             .send_transaction_result(conflict_tx.data().into());
+        assert!(ret.is_err());
         let err_msg = ret.err().unwrap().to_string();
         assert!(err_msg.contains("Resolve failed Dead"));
     }

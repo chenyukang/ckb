@@ -6,10 +6,7 @@ use crate::component::entry::EvictKey;
 use crate::component::links::{Relation, TxLinksMap};
 use crate::component::score_key::AncestorsScoreSortKey;
 use crate::error::Reject;
-
 use crate::TxEntry;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
 
 use ckb_logger::trace;
 use ckb_types::core::error::OutPointError;
@@ -54,8 +51,6 @@ pub struct PoolEntry {
     pub status: Status,
     #[multi_index(ordered_non_unique)]
     pub evict_key: EvictKey,
-    #[multi_index(ordered_unique)]
-    pub stamp_id: u64,
     // other sort key
     pub inner: TxEntry,
 }
@@ -81,7 +76,6 @@ pub struct PoolMap {
     /// All the parent/children relationships
     pub(crate) links: TxLinksMap,
     pub(crate) max_ancestors_count: usize,
-    entry_stamp: Arc<AtomicU64>,
 }
 
 impl PoolMap {
@@ -91,7 +85,6 @@ impl PoolMap {
             edges: Edges::default(),
             links: TxLinksMap::new(),
             max_ancestors_count,
-            entry_stamp: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -297,15 +290,14 @@ impl PoolMap {
         }
     }
 
-    pub(crate) fn remove_entries_by_filter<
-        P: FnMut(&ProposalShortId, &TxEntry, &Status) -> bool,
-    >(
+    pub(crate) fn remove_entries_by_filter<P: FnMut(&ProposalShortId, &TxEntry) -> bool>(
         &mut self,
+        status: &Status,
         mut predicate: P,
     ) -> Vec<TxEntry> {
         let mut removed = Vec::new();
-        for entry in self.entries.iter_by_stamp_id() {
-            if predicate(&entry.id, &entry.inner, &entry.status) {
+        for entry in self.entries.get_by_status(status) {
+            if predicate(&entry.id, &entry.inner) {
                 removed.push(entry.inner.clone());
             }
         }
@@ -546,14 +538,12 @@ impl PoolMap {
         let tx_short_id = entry.proposal_short_id();
         let score = entry.as_score_key();
         let evict_key = entry.as_evict_key();
-        let stamp_id = self.entry_stamp.fetch_add(1, Ordering::SeqCst);
         self.entries.insert(PoolEntry {
             id: tx_short_id,
             score,
             status,
             inner: entry.clone(),
             evict_key,
-            stamp_id,
         });
         Ok(true)
     }

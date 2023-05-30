@@ -1049,8 +1049,8 @@ fn _update_tx_pool_for_reorg(
 
         tx_pool
             .pool_map
-            .remove_entries_by_filter(|id, tx_entry, status| {
-                if snapshot.proposals().contains_proposed(id) && status == &Status::Gap {
+            .remove_entries_by_filter(&Status::Gap, |id, tx_entry| {
+                if snapshot.proposals().contains_proposed(id) {
                     proposals.push(tx_entry.clone());
                     true
                 } else {
@@ -1060,11 +1060,11 @@ fn _update_tx_pool_for_reorg(
 
         tx_pool
             .pool_map
-            .remove_entries_by_filter(|id, tx_entry, status| {
-                if snapshot.proposals().contains_proposed(id) && status == &Status::Pending {
+            .remove_entries_by_filter(&Status::Pending, |id, tx_entry| {
+                if snapshot.proposals().contains_proposed(id) {
                     proposals.push(tx_entry.clone());
                     true
-                } else if snapshot.proposals().contains_gap(id) && status == &Status::Pending {
+                } else if snapshot.proposals().contains_gap(id) {
                     gaps.push(tx_entry.clone());
                     true
                 } else {
