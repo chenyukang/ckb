@@ -362,7 +362,8 @@ fn canonicalize_path<P: AsRef<Path>>(path: P) -> PathBuf {
 
 fn _all_specs() -> Vec<Box<dyn Spec>> {
     // This case is not stable right now
-    vec![Box::new(PoolResolveConflictAfterReorg)]
+    //vec![Box::new(PoolResolveConflictAfterReorg)]
+    vec![Box::new(RemoveConflictFromPending)]
 }
 
 fn all_specs() -> Vec<Box<dyn Spec>> {

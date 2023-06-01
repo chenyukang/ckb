@@ -242,31 +242,38 @@ impl PoolMap {
         conflicts
     }
 
+    /// pending gap and proposed store the inputs and deps in edges, it's removed in `remove_entry`
+    /// here we use `input_pts_iter` and `related_dep_out_points` to find the conflict txs
     pub(crate) fn resolve_conflict(&mut self, tx: &TransactionView) -> Vec<ConflictEntry> {
-        let inputs = tx.input_pts_iter();
+        let mut to_be_removed = Vec::new();
         let mut conflicts = Vec::new();
 
-        for i in inputs {
-            if let Some(id) = self.edges.remove_input(&i) {
-                let entries = self.remove_entry_and_descendants(&id);
-                if !entries.is_empty() {
-                    let reject = Reject::Resolve(OutPointError::Dead(i.clone()));
-                    let rejects = std::iter::repeat(reject).take(entries.len());
-                    conflicts.extend(entries.into_iter().zip(rejects));
+        for (_, entry) in self.entries.iter() {
+            let entry = &entry.inner;
+            let tx_id = entry.proposal_short_id();
+            let tx_inputs = entry.transaction().input_pts_iter();
+            let deps = entry.related_dep_out_points();
+
+            // tx input conflict
+            for i in tx_inputs {
+                if tx.input_pts_iter().any(|j| i == j) {
+                    to_be_removed.push((tx_id.to_owned(), i.clone()));
                 }
             }
 
-            // deps consumed
-            if let Some(x) = self.edges.remove_deps(&i) {
-                for id in x {
-                    let entries = self.remove_entry_and_descendants(&id);
-                    if !entries.is_empty() {
-                        let reject = Reject::Resolve(OutPointError::Dead(i.clone()));
-                        let rejects = std::iter::repeat(reject).take(entries.len());
-                        conflicts.extend(entries.into_iter().zip(rejects));
-                    }
+            // tx deps conflict
+            for i in deps {
+                if tx.input_pts_iter().any(|j| *i == j) {
+                    to_be_removed.push((tx_id.to_owned(), i.clone()));
                 }
             }
+        }
+
+        for (tx_id, input) in to_be_removed.iter() {
+            let entries = self.remove_entry_and_descendants(tx_id);
+            let reject = Reject::Resolve(OutPointError::Dead(input.to_owned()));
+            let rejects = std::iter::repeat(reject).take(entries.len());
+            conflicts.extend(entries.into_iter().zip(rejects));
         }
 
         conflicts
