@@ -242,38 +242,31 @@ impl PoolMap {
         conflicts
     }
 
-    /// pending gap and proposed store the inputs and deps in edges, it's removed in `remove_entry`
-    /// here we use `input_pts_iter` and `related_dep_out_points` to find the conflict txs
     pub(crate) fn resolve_conflict(&mut self, tx: &TransactionView) -> Vec<ConflictEntry> {
-        let mut to_be_removed = Vec::new();
+        let inputs = tx.input_pts_iter();
         let mut conflicts = Vec::new();
 
-        for (_, entry) in self.entries.iter() {
-            let entry = &entry.inner;
-            let tx_id = entry.proposal_short_id();
-            let tx_inputs = entry.transaction().input_pts_iter();
-            let deps = entry.related_dep_out_points();
-
-            // tx input conflict
-            for i in tx_inputs {
-                if tx.input_pts_iter().any(|j| i == j) {
-                    to_be_removed.push((tx_id.to_owned(), i.clone()));
+        for i in inputs {
+            if let Some(id) = self.edges.remove_input(&i) {
+                let entries = self.remove_entry_and_descendants(&id);
+                if !entries.is_empty() {
+                    let reject = Reject::Resolve(OutPointError::Dead(i.clone()));
+                    let rejects = std::iter::repeat(reject).take(entries.len());
+                    conflicts.extend(entries.into_iter().zip(rejects));
                 }
             }
 
-            // tx deps conflict
-            for i in deps {
-                if tx.input_pts_iter().any(|j| *i == j) {
-                    to_be_removed.push((tx_id.to_owned(), i.clone()));
+            // deps consumed
+            if let Some(x) = self.edges.remove_deps(&i) {
+                for id in x {
+                    let entries = self.remove_entry_and_descendants(&id);
+                    if !entries.is_empty() {
+                        let reject = Reject::Resolve(OutPointError::Dead(i.clone()));
+                        let rejects = std::iter::repeat(reject).take(entries.len());
+                        conflicts.extend(entries.into_iter().zip(rejects));
+                    }
                 }
             }
-        }
-
-        for (tx_id, input) in to_be_removed.iter() {
-            let entries = self.remove_entry_and_descendants(tx_id);
-            let reject = Reject::Resolve(OutPointError::Dead(input.to_owned()));
-            let rejects = std::iter::repeat(reject).take(entries.len());
-            conflicts.extend(entries.into_iter().zip(rejects));
         }
 
         conflicts
@@ -558,10 +551,8 @@ impl PoolMap {
 
 impl CellProvider for PoolMap {
     fn cell(&self, out_point: &OutPoint, _eager_load: bool) -> CellStatus {
-        if let Some(id) = self.edges.get_input_ref(out_point) {
-            if self.has_proposed(id) {
-                return CellStatus::Dead;
-            }
+        if self.edges.get_input_ref(out_point).is_some() {
+            return CellStatus::Dead;
         }
         match self.edges.get_output_ref(out_point) {
             Some(OutPointStatus::UnConsumed) => {
@@ -571,7 +562,7 @@ impl CellProvider for PoolMap {
                     .build();
                 CellStatus::live_cell(cell_meta)
             }
-            Some(OutPointStatus::Consumed(id)) if self.has_proposed(id) => CellStatus::Dead,
+            Some(OutPointStatus::Consumed(_id)) => CellStatus::Dead,
             _ => CellStatus::Unknown,
         }
     }
@@ -579,13 +570,11 @@ impl CellProvider for PoolMap {
 
 impl CellChecker for PoolMap {
     fn is_live(&self, out_point: &OutPoint) -> Option<bool> {
-        if let Some(id) = self.edges.get_input_ref(out_point) {
-            if self.has_proposed(id) {
-                return Some(false);
-            }
+        if self.edges.get_input_ref(out_point).is_some() {
+            return Some(false);
         }
         match self.edges.get_output_ref(out_point) {
-            Some(OutPointStatus::Consumed(id)) if self.has_proposed(id) => Some(false),
+            Some(OutPointStatus::Consumed(_id)) => Some(false),
             Some(OutPointStatus::UnConsumed) => Some(true),
             _ => None,
         }

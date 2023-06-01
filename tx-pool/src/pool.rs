@@ -14,12 +14,10 @@ use ckb_store::ChainStore;
 use ckb_types::{
     core::{
         cell::{resolve_transaction, OverlayCellChecker, OverlayCellProvider, ResolvedTransaction},
-        cell::{CellChecker, CellMetaBuilder, CellProvider, CellStatus},
         tx_pool::{TxPoolEntryInfo, TxPoolIds},
         Cycle, TransactionView, UncleBlockView,
     },
-    packed::{Byte32, OutPoint, ProposalShortId},
-    prelude::*,
+    packed::{Byte32, ProposalShortId},
 };
 use ckb_verification::{cache::CacheEntry, TxVerifyEnv};
 use lru::LruCache;
@@ -274,8 +272,7 @@ impl TxPool {
         rtx: &ResolvedTransaction,
     ) -> Result<(), Reject> {
         let snapshot = self.snapshot();
-        let proposal_checker = OverlayCellChecker::new(&self.pool_map, snapshot);
-        let checker = OverlayCellChecker::new(self, &proposal_checker);
+        let checker = OverlayCellChecker::new(&self.pool_map, snapshot);
         let mut seen_inputs = HashSet::new();
         rtx.check(&mut seen_inputs, &checker, snapshot)
             .map_err(Reject::Resolve)
@@ -294,8 +291,7 @@ impl TxPool {
         tx: TransactionView,
     ) -> Result<Arc<ResolvedTransaction>, Reject> {
         let snapshot = self.snapshot();
-        let proposed_provider = OverlayCellProvider::new(&self.pool_map, snapshot);
-        let provider = OverlayCellProvider::new(self, &proposed_provider);
+        let provider = OverlayCellProvider::new(&self.pool_map, snapshot);
         let mut seen_inputs = HashSet::new();
         resolve_transaction(tx, &mut seen_inputs, &provider, snapshot)
             .map(Arc::new)
@@ -539,6 +535,7 @@ impl TxPool {
     }
 }
 
+/*
 /// This is a hack right now, we use `CellProvider` to check if a transaction is in `Pending` or `Gap` status.
 /// To make sure the behavior is same as before, we need to remove this if we have finished replace-by-fee strategy.
 impl CellProvider for TxPool {
@@ -584,3 +581,4 @@ impl CellChecker for TxPool {
         }
     }
 }
+*/
