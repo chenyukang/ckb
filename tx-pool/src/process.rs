@@ -964,12 +964,7 @@ fn check_rtx(
     } else {
         TxStatus::Fresh
     };
-    if tx_status == TxStatus::Proposed {
-        tx_pool.check_rtx_from_proposed(rtx)
-    } else {
-        tx_pool.check_rtx_from_pending_and_proposed(rtx)
-    }
-    .map(|_| tx_status)
+    tx_pool.check_rtx_from_pool(rtx).map(|_| tx_status)
 }
 
 fn resolve_tx(tx_pool: &TxPool, snapshot: &Snapshot, tx: TransactionView) -> ResolveResult {
@@ -981,11 +976,7 @@ fn resolve_tx(tx_pool: &TxPool, snapshot: &Snapshot, tx: TransactionView) -> Res
     } else {
         TxStatus::Fresh
     };
-    if tx_status == TxStatus::Proposed {
-        tx_pool.resolve_tx_from_proposed(tx)
-    } else {
-        tx_pool.resolve_tx_from_pending_and_proposed(tx)
-    }
+    tx_pool.resolve_tx_from_pool(tx)
     .map(|rtx| (rtx, tx_status))
 }
 

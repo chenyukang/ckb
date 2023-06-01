@@ -267,7 +267,7 @@ impl TxPool {
         false
     }
 
-    pub(crate) fn check_rtx_from_pending_and_proposed(
+    pub(crate) fn check_rtx_from_pool(
         &self,
         rtx: &ResolvedTransaction,
     ) -> Result<(), Reject> {
@@ -278,15 +278,7 @@ impl TxPool {
             .map_err(Reject::Resolve)
     }
 
-    pub(crate) fn check_rtx_from_proposed(&self, rtx: &ResolvedTransaction) -> Result<(), Reject> {
-        let snapshot = self.snapshot();
-        let proposal_checker = OverlayCellChecker::new(&self.pool_map, snapshot);
-        let mut seen_inputs = HashSet::new();
-        rtx.check(&mut seen_inputs, &proposal_checker, snapshot)
-            .map_err(Reject::Resolve)
-    }
-
-    pub(crate) fn resolve_tx_from_pending_and_proposed(
+    pub(crate) fn resolve_tx_from_pool(
         &self,
         tx: TransactionView,
     ) -> Result<Arc<ResolvedTransaction>, Reject> {
@@ -294,18 +286,6 @@ impl TxPool {
         let provider = OverlayCellProvider::new(&self.pool_map, snapshot);
         let mut seen_inputs = HashSet::new();
         resolve_transaction(tx, &mut seen_inputs, &provider, snapshot)
-            .map(Arc::new)
-            .map_err(Reject::Resolve)
-    }
-
-    pub(crate) fn resolve_tx_from_proposed(
-        &self,
-        tx: TransactionView,
-    ) -> Result<Arc<ResolvedTransaction>, Reject> {
-        let snapshot = self.snapshot();
-        let proposed_provider = OverlayCellProvider::new(&self.pool_map, snapshot);
-        let mut seen_inputs = HashSet::new();
-        resolve_transaction(tx, &mut seen_inputs, &proposed_provider, snapshot)
             .map(Arc::new)
             .map_err(Reject::Resolve)
     }
@@ -320,7 +300,7 @@ impl TxPool {
         let snapshot = self.cloned_snapshot();
         let tip_header = snapshot.tip_header();
         let tx_env = Arc::new(TxVerifyEnv::new_proposed(tip_header, 0));
-        self.check_rtx_from_pending_and_proposed(&rtx)?;
+        self.check_rtx_from_pool(&rtx)?;
 
         let max_cycles = snapshot.consensus().max_block_cycles();
         let verified = verify_rtx(
@@ -352,7 +332,7 @@ impl TxPool {
         let snapshot = self.cloned_snapshot();
         let tip_header = snapshot.tip_header();
         let tx_env = Arc::new(TxVerifyEnv::new_proposed(tip_header, 1));
-        self.check_rtx_from_proposed(&rtx)?;
+        self.check_rtx_from_pool(&rtx)?;
 
         let max_cycles = snapshot.consensus().max_block_cycles();
         let verified = verify_rtx(
@@ -535,50 +515,3 @@ impl TxPool {
     }
 }
 
-/*
-/// This is a hack right now, we use `CellProvider` to check if a transaction is in `Pending` or `Gap` status.
-/// To make sure the behavior is same as before, we need to remove this if we have finished replace-by-fee strategy.
-impl CellProvider for TxPool {
-    fn cell(&self, out_point: &OutPoint, _eager_load: bool) -> CellStatus {
-        let tx_hash = out_point.tx_hash();
-        match self
-            .pool_map
-            .get_by_id(&ProposalShortId::from_tx_hash(&tx_hash))
-        {
-            Some(pool_entry) if pool_entry.status != Status::Proposed => {
-                match pool_entry
-                    .inner
-                    .transaction()
-                    .output_with_data(out_point.index().unpack())
-                {
-                    Some((output, data)) => {
-                        let cell_meta = CellMetaBuilder::from_cell_output(output, data)
-                            .out_point(out_point.to_owned())
-                            .build();
-                        CellStatus::live_cell(cell_meta)
-                    }
-                    None => CellStatus::Unknown,
-                }
-            }
-            _ => CellStatus::Unknown,
-        }
-    }
-}
-
-impl CellChecker for TxPool {
-    fn is_live(&self, out_point: &OutPoint) -> Option<bool> {
-        let tx_hash = out_point.tx_hash();
-        match self
-            .pool_map
-            .get_by_id(&ProposalShortId::from_tx_hash(&tx_hash))
-        {
-            Some(pool_entry) if pool_entry.status != Status::Proposed => pool_entry
-                .inner
-                .transaction()
-                .output_with_data(out_point.index().unpack())
-                .map(|_| true),
-            _ => None,
-        }
-    }
-}
-*/
