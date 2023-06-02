@@ -9,6 +9,7 @@ use crate::error::Reject;
 use crate::TxEntry;
 
 use ckb_logger::trace;
+use ckb_multi_index_map::MultiIndexMap;
 use ckb_types::core::error::OutPointError;
 use ckb_types::packed::OutPoint;
 use ckb_types::{
@@ -20,7 +21,6 @@ use ckb_types::{
     core::cell::{CellMetaBuilder, CellProvider, CellStatus},
     prelude::*,
 };
-use ckb_multi_index_map::MultiIndexMap;
 use std::borrow::Cow;
 use std::collections::HashSet;
 
@@ -431,7 +431,7 @@ impl PoolMap {
     }
 
     /// Record the links for entry
-    fn record_entry_links(&mut self, entry: &mut TxEntry, status: &Status) -> Result<bool, Reject> {
+    fn record_entry_links(&mut self, entry: &mut TxEntry) -> Result<bool, Reject> {
         // find in pool parents
         let mut parents: HashSet<ProposalShortId> = HashSet::with_capacity(
             entry.transaction().inputs().len() + entry.transaction().cell_deps().len(),
@@ -470,7 +470,8 @@ impl PoolMap {
                 .expect("pool consistent");
             entry.add_entry_weight(&ancestor.inner);
         }
-        if *status == Status::Proposed && entry.ancestors_count > self.max_ancestors_count {
+        if entry.ancestors_count > self.max_ancestors_count {
+            eprintln!("debug: exceeded maximum ancestors count");
             return Err(Reject::ExceededMaximumAncestorsCount);
         }
 
@@ -528,7 +529,7 @@ impl PoolMap {
             return Ok(false);
         }
         trace!("add_{:?} {}", status, entry.transaction().hash());
-        self.record_entry_links(&mut entry, &status)?;
+        self.record_entry_links(&mut entry)?;
         self.insert_entry(&entry, status)?;
         self.record_entry_deps(&entry);
         self.record_entry_edges(&entry);
@@ -538,8 +539,11 @@ impl PoolMap {
     /// Change the status of the entry, only used for `gap_rtx` and `proposed_rtx`
     pub(crate) fn set_entry(&mut self, entry: &TxEntry, status: Status) {
         let tx_short_id = entry.proposal_short_id();
-        let _ = self.entries.get_by_id(&tx_short_id).expect("unconsistent pool");
-        self.entries.modify_by_id(&tx_short_id, |e|{
+        let _ = self
+            .entries
+            .get_by_id(&tx_short_id)
+            .expect("unconsistent pool");
+        self.entries.modify_by_id(&tx_short_id, |e| {
             e.status = status;
         });
     }

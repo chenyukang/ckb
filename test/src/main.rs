@@ -368,7 +368,8 @@ fn _all_specs() -> Vec<Box<dyn Spec>> {
     //vec![Box::new(ConflictInPending)]
     //vec![Box::new(ConflictInPending)]
     //vec![Box::new(DifferentTxsWithSameInput)]
-    vec![Box::new(ConflictInProposed), Box::new(SubmitConflict)]
+    //vec![Box::new(ConflictInProposed), Box::new(SubmitConflict)]
+    vec![Box::new(SendTxChain)]
 }
 
 fn all_specs() -> Vec<Box<dyn Spec>> {

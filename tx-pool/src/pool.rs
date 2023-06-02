@@ -275,10 +275,7 @@ impl TxPool {
         false
     }
 
-    pub(crate) fn check_rtx_from_pool(
-        &self,
-        rtx: &ResolvedTransaction,
-    ) -> Result<(), Reject> {
+    pub(crate) fn check_rtx_from_pool(&self, rtx: &ResolvedTransaction) -> Result<(), Reject> {
         let snapshot = self.snapshot();
         let checker = OverlayCellChecker::new(&self.pool_map, snapshot);
         let mut seen_inputs = HashSet::new();
@@ -513,4 +510,3 @@ impl TxPool {
         }
     }
 }
-

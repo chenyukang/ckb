@@ -976,8 +976,7 @@ fn resolve_tx(tx_pool: &TxPool, snapshot: &Snapshot, tx: TransactionView) -> Res
     } else {
         TxStatus::Fresh
     };
-    tx_pool.resolve_tx_from_pool(tx)
-    .map(|rtx| (rtx, tx_status))
+    tx_pool.resolve_tx_from_pool(tx).map(|rtx| (rtx, tx_status))
 }
 
 fn _submit_entry(
@@ -1057,7 +1056,7 @@ fn _update_tx_pool_for_reorg(
         }
 
         for entry in proposals {
-            eprintln!("begin to proposed: {:x}", entry.transaction().hash());
+            debug!("begin to proposed: {:x}", entry.transaction().hash());
             let cached = CacheEntry::completed(entry.cycles, entry.fee);
             if let Err(e) =
                 tx_pool.proposed_rtx(cached, entry.size, entry.timestamp, Arc::clone(&entry.rtx))
@@ -1069,7 +1068,7 @@ fn _update_tx_pool_for_reorg(
         }
 
         for entry in gaps {
-            eprintln!("begin to gap: {:x}", entry.transaction().hash());
+            debug!("begin to gap: {:x}", entry.transaction().hash());
             let tx_hash = entry.transaction().hash();
             let cached = CacheEntry::completed(entry.cycles, entry.fee);
             if let Err(e) =
