@@ -436,7 +436,7 @@ fn test_package_txs_with_deps2() {
             .internal_process_block(Arc::new(block), Switch::DISABLE_ALL)
             .unwrap();
     }
-
+    eprintln!("proposal txs ok");
     // skip gap
     {
         while Into::<u64>::into(block_template.number) != 2 {
@@ -452,16 +452,20 @@ fn test_package_txs_with_deps2() {
             .internal_process_block(Arc::new(block), Switch::DISABLE_ALL)
             .unwrap();
     }
+    eprintln!("skip gap ok");
 
     // submit txs
     for tx in &txs {
         let ret = tx_pool.submit_local_tx(tx.clone()).unwrap();
         assert!(ret.is_ok(), "submit {} {:?}", tx.proposal_short_id(), ret);
     }
+    eprintln!("submit txs ok");
 
     let mut tx_pool_info = tx_pool.get_tx_pool_info().unwrap();
     while tx_pool_info.proposed_size != txs.len() {
-        tx_pool_info = tx_pool.get_tx_pool_info().unwrap()
+        tx_pool_info = tx_pool.get_tx_pool_info().unwrap();
+        //eprintln!("tx_pool_info {:?} len: {:?}", tx_pool_info.proposed_size, txs.len());
+        //eprintln!("tx_pool_info {:?}", tx_pool_info);
     }
 
     // get block template with txs

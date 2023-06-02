@@ -20,7 +20,7 @@ use ckb_types::{
     core::cell::{CellMetaBuilder, CellProvider, CellStatus},
     prelude::*,
 };
-use multi_index_map::MultiIndexMap;
+use ckb_multi_index_map::MultiIndexMap;
 use std::borrow::Cow;
 use std::collections::HashSet;
 
@@ -290,6 +290,7 @@ impl PoolMap {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn remove_entries_by_filter<P: FnMut(&ProposalShortId, &TxEntry) -> bool>(
         &mut self,
         status: &Status,
@@ -532,6 +533,15 @@ impl PoolMap {
         self.record_entry_deps(&entry);
         self.record_entry_edges(&entry);
         Ok(true)
+    }
+
+    /// Change the status of the entry, only used for `gap_rtx` and `proposed_rtx`
+    pub(crate) fn set_entry(&mut self, entry: &TxEntry, status: Status) {
+        let tx_short_id = entry.proposal_short_id();
+        let _ = self.entries.get_by_id(&tx_short_id).expect("unconsistent pool");
+        self.entries.modify_by_id(&tx_short_id, |e|{
+            e.status = status;
+        });
     }
 
     fn insert_entry(&mut self, entry: &TxEntry, status: Status) -> Result<bool, Reject> {

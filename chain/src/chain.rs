@@ -372,13 +372,13 @@ impl ChainService {
         let block_number = block.number();
         let block_hash = block.hash();
 
-        debug!("begin processing block: {}-{}", block_number, block_hash);
+        eprintln!("begin processing block: {}-{}", block_number, block_hash);
         if block_number < 1 {
             warn!("receive 0 number block: 0-{}", block_hash);
         }
 
         self.insert_block(block, switch).map(|ret| {
-            debug!("finish processing block");
+            eprintln!("finish processing block");
             ret
         })
     }
@@ -504,7 +504,7 @@ impl ChainService {
 
         if new_best_block {
             let tip_header = block.header();
-            info!(
+            eprintln!(
                 "block: {}, hash: {:#x}, epoch: {:#}, total_diff: {:#x}, txs: {}",
                 tip_header.number(),
                 tip_header.hash(),
@@ -575,10 +575,10 @@ impl ChainService {
             self.proposal_table.remove(blk.header().number());
         }
         for blk in fork.attached_blocks() {
+            eprintln!("update_proposal_table: {:?}", blk.union_proposal_ids());
             self.proposal_table
                 .insert(blk.header().number(), blk.union_proposal_ids());
         }
-
         self.reload_proposal_table(fork);
     }
 

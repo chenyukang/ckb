@@ -128,6 +128,14 @@ impl TxPool {
         self.pool_map.get_by_id(id).is_some()
     }
 
+    pub(crate) fn set_entry_proposed(&mut self, entry: &TxEntry) {
+        self.pool_map.set_entry(entry, Status::Proposed)
+    }
+
+    pub(crate) fn set_entry_gap(&mut self, entry: &TxEntry) {
+        self.pool_map.set_entry(entry, Status::Gap)
+    }
+
     /// Returns tx with cycles corresponding to the id.
     pub(crate) fn get_tx_with_cycles(
         &self,
@@ -300,7 +308,6 @@ impl TxPool {
         let snapshot = self.cloned_snapshot();
         let tip_header = snapshot.tip_header();
         let tx_env = Arc::new(TxVerifyEnv::new_proposed(tip_header, 0));
-        self.check_rtx_from_pool(&rtx)?;
 
         let max_cycles = snapshot.consensus().max_block_cycles();
         let verified = verify_rtx(
@@ -314,12 +321,8 @@ impl TxPool {
         let entry =
             TxEntry::new_with_timestamp(rtx, verified.cycles, verified.fee, size, timestamp);
 
-        let tx_hash = entry.transaction().hash();
-        if self.add_gap(entry).unwrap_or(false) {
-            Ok(CacheEntry::Completed(verified))
-        } else {
-            Err(Reject::Duplicated(tx_hash))
-        }
+        self.set_entry_gap(&entry);
+        Ok(CacheEntry::Completed(verified))
     }
 
     pub(crate) fn proposed_rtx(
@@ -332,7 +335,6 @@ impl TxPool {
         let snapshot = self.cloned_snapshot();
         let tip_header = snapshot.tip_header();
         let tx_env = Arc::new(TxVerifyEnv::new_proposed(tip_header, 1));
-        self.check_rtx_from_pool(&rtx)?;
 
         let max_cycles = snapshot.consensus().max_block_cycles();
         let verified = verify_rtx(
@@ -351,11 +353,8 @@ impl TxPool {
             tx_hash,
             entry.proposal_short_id()
         );
-        if self.add_proposed(entry)? {
-            Ok(CacheEntry::Completed(verified))
-        } else {
-            Err(Reject::Duplicated(tx_hash))
-        }
+        self.set_entry_proposed(&entry);
+        Ok(CacheEntry::Completed(verified))
     }
 
     /// Get to-be-proposal transactions that may be included in the next block.

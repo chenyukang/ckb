@@ -1038,32 +1038,26 @@ fn _update_tx_pool_for_reorg(
         let mut proposals = Vec::new();
         let mut gaps = Vec::new();
 
-        tx_pool
-            .pool_map
-            .remove_entries_by_filter(&Status::Gap, |id, tx_entry| {
-                if snapshot.proposals().contains_proposed(id) {
-                    proposals.push(tx_entry.clone());
-                    true
-                } else {
-                    false
-                }
-            });
+        for entry in tx_pool.pool_map.entries.get_by_status(&Status::Gap) {
+            let e = &entry.inner;
+            let short_id = e.proposal_short_id();
+            if snapshot.proposals().contains_proposed(&short_id) {
+                proposals.push(e.clone());
+            }
+        }
 
-        tx_pool
-            .pool_map
-            .remove_entries_by_filter(&Status::Pending, |id, tx_entry| {
-                if snapshot.proposals().contains_proposed(id) {
-                    proposals.push(tx_entry.clone());
-                    true
-                } else if snapshot.proposals().contains_gap(id) {
-                    gaps.push(tx_entry.clone());
-                    true
-                } else {
-                    false
-                }
-            });
+        for entry in tx_pool.pool_map.entries.get_by_status(&Status::Pending) {
+            let e = &entry.inner;
+            let short_id = e.proposal_short_id();
+            if snapshot.proposals().contains_proposed(&short_id) {
+                proposals.push(e.clone());
+            } else if snapshot.proposals().contains_gap(&short_id) {
+                gaps.push(e.clone());
+            }
+        }
 
         for entry in proposals {
+            eprintln!("begin to proposed: {:x}", entry.transaction().hash());
             let cached = CacheEntry::completed(entry.cycles, entry.fee);
             if let Err(e) =
                 tx_pool.proposed_rtx(cached, entry.size, entry.timestamp, Arc::clone(&entry.rtx))
@@ -1075,6 +1069,7 @@ fn _update_tx_pool_for_reorg(
         }
 
         for entry in gaps {
+            eprintln!("begin to gap: {:x}", entry.transaction().hash());
             let tx_hash = entry.transaction().hash();
             let cached = CacheEntry::completed(entry.cycles, entry.fee);
             if let Err(e) =
