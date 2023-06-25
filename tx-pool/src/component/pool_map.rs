@@ -513,6 +513,11 @@ impl PoolMap {
             evict_key,
         });
     }
+
+    pub(crate) fn get_output_ref(&self, out_point: &OutPoint) -> Option<&OutPointStatus> {
+        self.edges.get_output_ref(out_point)
+    }
+
 }
 
 impl CellProvider for PoolMap {
