@@ -221,7 +221,7 @@ impl ChunkProcess {
         let tx_hash = tx.hash();
 
         let (ret, snapshot) = self.service.pre_check(&tx).await;
-        let (tip_hash, rtx, status, fee, tx_size) = try_or_return_with_snapshot!(ret, snapshot);
+        let (tip_hash, rtx, status, fee, tx_size, _conflicts) = try_or_return_with_snapshot!(ret, snapshot);
 
         let cached = self.service.fetch_tx_verify_cache(&tx_hash).await;
 

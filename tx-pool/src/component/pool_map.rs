@@ -394,6 +394,14 @@ impl PoolMap {
         let inputs = entry.transaction().input_pts_iter();
         let outputs = entry.transaction().output_pts();
 
+        eprintln!("entry short_id: {:?}", entry.proposal_short_id());
+        for i in entry.transaction().input_pts_iter() {
+            eprintln!("input: {:?}", i);
+        }
+        for o in entry.transaction().output_pts() {
+            eprintln!("output: {:?}", o);
+        }
+
         let mut children = HashSet::new();
         // if input reference a in-pool output, connect it
         // otherwise, record input for conflict check
@@ -522,6 +530,11 @@ impl PoolMap {
             evict_key,
         });
     }
+
+    pub(crate) fn get_output_ref(&self, out_point: &OutPoint) -> Option<&OutPointStatus> {
+        self.edges.get_output_ref(out_point)
+    }
+
 }
 
 impl CellProvider for PoolMap {
