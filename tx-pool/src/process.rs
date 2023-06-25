@@ -214,7 +214,7 @@ impl TxPoolService {
                 // Try to find any conflicted tx in the pool
                 let conflicts = tx_pool.pool_map.find_conflict_tx(tx);
                 let rbf = !conflicts.is_empty();
-                let res = resolve_tx(tx_pool, &snapshot, tx.clone(), rbf);
+                let res = resolve_tx(tx_pool, &snapshot, tx.clone(), false);
                 let (rtx, status) = res?;
                 let fee = check_tx_fee(tx_pool, &snapshot, &rtx, tx_size)?;
                 if rbf {
@@ -251,11 +251,11 @@ impl TxPoolService {
         // non contextual verify first
         self.non_contextual_verify(&tx, None)?;
 
-        eprintln!(
-            "resumeble_process_tx: {:?} id: {:?}",
-            tx.hash(),
-            tx.proposal_short_id()
-        );
+        // eprintln!(
+        //     "resumeble_process_tx: {:?} id: {:?}",
+        //     tx.hash(),
+        //     tx.proposal_short_id()
+        // );
         if self.chunk_contains(&tx).await || self.orphan_contains(&tx).await {
             return Err(Reject::Duplicated(tx.hash()));
         }
@@ -1005,12 +1005,9 @@ fn resolve_tx(
 ) -> ResolveResult {
     let short_id = tx.proposal_short_id();
     let tx_status = get_tx_status(snapshot, &short_id);
-    if !rbf {
-        tx_pool.resolve_tx_from_pool(tx)
-    } else {
-        tx_pool.resolve_tx_from_pool_rbf(tx)
-    }
-    .map(|rtx| (rtx, tx_status))
+    tx_pool
+        .resolve_tx_from_pool(tx, rbf)
+        .map(|rtx| (rtx, tx_status))
 }
 
 fn _submit_entry(
@@ -1019,7 +1016,7 @@ fn _submit_entry(
     entry: TxEntry,
     callbacks: &Callbacks,
 ) -> Result<(), Reject> {
-    eprintln!("_submit_entry: {:?}", entry.proposal_short_id());
+    //eprintln!("_submit_entry: {:?}", entry.proposal_short_id());
     match status {
         TxStatus::Fresh => {
             if tx_pool.add_pending(entry.clone())? {
@@ -1037,7 +1034,7 @@ fn _submit_entry(
             }
         }
     }
-    eprintln!("finished submit: {:?}", entry.proposal_short_id());
+    //eprintln!("finished submit: {:?}", entry.proposal_short_id());
     Ok(())
 }
 
