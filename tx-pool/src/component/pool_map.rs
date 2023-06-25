@@ -246,6 +246,17 @@ impl PoolMap {
         conflicts
     }
 
+    pub(crate) fn find_conflict_tx(&self, tx: &TransactionView) -> HashSet<ProposalShortId> {
+        let inputs = tx.input_pts_iter();
+        let mut res = HashSet::default();
+        for i in inputs {
+            if let Some(id) = self.edges.get_input_ref(&i) {
+                res.insert(id.clone());
+            }
+        }
+        res
+    }
+
     pub(crate) fn resolve_conflict(&mut self, tx: &TransactionView) -> Vec<ConflictEntry> {
         let inputs = tx.input_pts_iter();
         let mut conflicts = Vec::new();
@@ -530,11 +541,6 @@ impl PoolMap {
             evict_key,
         });
     }
-
-    pub(crate) fn get_output_ref(&self, out_point: &OutPoint) -> Option<&OutPointStatus> {
-        self.edges.get_output_ref(out_point)
-    }
-
 }
 
 impl CellProvider for PoolMap {
