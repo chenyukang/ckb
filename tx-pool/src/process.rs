@@ -101,6 +101,7 @@ impl TxPoolService {
         pre_resolve_tip: Byte32,
         entry: TxEntry,
         mut status: TxStatus,
+        conflicts: HashSet<ProposalShortId>,
     ) -> (Result<(), Reject>, Arc<Snapshot>) {
         let (ret, snapshot) = self
             .with_tx_pool_write_lock(move |tx_pool, snapshot| {
@@ -123,6 +124,10 @@ impl TxPoolService {
                     time_relative_verify(snapshot, Arc::clone(&entry.rtx), tx_env)?;
                 }
 
+                // try to remove conflicted tx here
+                for r in conflicts.iter() {
+                    eprintln!("removeing : {:?}", r);
+                }
                 _submit_entry(tx_pool, status, entry.clone(), &self.callbacks)?;
                 Ok(())
             })
@@ -208,9 +213,13 @@ impl TxPoolService {
 
                 // Try to find any conflicted tx in the pool
                 let conflicts = tx_pool.pool_map.find_conflict_tx(tx);
-                let res = resolve_tx(tx_pool, &snapshot, tx.clone(), !conflicts.is_empty());
+                let rbf = !conflicts.is_empty();
+                let res = resolve_tx(tx_pool, &snapshot, tx.clone(), rbf);
                 let (rtx, status) = res?;
                 let fee = check_tx_fee(tx_pool, &snapshot, &rtx, tx_size)?;
+                if rbf {
+                    // check_rbf()?
+                }
                 Ok((tip_hash, rtx, status, fee, tx_size, conflicts))
             })
             .await;
@@ -558,7 +567,7 @@ impl TxPoolService {
         let tx_hash = tx.hash();
 
         let (ret, snapshot) = self.pre_check(&tx).await;
-        let (tip_hash, rtx, status, fee, tx_size, _conflicts) =
+        let (tip_hash, rtx, status, fee, tx_size, conflicts) =
             try_or_return_with_snapshot!(ret, snapshot);
 
         if self.is_in_delay_window(&snapshot) {
@@ -643,7 +652,7 @@ impl TxPoolService {
 
         let entry = TxEntry::new(rtx, completed.cycles, fee, tx_size);
 
-        let (ret, submit_snapshot) = self.submit_entry(tip_hash, entry, status).await;
+        let (ret, submit_snapshot) = self.submit_entry(tip_hash, entry, status, conflicts).await;
         try_or_return_with_snapshot!(ret, submit_snapshot);
 
         self.notify_block_assembler(status).await;
@@ -688,7 +697,7 @@ impl TxPoolService {
 
         let (ret, snapshot) = self.pre_check(&tx).await;
 
-        let (tip_hash, rtx, status, fee, tx_size, _conflicts) =
+        let (tip_hash, rtx, status, fee, tx_size, conflicts) =
             try_or_return_with_snapshot!(ret, snapshot);
 
         if self.is_in_delay_window(&snapshot) {
@@ -725,7 +734,7 @@ impl TxPoolService {
 
         let entry = TxEntry::new(rtx, verified.cycles, fee, tx_size);
 
-        let (ret, submit_snapshot) = self.submit_entry(tip_hash, entry, status).await;
+        let (ret, submit_snapshot) = self.submit_entry(tip_hash, entry, status, conflicts).await;
         try_or_return_with_snapshot!(ret, submit_snapshot);
 
         self.notify_block_assembler(status).await;
@@ -997,14 +1006,11 @@ fn resolve_tx(
     let short_id = tx.proposal_short_id();
     let tx_status = get_tx_status(snapshot, &short_id);
     if !rbf {
-        tx_pool
-            .resolve_tx_from_pool(tx)
-            .map(|rtx| (rtx, tx_status))
+        tx_pool.resolve_tx_from_pool(tx)
     } else {
-        tx_pool
-            .resolve_tx_from_pool_rbf(tx)
-            .map(|rtx: Arc<ResolvedTransaction>| (rtx, tx_status))
+        tx_pool.resolve_tx_from_pool_rbf(tx)
     }
+    .map(|rtx| (rtx, tx_status))
 }
 
 fn _submit_entry(
