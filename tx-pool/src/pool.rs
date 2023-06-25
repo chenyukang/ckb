@@ -3,7 +3,6 @@ extern crate rustc_hash;
 extern crate slab;
 use super::component::{commit_txs_scanner::CommitTxsScanner, TxEntry};
 use crate::callback::Callbacks;
-use crate::component::edges::OutPointStatus;
 use crate::component::pool_map::{PoolEntry, PoolMap, Status};
 use crate::component::recent_reject::RecentReject;
 use crate::error::Reject;
@@ -15,6 +14,7 @@ use ckb_types::core::cell::CellChecker;
 use ckb_types::core::cell::CellMetaBuilder;
 use ckb_types::core::cell::{CellProvider, CellStatus};
 use ckb_types::packed::OutPoint;
+use ckb_types::prelude::Unpack;
 use ckb_types::{
     core::{
         cell::{resolve_transaction, OverlayCellChecker, OverlayCellProvider, ResolvedTransaction},
@@ -509,23 +509,25 @@ impl TxPool {
 
 impl CellProvider for TxPool {
     fn cell(&self, out_point: &OutPoint, _eager_load: bool) -> CellStatus {
-        match self.pool_map.get_output_ref(out_point) {
-            Some(OutPointStatus::UnConsumed) => {
-                let (output, data) = self
-                    .pool_map
-                    .get_output_with_data(out_point)
-                    .expect("output");
-                let cell_meta = CellMetaBuilder::from_cell_output(output, data)
-                    .out_point(out_point.to_owned())
-                    .build();
+        let tx_hash = out_point.tx_hash();
+        match self
+            .pool_map
+            .get_by_id(&ProposalShortId::from_tx_hash(&tx_hash))
+        {
+            Some(pool_entry) if pool_entry.status != Status::Proposed => {
+                match pool_entry
+                    .inner
+                    .transaction()
+                    .output_with_data(out_point.index().unpack())
                 {
-                    eprintln!("out_point live: {:?} cell_meta: {:?}", out_point, cell_meta);
-                    CellStatus::live_cell(cell_meta)
+                    Some((output, data)) => {
+                        let cell_meta = CellMetaBuilder::from_cell_output(output, data)
+                            .out_point(out_point.to_owned())
+                            .build();
+                        CellStatus::live_cell(cell_meta)
+                    }
+                    None => CellStatus::Unknown,
                 }
-            }
-            Some(OutPointStatus::Consumed(_id)) => {
-                eprintln!("out_point dead: {:?}", out_point);
-                CellStatus::Dead
             }
             _ => CellStatus::Unknown,
         }
@@ -534,9 +536,16 @@ impl CellProvider for TxPool {
 
 impl CellChecker for TxPool {
     fn is_live(&self, out_point: &OutPoint) -> Option<bool> {
-        match self.pool_map.get_output_ref(out_point) {
-            Some(OutPointStatus::Consumed(_id)) => Some(false),
-            Some(OutPointStatus::UnConsumed) => Some(true),
+        let tx_hash = out_point.tx_hash();
+        match self
+            .pool_map
+            .get_by_id(&ProposalShortId::from_tx_hash(&tx_hash))
+        {
+            Some(pool_entry) if pool_entry.status != Status::Proposed => pool_entry
+                .inner
+                .transaction()
+                .output_with_data(out_point.index().unpack())
+                .map(|_| true),
             _ => None,
         }
     }
