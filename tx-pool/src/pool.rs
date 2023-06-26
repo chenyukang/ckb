@@ -8,6 +8,7 @@ use crate::component::recent_reject::RecentReject;
 use crate::error::Reject;
 use crate::pool_cell::PoolCell;
 use ckb_app_config::TxPoolConfig;
+use ckb_jsonrpc_types::Capacity;
 use ckb_logger::{debug, error, warn};
 use ckb_snapshot::Snapshot;
 use ckb_store::ChainStore;
@@ -469,6 +470,17 @@ impl TxPool {
             );
         }
         (entries, size, cycles)
+    }
+
+    pub(crate) fn check_rbf(&self, tx: &ResolvedTransaction, conflicts: &HashSet<ProposalShortId>, fee: Capacity) -> Result<(), Reject> {
+        if !self.config.enable_rbf {
+            return Err(Reject::RBFRejected("node disabled RBF".to_string()));
+        }
+        if conflicts.len() == 0 {
+            return Err(Reject::RBFRejected("can not find conflict txs to replace".to_string()));
+        }
+
+        Ok(())
     }
 
     fn build_recent_reject(config: &TxPoolConfig) -> Option<RecentReject> {

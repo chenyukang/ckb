@@ -211,16 +211,20 @@ impl TxPoolService {
                 // It's not possible for RBF, reject it directly
                 check_txid_collision(tx_pool, tx)?;
 
-                // Try to find any conflicted tx in the pool
-                let conflicts = tx_pool.pool_map.find_conflict_tx(tx);
-                let rbf = !conflicts.is_empty();
+                // Try normal path first, if double-spending check success we don't need RBF check
+                // this make sure RBF won't introduce extra performance cost for hot path
                 let res = resolve_tx(tx_pool, &snapshot, tx.clone(), false);
-                let (rtx, status) = res?;
-                let fee = check_tx_fee(tx_pool, &snapshot, &rtx, tx_size)?;
-                if rbf {
-                    // check_rbf()?
+                if let Ok((rtx, status)) = res {
+                    let fee = check_tx_fee(tx_pool, &snapshot, &rtx, tx_size)?;
+                    return Ok((tip_hash, rtx, status, fee, tx_size, HashSet::new()));
+                } else {
+                    // Try RBF check
+                    let conflicts = tx_pool.pool_map.find_conflict_tx(tx);
+                    let (rtx, status) = resolve_tx(tx_pool, &snapshot, tx.clone(), false)?;
+                    let fee = check_tx_fee(tx_pool, &snapshot, &rtx, tx_size)?;
+                    tx_pool.check_rbf(&rtx, &conflicts, fee.into())?;
+                    return Ok((tip_hash, rtx, status, fee, tx_size, conflicts));
                 }
-                Ok((tip_hash, rtx, status, fee, tx_size, conflicts))
             })
             .await;
 
