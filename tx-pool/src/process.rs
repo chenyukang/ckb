@@ -143,7 +143,11 @@ impl TxPoolService {
                             &old.proposal_short_id(),
                             reject
                         );
+                        // remove old tx from tx_pool, not happened in service so we didn't call reject callbacks
+                        // here we call them manually
+                        // TODO: how to call reject notify like service?
                         tx_pool.put_recent_reject(&old.transaction().hash(), &reject);
+                        tx_pool.update_statics_for_remove_tx(old.size, old.cycles);
                         self.callbacks.call_reject(tx_pool, &old, reject)
                     }
                 }
