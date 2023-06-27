@@ -22,8 +22,8 @@ use ckb_types::{
     prelude::*,
 };
 use std::borrow::Cow;
+use std::cmp::Ordering;
 use std::collections::HashSet;
-
 use super::links::TxLinks;
 
 type ConflictEntry = (TxEntry, Reject);
@@ -41,12 +41,40 @@ enum EntryOp {
     Remove,
 }
 
+#[derive(Eq, PartialEq, Clone, Debug)]
+pub struct ScoreKey {
+    inner: *const TxEntry,
+}
+
+impl ScoreKey {
+    pub fn new(entry: &TxEntry) -> Self {
+        ScoreKey { inner: entry }
+    }
+}
+
+impl PartialOrd for ScoreKey {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ScoreKey {
+    fn cmp(&self, other: &Self) -> Ordering {
+        let key_a = AncestorsScoreSortKey::from(unsafe { &*self.inner });
+        let key_b = AncestorsScoreSortKey::from(unsafe { &*other.inner });
+        key_a.cmp(&key_b)
+    }
+}
+
+unsafe impl Send for ScoreKey {}
+unsafe impl Sync for ScoreKey {}
+
 #[derive(MultiIndexMap, Clone)]
 pub struct PoolEntry {
     #[multi_index(hashed_unique)]
     pub id: ProposalShortId,
     #[multi_index(ordered_non_unique)]
-    pub score: AncestorsScoreSortKey,
+    pub score: ScoreKey,
     #[multi_index(ordered_non_unique)]
     pub status: Status,
     #[multi_index(ordered_non_unique)]
@@ -366,7 +394,7 @@ impl PoolMap {
             }
             let short_id = child.proposal_short_id();
             self.entries.modify_by_id(&short_id, |e| {
-                e.score = child.as_score_key();
+                e.score = ScoreKey::new(&child);
                 e.inner = child;
             });
         }
@@ -512,13 +540,13 @@ impl PoolMap {
 
     fn insert_entry(&mut self, entry: &TxEntry, status: Status) {
         let tx_short_id = entry.proposal_short_id();
-        let score = entry.as_score_key();
         let evict_key = entry.as_evict_key();
+        let inner = entry.clone();
         self.entries.insert(PoolEntry {
             id: tx_short_id,
-            score,
+            score: ScoreKey::new(&inner),
             status,
-            inner: entry.clone(),
+            inner,
             evict_key,
         });
     }
