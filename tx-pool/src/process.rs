@@ -237,13 +237,8 @@ impl TxPoolService {
                         Ok((tip_hash, rtx, status, fee, tx_size, HashSet::new()))
                     }
                     Err(err) => {
-                        eprintln!(
-                            "resolve_tx error: {:?}, try RBF check",
-                            tx_pool.config.enable_rbf
-                        );
                         if tx_pool.config.enable_rbf {
                             // Try RBF check
-                            eprintln!("begin RBF check ....");
                             let conflicts = tx_pool.pool_map.find_conflict_tx(tx);
                             let (rtx, status) = resolve_tx(tx_pool, &snapshot, tx.clone(), true)?;
                             let fee = check_tx_fee(tx_pool, &snapshot, &rtx, tx_size)?;
@@ -284,11 +279,6 @@ impl TxPoolService {
         // non contextual verify first
         self.non_contextual_verify(&tx, None)?;
 
-        // eprintln!(
-        //     "resumeble_process_tx: {:?} id: {:?}",
-        //     tx.hash(),
-        //     tx.proposal_short_id()
-        // );
         if self.chunk_contains(&tx).await || self.orphan_contains(&tx).await {
             return Err(Reject::Duplicated(tx.hash()));
         }
