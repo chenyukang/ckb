@@ -487,9 +487,7 @@ impl TxPool {
         fee: Capacity,
         tx_size: usize,
     ) -> Result<(), Reject> {
-        if !self.config.enable_rbf {
-            return Err(Reject::RBFRejected("node disabled RBF".to_string()));
-        }
+        assert!(self.config.enable_rbf);
         if conflicts.is_empty() {
             return Err(Reject::RBFRejected(
                 "can not find conflict txs to replace".to_string(),
