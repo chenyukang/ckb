@@ -24,7 +24,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 const COMMITTED_HASH_CACHE_SIZE: usize = 100_000;
-
+const MAX_REPLACEMENT_CANDIDATES: usize = 100;
 /// Tx-pool implementation
 pub struct TxPool {
     pub(crate) config: TxPoolConfig,
@@ -544,14 +544,15 @@ impl TxPool {
         }
 
         // Rule #5, new replaced tx's descendants can not more than 100
+        let mut replace_count: usize = 0;
         for conflict in conflicts.iter() {
             let id = conflict.proposal_short_id();
-            let mut ids = vec![id.clone()];
-            ids.extend(self.pool_map.calc_descendants(&id));
-            if ids.len() >= 100 {
+            let descendants = self.pool_map.calc_descendants(&id);
+            replace_count += descendants.len() + 1;
+            if replace_count > MAX_REPLACEMENT_CANDIDATES {
                 return Err(Reject::RBFRejected(format!(
                     "tx conflict too many txs, conflict txs count: {}",
-                    ids.len(),
+                    replace_count,
                 )));
             }
         }
