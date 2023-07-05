@@ -244,9 +244,8 @@ impl PoolMap {
     }
 
     pub(crate) fn find_conflict_tx(&self, tx: &TransactionView) -> HashSet<ProposalShortId> {
-        let inputs = tx.input_pts_iter();
         let mut res = HashSet::default();
-        for i in inputs {
+        for i in tx.input_pts_iter() {
             if let Some(id) = self.edges.get_input_ref(&i) {
                 res.insert(id.clone());
             }
@@ -255,10 +254,9 @@ impl PoolMap {
     }
 
     pub(crate) fn resolve_conflict(&mut self, tx: &TransactionView) -> Vec<ConflictEntry> {
-        let inputs = tx.input_pts_iter();
         let mut conflicts = Vec::new();
 
-        for i in inputs {
+        for i in tx.input_pts_iter() {
             if let Some(id) = self.edges.remove_input(&i) {
                 let entries = self.remove_entry_and_descendants(&id);
                 if !entries.is_empty() {
@@ -402,14 +400,6 @@ impl PoolMap {
         let inputs = entry.transaction().input_pts_iter();
         let outputs = entry.transaction().output_pts();
 
-        // eprintln!("entry short_id: {:?}", entry.proposal_short_id());
-        // for i in entry.transaction().input_pts_iter() {
-        //     eprintln!("input: {:?}", i);
-        // }
-        // for o in entry.transaction().output_pts() {
-        //     eprintln!("output: {:?}", o);
-        // }
-
         let mut children = HashSet::new();
         // if input reference a in-pool output, connect it
         // otherwise, record input for conflict check
@@ -482,7 +472,6 @@ impl PoolMap {
             entry.add_ancestor_weight(&ancestor.inner);
         }
         if entry.ancestors_count > self.max_ancestors_count {
-            eprintln!("debug: exceeded maximum ancestors count");
             return Err(Reject::ExceededMaximumAncestorsCount);
         }
 
