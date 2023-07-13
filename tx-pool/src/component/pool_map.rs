@@ -19,7 +19,9 @@ use ckb_types::{
     packed::{Byte32, CellOutput, ProposalShortId},
 };
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use super::links::TxLinks;
 
@@ -43,7 +45,7 @@ pub struct PoolEntry {
     #[multi_index(hashed_unique)]
     pub id: ProposalShortId,
     #[multi_index(ordered_non_unique)]
-    pub score: AncestorsScoreSortKey,
+    pub score: Arc<RefCell<TxEntry>>,
     #[multi_index(ordered_non_unique)]
     pub status: Status,
     #[multi_index(ordered_non_unique)]
@@ -372,8 +374,8 @@ impl PoolMap {
             }
             let short_id = child.proposal_short_id();
             self.entries.modify_by_id(&short_id, |e| {
-                e.score = child.as_score_key();
                 e.inner = child;
+                e.score = Arc::new(RefCell::new(e.inner));
             });
         }
     }
@@ -520,7 +522,7 @@ impl PoolMap {
         let evict_key = entry.as_evict_key();
         self.entries.insert(PoolEntry {
             id: tx_short_id,
-            score,
+            score: Arc::new(RefCell::new(*entry)),
             status,
             inner: entry.clone(),
             evict_key,
