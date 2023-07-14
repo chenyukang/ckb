@@ -523,7 +523,7 @@ impl TxPool {
             )));
         }
 
-        // Rule #3, new tx's fee need to higher than conflicts
+        // Rule #3, new tx's fee need to higher than conflicts, here we only check the root tx
         for conflict in conflicts.iter() {
             if conflict.fee >= fee {
                 return Err(Reject::RBFRejected(format!(
@@ -534,7 +534,7 @@ impl TxPool {
         }
 
         // Rule #5, the replaced tx's descendants can not more than 100
-        // and the ancestor of the new tx don't have comment set with the replaced tx's descendants
+        // and the ancestor of the new tx don't have common set with the replaced tx's descendants
         let mut replace_count: usize = 0;
         let ancestors = self.pool_map.calc_ancestors(&short_id);
         for conflict in conflicts.iter() {
