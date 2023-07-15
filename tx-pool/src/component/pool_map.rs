@@ -4,7 +4,6 @@ extern crate slab;
 use crate::component::edges::Edges;
 use crate::component::entry::EvictKey;
 use crate::component::links::{Relation, TxLinksMap};
-use crate::component::score_key::AncestorsScoreSortKey;
 use crate::error::Reject;
 use crate::TxEntry;
 
@@ -46,13 +45,12 @@ pub struct PoolEntry {
     #[multi_index(hashed_unique)]
     pub id: ProposalShortId,
     #[multi_index(ordered_non_unique)]
-    pub score: AncestorsScoreSortKey,
+    pub inner: TxEntry,
     #[multi_index(ordered_non_unique)]
     pub status: Status,
     #[multi_index(ordered_non_unique)]
     pub evict_key: EvictKey,
     // other sort key
-    pub inner: TxEntry,
 }
 
 pub struct PoolMap {
@@ -317,7 +315,7 @@ impl PoolMap {
         statuses: Vec<Status>,
     ) -> impl Iterator<Item = &TxEntry> {
         self.entries
-            .iter_by_score()
+            .iter_by_inner()
             .rev()
             .filter(move |entry| statuses.contains(&entry.status))
             .map(|entry| &entry.inner)
@@ -369,7 +367,6 @@ impl PoolMap {
             }
             let short_id = child.proposal_short_id();
             self.entries.modify_by_id(&short_id, |e| {
-                e.score = child.as_score_key();
                 e.inner = child;
             });
         }
@@ -503,11 +500,9 @@ impl PoolMap {
 
     fn insert_entry(&mut self, entry: &TxEntry, status: Status) {
         let tx_short_id = entry.proposal_short_id();
-        let score = entry.as_score_key();
         let evict_key = entry.as_evict_key();
         self.entries.insert(PoolEntry {
             id: tx_short_id,
-            score,
             status,
             inner: entry.clone(),
             evict_key,
