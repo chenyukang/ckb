@@ -1,6 +1,6 @@
 use ckb_app_config::{ExitCode, MinerArgs, MinerConfig};
 use ckb_async_runtime::Handle;
-use ckb_channel::unbounded;
+use ckb_channel::{select, unbounded};
 use ckb_logger::info;
 use ckb_miner::{Client, Miner};
 use ckb_stop_handler::{
@@ -10,6 +10,7 @@ use std::thread;
 
 pub fn miner(args: MinerArgs, async_handle: Handle) -> Result<(), ExitCode> {
     let (new_work_tx, new_work_rx) = unbounded();
+    let (limit_tx, limit_rx) = unbounded();
     let MinerConfig { client, workers } = args.config;
 
     let client = Client::new(new_work_tx, client, async_handle);
@@ -17,6 +18,7 @@ pub fn miner(args: MinerArgs, async_handle: Handle) -> Result<(), ExitCode> {
         args.pow_engine,
         client.clone(),
         new_work_rx,
+        limit_tx,
         &workers,
         args.limit,
     );
@@ -39,6 +41,17 @@ pub fn miner(args: MinerArgs, async_handle: Handle) -> Result<(), ExitCode> {
     })
     .expect("Error setting Ctrl-C handler");
 
+    loop {
+        select! {
+            recv(limit_rx) -> res => {
+                eprintln!("Waiting for limit ...: {:?}", res);
+                broadcast_exit_signals();
+                break;
+            }
+        }
+    }
+
+    eprintln!("Waiting for miner thread exit ...");
     wait_all_ckb_services_exit();
 
     Ok(())

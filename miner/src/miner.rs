@@ -2,7 +2,7 @@ use crate::client::{Client, Works};
 use crate::worker::{start_worker, WorkerController, WorkerMessage};
 use crate::Work;
 use ckb_app_config::MinerWorkerConfig;
-use ckb_channel::{select, unbounded, Receiver};
+use ckb_channel::{select, unbounded, Receiver, Sender};
 use ckb_logger::{debug, error, info};
 use ckb_pow::PowEngine;
 use ckb_types::{
@@ -25,6 +25,7 @@ pub struct Miner {
     pub(crate) legacy_work: LruCache<Byte32, ()>,
     pub(crate) worker_controllers: Vec<WorkerController>,
     pub(crate) work_rx: Receiver<Works>,
+    pub(crate) limit_tx: Sender<()>,
     pub(crate) nonce_rx: Receiver<(Byte32, Work, u128)>,
     pub(crate) pb: ProgressBar,
     pub(crate) nonces_found: u128,
@@ -38,6 +39,7 @@ impl Miner {
         pow: Arc<dyn PowEngine>,
         client: Client,
         work_rx: Receiver<Works>,
+        limit_tx: Sender<()>,
         workers: &[MinerWorkerConfig],
         limit: u128,
     ) -> Miner {
@@ -65,6 +67,7 @@ impl Miner {
             client,
             worker_controllers,
             work_rx,
+            limit_tx,
             nonce_rx,
             pb,
             stderr_is_tty,
@@ -93,7 +96,11 @@ impl Miner {
                 recv(self.nonce_rx) -> msg => match msg {
                     Ok((pow_hash, work, nonce)) => {
                         self.submit_nonce(pow_hash, work, nonce);
-                        if self.limit != 0 && self.nonces_found >= self.limit {
+                        if self.limit_reached() {
+                            debug!("Found {} nonces, limit reached", self.nonces_found);
+                            // sleep 1 second to wait for all workers to exit
+                            self.limit_tx.send(()).expect("limit_tx send failed");
+                            self.notify_workers(WorkerMessage::Stop);
                             break;
                         }
                     },
@@ -192,5 +199,9 @@ impl Miner {
         for controller in self.worker_controllers.iter() {
             controller.send_message(message.clone());
         }
+    }
+
+    pub fn limit_reached(&self) -> bool {
+        self.limit != 0 && self.nonces_found >= self.limit
     }
 }
