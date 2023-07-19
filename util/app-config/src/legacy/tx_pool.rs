@@ -37,7 +37,7 @@ pub(crate) struct TxPoolConfig {
     keep_rejected_tx_hashes_count: u64,
     #[serde(with = "FeeRateDef")]
     min_fee_rate: FeeRate,
-    #[serde(with = "FeeRateDef", default="default_min_rbf_rate")]
+    #[serde(with = "FeeRateDef", default = "default_min_rbf_rate")]
     min_rbf_rate: FeeRate,
     max_tx_verify_cycles: Cycle,
     max_ancestors_count: usize,
@@ -47,7 +47,7 @@ pub(crate) struct TxPoolConfig {
     recent_reject: PathBuf,
     #[serde(default = "default_expiry_hours")]
     expiry_hours: u8,
-    #[serde(default="default_enable_rbf")]
+    #[serde(default = "default_enable_rbf")]
     enable_rbf: bool,
 }
 
