@@ -137,6 +137,7 @@ min_fee_rate = 1_000 # Here fee_rate are calculated directly using size in units
 min_rbf_rate = 1_500 # Here fee_rate are calculated directly using size in units of shannons/KB
 max_tx_verify_cycles = 70_000_000
 max_ancestors_count = 25
+enable_rbf = true
 
 [store]
 header_cache_size          = 4096
