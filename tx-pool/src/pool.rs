@@ -572,6 +572,9 @@ impl TxPool {
                     }
                 }
             }
+        } else {
+            warn!("Recent reject database is disabled!");
+            None
         }
 
         Ok(())

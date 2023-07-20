@@ -117,7 +117,8 @@ pub(crate) type Machine = TraceMachine<CoreMachine>;
 /// a chain of spawned machines.
 #[derive(Default)]
 pub struct MachineContext {
-    pub(crate) suspended_machines: Vec<ResumableMachine>,
+    /// A stack of ResumableMachines.
+    pub suspended_machines: Vec<ResumableMachine>,
 }
 
 /// Data structure captured all environment data for a suspended machine
@@ -132,6 +133,7 @@ pub enum ResumePoint {
         caller_exit_code_addr: u64,
         caller_content_addr: u64,
         caller_content_length_addr: u64,
+        cycles_base: u64,
     },
 }
 
@@ -145,6 +147,7 @@ pub struct SpawnData {
     pub(crate) caller_exit_code_addr: u64,
     pub(crate) caller_content_addr: u64,
     pub(crate) caller_content_length_addr: u64,
+    pub(crate) cycles_base: u64,
 }
 
 impl TryFrom<&SpawnData> for ResumePoint {
@@ -159,6 +162,7 @@ impl TryFrom<&SpawnData> for ResumePoint {
             caller_exit_code_addr,
             caller_content_addr,
             caller_content_length_addr,
+            cycles_base,
         } = value;
         Ok(ResumePoint::Spawn {
             callee_peak_memory: *callee_peak_memory,
@@ -171,12 +175,16 @@ impl TryFrom<&SpawnData> for ResumePoint {
             caller_exit_code_addr: *caller_exit_code_addr,
             caller_content_addr: *caller_content_addr,
             caller_content_length_addr: *caller_content_length_addr,
+            cycles_base: *cycles_base,
         })
     }
 }
 
+/// An enumerated type indicating the type of the Machine.
 pub enum ResumableMachine {
+    /// Root machine instance.
     Initial(Machine),
+    /// A machine which created by spawn syscall.
     Spawn(Machine, SpawnData),
 }
 
@@ -211,10 +219,12 @@ impl ResumableMachine {
         set_vm_max_cycles(self.machine_mut(), cycles)
     }
 
+    /// Add cycles to current machine.
     pub fn add_cycles(&mut self, cycles: Cycle) -> Result<(), VMInternalError> {
         self.machine_mut().machine.add_cycles(cycles)
     }
 
+    /// Run machine.
     pub fn run(&mut self) -> Result<i8, VMInternalError> {
         self.machine_mut().run()
     }
