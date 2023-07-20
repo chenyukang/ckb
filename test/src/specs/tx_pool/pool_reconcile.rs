@@ -5,7 +5,7 @@ use crate::util::mining::out_ibd_mode;
 use crate::{Node, Spec};
 use ckb_jsonrpc_types::ProposalShortId;
 use ckb_logger::info;
-use ckb_types::core::{capacity_bytes, Capacity, FeeRate};
+use ckb_types::core::{capacity_bytes, Capacity};
 use ckb_types::packed::CellOutputBuilder;
 use ckb_types::{
     packed::{self, CellInput, OutPoint},
