@@ -4517,8 +4517,7 @@ Response
     "tip_number": "0x400",
     "total_tx_cycles": "0x219",
     "total_tx_size": "0x112",
-    "tx_size_limit": "0x7d000",
-    "enable_rbf": true
+    "tx_size_limit": "0x7d000"
   }
 }
 ```
@@ -7049,8 +7048,6 @@ Transaction pool information.
     Transactions with a large size close to the block size limit may not be packaged, because the block header and cellbase are occupied, so the tx-pool is limited to accepting transaction up to tx_size_limit.
 
 *   `max_tx_pool_size`: [`Uint64`](#type-uint64) - Total limit on the size of transactions in the tx-pool
-
-*   `enable_rbf`: `boolean` - Whether enable RBF
 
 
 ### Type `TxStatus`

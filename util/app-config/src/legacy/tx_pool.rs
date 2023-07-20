@@ -17,8 +17,6 @@ const DEFAULT_MAX_ANCESTORS_COUNT: usize = 125;
 const DEFAULT_EXPIRY_HOURS: u8 = 12;
 // Default max_tx_pool_size 180mb
 const DEFAULT_MAX_TX_POOL_SIZE: usize = 180_000_000;
-// Default enable_rbf
-const DEFAULT_ENABLE_RBF: bool = true;
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -47,8 +45,6 @@ pub(crate) struct TxPoolConfig {
     recent_reject: PathBuf,
     #[serde(default = "default_expiry_hours")]
     expiry_hours: u8,
-    #[serde(default = "default_enable_rbf")]
-    enable_rbf: bool,
 }
 
 fn default_keep_rejected_tx_hashes_days() -> u8 {
@@ -65,10 +61,6 @@ fn default_expiry_hours() -> u8 {
 
 fn default_max_tx_pool_size() -> usize {
     DEFAULT_MAX_TX_POOL_SIZE
-}
-
-fn default_enable_rbf() -> bool {
-    DEFAULT_ENABLE_RBF
 }
 
 fn default_min_rbf_rate() -> FeeRate {
@@ -99,7 +91,6 @@ impl Default for TxPoolConfig {
             persisted_data: Default::default(),
             recent_reject: Default::default(),
             expiry_hours: DEFAULT_EXPIRY_HOURS,
-            enable_rbf: DEFAULT_ENABLE_RBF,
         }
     }
 }
@@ -122,7 +113,6 @@ impl From<TxPoolConfig> for crate::TxPoolConfig {
             persisted_data,
             recent_reject,
             expiry_hours,
-            enable_rbf,
         } = input;
 
         Self {
@@ -136,7 +126,6 @@ impl From<TxPoolConfig> for crate::TxPoolConfig {
             persisted_data,
             recent_reject,
             expiry_hours,
-            enable_rbf,
         }
     }
 }

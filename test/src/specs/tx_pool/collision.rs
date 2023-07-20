@@ -55,10 +55,6 @@ impl Spec for DuplicatedTransaction {
             .to_string()
             .contains("PoolRejectedDuplicatedTransaction"));
     }
-
-    fn modify_app_config(&self, config: &mut ckb_app_config::CKBAppConfig) {
-        config.tx_pool.enable_rbf = false;
-    }
 }
 
 pub struct ConflictInPending;
@@ -81,10 +77,6 @@ impl Spec for ConflictInPending {
 
         node.submit_block(&commit(node, &[&txa]));
         node.mine(window.farthest());
-    }
-
-    fn modify_app_config(&self, config: &mut ckb_app_config::CKBAppConfig) {
-        config.tx_pool.enable_rbf = false;
     }
 }
 
@@ -113,10 +105,6 @@ impl Spec for ConflictInGap {
         node.submit_block(&block);
         node.mine(window.farthest());
     }
-
-    fn modify_app_config(&self, config: &mut ckb_app_config::CKBAppConfig) {
-        config.tx_pool.enable_rbf = false;
-    }
 }
 
 pub struct ConflictInProposed;
@@ -134,10 +122,6 @@ impl Spec for ConflictInProposed {
 
         node.submit_block(&propose(node, &[&txa, &txb]));
         node.mine(window.farthest());
-    }
-
-    fn modify_app_config(&self, config: &mut ckb_app_config::CKBAppConfig) {
-        config.tx_pool.enable_rbf = false;
     }
 }
 
@@ -158,10 +142,6 @@ impl Spec for SubmitConflict {
             &txb,
             "TransactionFailedToResolve: Resolve failed Unknown",
         );
-    }
-
-    fn modify_app_config(&self, config: &mut ckb_app_config::CKBAppConfig) {
-        config.tx_pool.enable_rbf = false;
     }
 }
 
@@ -197,10 +177,6 @@ impl Spec for RemoveConflictFromPending {
         assert!(is_transaction_committed(node, &txa));
         assert!(is_transaction_rejected(node, &txb));
         assert!(is_transaction_rejected(node, &txc));
-    }
-
-    fn modify_app_config(&self, config: &mut ckb_app_config::CKBAppConfig) {
-        config.tx_pool.enable_rbf = false;
     }
 }
 

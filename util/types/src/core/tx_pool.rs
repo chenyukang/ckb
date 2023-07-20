@@ -335,6 +335,4 @@ pub struct TxPoolInfo {
     pub tx_size_limit: u64,
     /// Total limit on the size of transactions in the tx-pool
     pub max_tx_pool_size: u64,
-    /// Whether enable RBF
-    pub enable_rbf: bool,
 }

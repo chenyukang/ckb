@@ -230,7 +230,7 @@ impl TxPoolService {
                         Ok((tip_hash, rtx, status, fee, tx_size, HashSet::new()))
                     }
                     Err(err) => {
-                        if tx_pool.config.enable_rbf && matches!(err, Reject::Resolve(_)) {
+                        if tx_pool.enable_rbf() && matches!(err, Reject::Resolve(_)) {
                             // Try RBF check
                             let conflicts = tx_pool.pool_map.find_conflict_tx(tx);
                             if conflicts.is_empty() {

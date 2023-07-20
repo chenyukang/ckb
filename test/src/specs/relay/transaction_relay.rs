@@ -314,8 +314,4 @@ impl Spec for TransactionRelayConflict {
         });
         assert!(relayed, "Transaction should be relayed to node1");
     }
-
-    fn modify_app_config(&self, config: &mut ckb_app_config::CKBAppConfig) {
-        config.tx_pool.enable_rbf = false;
-    }
 }

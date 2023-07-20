@@ -85,6 +85,11 @@ impl TxPool {
         self.total_tx_cycles += cycles;
     }
 
+    /// Check whether tx-pool enable RBF
+    pub fn enable_rbf(&self) -> bool {
+        self.config.min_rbf_rate > self.config.min_fee_rate
+    }
+
     /// Update size and cycles statics for remove tx
     /// cycles overflow is possible, currently obtaining cycles is not accurate
     pub fn update_statics_for_remove_tx(&mut self, tx_size: usize, cycles: Cycle) {
@@ -485,7 +490,7 @@ impl TxPool {
         fee: Capacity,
         tx_size: usize,
     ) -> Result<(), Reject> {
-        assert!(self.config.enable_rbf);
+        assert!(self.enable_rbf());
         assert!(!conflicts.is_empty());
 
         let short_id = rtx.transaction.proposal_short_id();

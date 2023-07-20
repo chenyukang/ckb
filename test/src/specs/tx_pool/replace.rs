@@ -82,7 +82,7 @@ impl Spec for RbfBasic {
     }
 
     fn modify_app_config(&self, config: &mut ckb_app_config::CKBAppConfig) {
-        config.tx_pool.enable_rbf = true;
+        config.tx_pool.min_rbf_rate = ckb_types::core::FeeRate(1500);
     }
 }
 
@@ -108,7 +108,7 @@ impl Spec for RbfSameInput {
     }
 
     fn modify_app_config(&self, config: &mut ckb_app_config::CKBAppConfig) {
-        config.tx_pool.enable_rbf = true;
+        config.tx_pool.min_rbf_rate = ckb_types::core::FeeRate(1500);
     }
 }
 
@@ -153,7 +153,7 @@ impl Spec for RbfSameInputwithLessFee {
     }
 
     fn modify_app_config(&self, config: &mut ckb_app_config::CKBAppConfig) {
-        config.tx_pool.enable_rbf = true;
+        config.tx_pool.min_rbf_rate = ckb_types::core::FeeRate(1500);
     }
 }
 
@@ -213,7 +213,7 @@ impl Spec for RbfTooManyDescendants {
     }
 
     fn modify_app_config(&self, config: &mut ckb_app_config::CKBAppConfig) {
-        config.tx_pool.enable_rbf = true;
+        config.tx_pool.min_rbf_rate = ckb_types::core::FeeRate(1500);
     }
 }
 
@@ -285,7 +285,7 @@ impl Spec for RbfContainNewTx {
     }
 
     fn modify_app_config(&self, config: &mut ckb_app_config::CKBAppConfig) {
-        config.tx_pool.enable_rbf = true;
+        config.tx_pool.min_rbf_rate = ckb_types::core::FeeRate(1500);
     }
 }
 
@@ -357,6 +357,6 @@ impl Spec for RbfContainInvalidInput {
     }
 
     fn modify_app_config(&self, config: &mut ckb_app_config::CKBAppConfig) {
-        config.tx_pool.enable_rbf = true;
+        config.tx_pool.min_rbf_rate = ckb_types::core::FeeRate(1500);
     }
 }

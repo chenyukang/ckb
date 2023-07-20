@@ -171,8 +171,7 @@ pub trait PoolRpc {
     ///     "tip_number": "0x400",
     ///     "total_tx_cycles": "0x219",
     ///     "total_tx_size": "0x112",
-    ///     "tx_size_limit": "0x7d000",
-    ///     "enable_rbf": true
+    ///     "tx_size_limit": "0x7d000"
     ///   }
     /// }
     /// ```

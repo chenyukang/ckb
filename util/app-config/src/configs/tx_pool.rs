@@ -37,8 +37,6 @@ pub struct TxPoolConfig {
     pub recent_reject: PathBuf,
     /// The expiration time for pool transactions in hours
     pub expiry_hours: u8,
-    /// Enable RBF
-    pub enable_rbf: bool,
 }
 
 /// Block assembler config options.
