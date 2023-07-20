@@ -147,11 +147,9 @@ impl Spec for RbfSameInputwithLessFee {
             .rpc_client()
             .send_transaction_result(tx2.data().into());
         assert!(res.is_err(), "tx2 should be rejected");
-        assert!(res
-            .err()
-            .unwrap()
-            .to_string()
-            .contains("Tx fee lower than old conflict Tx fee"));
+        let message = res.err().unwrap().to_string();
+        eprintln!("res: {:?}", message);
+        assert!(message.contains("Tx's current fee is 1000000000, expect it to be larger than"));
     }
 
     fn modify_app_config(&self, config: &mut ckb_app_config::CKBAppConfig) {

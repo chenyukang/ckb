@@ -233,6 +233,9 @@ impl TxPoolService {
                         if tx_pool.config.enable_rbf && matches!(err, Reject::Resolve(_)) {
                             // Try RBF check
                             let conflicts = tx_pool.pool_map.find_conflict_tx(tx);
+                            if conflicts.is_empty() {
+                                return Err(err);
+                            }
                             let (rtx, status) = resolve_tx(tx_pool, &snapshot, tx.clone(), true)?;
                             let fee = check_tx_fee(tx_pool, &snapshot, &rtx, tx_size)?;
                             tx_pool.check_rbf(&snapshot, &rtx, &conflicts, fee, tx_size)?;

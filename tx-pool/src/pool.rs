@@ -515,27 +515,20 @@ impl TxPool {
         }
 
         // Rule #4, new tx' fee need to higher than min_rbf_fee computed from the tx_pool configuration
-        let min_rbf_fee = self.config.min_rbf_rate.fee(tx_size as u64);
-        if fee < min_rbf_fee {
-            return Err(Reject::RBFRejected(format!(
-                "Tx fee lower than min_rbf_fee, min_rbf_fee: {}, tx fee: {}",
-                min_rbf_fee, fee,
-            )));
-        }
-
         // Rule #3, new tx's fee need to higher than conflicts, here we only check the root tx
-        for conflict in conflicts.iter() {
-            if conflict.fee >= fee {
-                let max_fee = conflicts
-                    .iter()
-                    .map(|c| c.fee)
-                    .max()
-                    .unwrap_or(conflict.fee);
-                return Err(Reject::RBFRejected(format!(
-                    "Tx fee is too lower, current fee is {}, expect it larger than max fee of conflicts: {}",
-                    fee, max_fee,
-                )));
-            }
+        let min_rbf_fee = self.config.min_rbf_rate.fee(tx_size as u64);
+        let max_fee = conflicts
+            .iter()
+            .map(|c| c.fee)
+            .max()
+            .unwrap_or(min_rbf_fee)
+            .max(min_rbf_fee);
+
+        if fee <= max_fee {
+            return Err(Reject::RBFRejected(format!(
+                "Tx's current fee is {}, expect it to be larger than: {} to replace old txs",
+                fee, max_fee,
+            )));
         }
 
         // Rule #5, the replaced tx's descendants can not more than 100

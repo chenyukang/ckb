@@ -168,6 +168,7 @@ impl Spec for PoolResolveConflictAfterReorg {
         let ret = node0
             .rpc_client()
             .send_transaction_result(conflict_tx.data().into());
+        eprintln!("ret now {:?}", ret);
         assert!(ret.is_err());
         let err_msg = ret.err().unwrap().to_string();
         assert!(err_msg.contains("Resolve failed Dead"));
@@ -175,5 +176,6 @@ impl Spec for PoolResolveConflictAfterReorg {
 
     fn modify_app_config(&self, config: &mut ckb_app_config::CKBAppConfig) {
         config.tx_pool.min_fee_rate = FeeRate::from_u64(0);
+        config.tx_pool.enable_rbf = false;
     }
 }
