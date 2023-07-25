@@ -441,6 +441,7 @@ fn all_specs() -> Vec<Box<dyn Spec>> {
         Box::new(RbfTooManyDescendants),
         Box::new(RbfContainNewTx),
         Box::new(RbfContainInvalidInput),
+        Box::new(RbfRejectReplaceProposed),
         Box::new(CompactBlockEmpty),
         Box::new(CompactBlockEmptyParentUnknown),
         Box::new(CompactBlockPrefilled),
