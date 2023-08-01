@@ -24,7 +24,7 @@ use std::collections::HashSet;
 use std::convert::Into;
 use std::fs;
 use std::path::PathBuf;
-use std::process::{self, Child, Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
@@ -626,7 +626,7 @@ impl Node {
                         status,
                         self.log_path().display()
                     );
-                    process::exit(status.code().unwrap());
+                    return;
                 }
                 Err(error) => {
                     error!(
@@ -634,7 +634,7 @@ impl Node {
                         error,
                         self.log_path().display()
                     );
-                    process::exit(255);
+                    return;
                 }
             }
         };
