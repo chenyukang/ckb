@@ -306,7 +306,7 @@ impl PoolMap {
         self.links.clear();
     }
 
-    pub(crate) fn score_sorted_iter_by_statuses(
+    pub fn score_sorted_iter_by_statuses(
         &self,
         statuses: Vec<Status>,
     ) -> impl Iterator<Item = &TxEntry> {
@@ -319,10 +319,21 @@ impl PoolMap {
 
     // filter by status and then sort by score, because we have number limits on `Gap` and `Proposed`
     // we can avoid to iterate the whole tx-pool entries by filtering first
-    pub(crate) fn score_sorted_iter_by(&self, status: Status) -> impl Iterator<Item = &TxEntry> {
+    pub fn score_sorted_iter_by(&self, status: Status) -> impl Iterator<Item = &TxEntry> {
         let mut res = self.entries.get_by_status(&status);
         res.sort_by(|a, b| b.inner.cmp(&a.inner));
         res.into_iter().map(|x| &x.inner)
+    }
+
+    pub fn score_sorted_iter_by_old_version(
+        &self,
+        status: Status,
+    ) -> impl Iterator<Item = &TxEntry> {
+        self.entries
+            .iter_by_score()
+            .rev()
+            .filter(move |entry| status == entry.status)
+            .map(|entry| &entry.inner)
     }
 
     fn remove_entry_links(&mut self, id: &ProposalShortId) {

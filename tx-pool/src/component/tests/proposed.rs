@@ -1,3 +1,4 @@
+extern crate test;
 use crate::component::pool_map::Status;
 use crate::component::tests::util::{
     build_tx, build_tx_with_dep, build_tx_with_header_dep, DEFAULT_MAX_ANCESTORS_COUNT,
@@ -731,4 +732,238 @@ fn test_container_bench_add_limits() {
     assert_eq!(pool.pending_size(), 0);
     pool.clear();
     assert_eq!(pool.size(), 0);
+}
+
+use std::hint::black_box;
+use test::Bencher;
+
+
+#[bench]
+fn test_container_bench_score_sort_old_version(bench: &mut Bencher) {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+
+    let mut pool = PoolMap::new(1000000);
+    let tx1 = TxEntry::dummy_resolve(
+        TransactionBuilder::default().build(),
+        100,
+        Capacity::shannons(100),
+        100,
+    );
+    pool.add_entry(tx1.clone(), Status::Proposed).unwrap();
+    let mut prev_tx = tx1;
+
+    for _i in 0..10000 {
+        let next_tx = TxEntry::dummy_resolve(
+            TransactionBuilder::default()
+                .input(
+                    CellInput::new_builder()
+                        .previous_output(
+                            OutPoint::new_builder()
+                                .tx_hash(prev_tx.transaction().hash())
+                                .index(0u32.pack())
+                                .build(),
+                        )
+                        .build(),
+                )
+                .witness(Bytes::new().pack())
+                .build(),
+            rng.gen_range(0..1000),
+            Capacity::shannons(200),
+            rng.gen_range(0..1000),
+        );
+        let rand_status = if rng.gen_bool(0.333) {
+            Status::Pending
+        } else {
+            if rng.gen_bool(0.5) {
+                Status::Gap
+            } else {
+                Status::Proposed
+            }
+        };
+        pool.add_entry(next_tx.clone(), rand_status).unwrap();
+        prev_tx = next_tx;
+    }
+    assert_eq!(pool.size(), 10001);
+
+    bench.iter(|| {
+        //let t = std::time::Instant::now();
+        let res = black_box(pool.score_sorted_iter_by_old_version(black_box(Status::Proposed)));
+        let v = black_box(res.collect::<Vec<_>>());
+        assert_eq!(v.len(), pool.proposed_size());
+        //eprintln!("{:0.2?} => v.len: {}", t.elapsed(), v.len());
+    });
+}
+
+#[bench]
+fn test_container_bench_score_sort_new_version(bench: &mut Bencher) {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+
+    let mut pool = PoolMap::new(1000000);
+    let tx1 = TxEntry::dummy_resolve(
+        TransactionBuilder::default().build(),
+        100,
+        Capacity::shannons(100),
+        100,
+    );
+    pool.add_entry(tx1.clone(), Status::Proposed).unwrap();
+    let mut prev_tx = tx1;
+
+    for _i in 0..10000 {
+        let next_tx = TxEntry::dummy_resolve(
+            TransactionBuilder::default()
+                .input(
+                    CellInput::new_builder()
+                        .previous_output(
+                            OutPoint::new_builder()
+                                .tx_hash(prev_tx.transaction().hash())
+                                .index(0u32.pack())
+                                .build(),
+                        )
+                        .build(),
+                )
+                .witness(Bytes::new().pack())
+                .build(),
+            rng.gen_range(0..1000),
+            Capacity::shannons(200),
+            rng.gen_range(0..1000),
+        );
+        let rand_status = if rng.gen_bool(0.333) {
+            Status::Pending
+        } else {
+            if rng.gen_bool(0.5) {
+                Status::Gap
+            } else {
+                Status::Proposed
+            }
+        };
+        pool.add_entry(next_tx.clone(), rand_status).unwrap();
+        prev_tx = next_tx;
+    }
+    assert_eq!(pool.size(), 10001);
+
+    bench.iter(|| {
+        //let t = std::time::Instant::now();
+        let res = black_box(pool.score_sorted_iter_by(black_box(Status::Proposed)));
+        let v = black_box(res.collect::<Vec<_>>());
+        assert_eq!(v.len(), pool.proposed_size());
+        //eprintln!("{:0.2?} => v.len: {}", t.elapsed(), v.len());
+    });
+}
+
+
+#[bench]
+fn test_container_bench_score_sort_old_version_limit_1024(bench: &mut Bencher) {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+
+    let mut pool = PoolMap::new(1000000);
+    let tx1 = TxEntry::dummy_resolve(
+        TransactionBuilder::default().build(),
+        100,
+        Capacity::shannons(100),
+        100,
+    );
+    pool.add_entry(tx1.clone(), Status::Proposed).unwrap();
+    let mut prev_tx = tx1;
+    let mut proposed_num = 0;
+    for _i in 0..10000 {
+        let next_tx = TxEntry::dummy_resolve(
+            TransactionBuilder::default()
+                .input(
+                    CellInput::new_builder()
+                        .previous_output(
+                            OutPoint::new_builder()
+                                .tx_hash(prev_tx.transaction().hash())
+                                .index(0u32.pack())
+                                .build(),
+                        )
+                        .build(),
+                )
+                .witness(Bytes::new().pack())
+                .build(),
+            rng.gen_range(0..1000),
+            Capacity::shannons(200),
+            rng.gen_range(0..1000),
+        );
+        let rand_status = if rng.gen_bool(0.333) {
+            Status::Pending
+        } else {
+            if rng.gen_bool(0.5) && proposed_num < 1024 {
+                proposed_num += 1;
+                Status::Proposed
+            } else {
+                Status::Gap
+            }
+        };
+        pool.add_entry(next_tx.clone(), rand_status).unwrap();
+        prev_tx = next_tx;
+    }
+    assert_eq!(pool.size(), 10001);
+    bench.iter(|| {
+        //let t = std::time::Instant::now();
+        let res = black_box(pool.score_sorted_iter_by_old_version(black_box(Status::Proposed)));
+        let v = black_box(res.collect::<Vec<_>>());
+        assert_eq!(v.len(), pool.proposed_size());
+        //eprintln!("{:0.2?} => v.len: {}", t.elapsed(), v.len());
+    });
+}
+
+#[bench]
+fn test_container_bench_score_sort_new_version_limit_1024(bench: &mut Bencher) {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+
+    let mut pool = PoolMap::new(1000000);
+    let tx1 = TxEntry::dummy_resolve(
+        TransactionBuilder::default().build(),
+        100,
+        Capacity::shannons(100),
+        100,
+    );
+    pool.add_entry(tx1.clone(), Status::Proposed).unwrap();
+    let mut prev_tx = tx1;
+    let mut proposed_num = 0;
+    for _i in 0..10000 {
+        let next_tx = TxEntry::dummy_resolve(
+            TransactionBuilder::default()
+                .input(
+                    CellInput::new_builder()
+                        .previous_output(
+                            OutPoint::new_builder()
+                                .tx_hash(prev_tx.transaction().hash())
+                                .index(0u32.pack())
+                                .build(),
+                        )
+                        .build(),
+                )
+                .witness(Bytes::new().pack())
+                .build(),
+            rng.gen_range(0..1000),
+            Capacity::shannons(200),
+            rng.gen_range(0..1000),
+        );
+        let rand_status = if rng.gen_bool(0.333) {
+            Status::Pending
+        } else {
+            if rng.gen_bool(0.5) && proposed_num < 1024 {
+                proposed_num += 1;
+                Status::Proposed
+            } else {
+                Status::Gap
+            }
+        };
+        pool.add_entry(next_tx.clone(), rand_status).unwrap();
+        prev_tx = next_tx;
+    }
+    assert_eq!(pool.size(), 10001);
+
+    bench.iter(|| {
+        //let t = std::time::Instant::now();
+        let res = black_box(pool.score_sorted_iter_by(black_box(Status::Proposed)));
+        let v = black_box(res.collect::<Vec<_>>());
+        assert_eq!(v.len(), pool.proposed_size());
+        //eprintln!("{:0.2?} => v.len: {}", t.elapsed(), v.len());
+    });
 }
