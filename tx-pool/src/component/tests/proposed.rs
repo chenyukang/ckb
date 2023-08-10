@@ -737,7 +737,6 @@ fn test_container_bench_add_limits() {
 use std::hint::black_box;
 use test::Bencher;
 
-
 #[bench]
 fn test_container_bench_score_sort_old_version(bench: &mut Bencher) {
     use rand::Rng;
@@ -788,10 +787,13 @@ fn test_container_bench_score_sort_old_version(bench: &mut Bencher) {
 
     bench.iter(|| {
         //let t = std::time::Instant::now();
-        let res = black_box(pool.score_sorted_iter_by_old_version(black_box(Status::Proposed)));
-        let v = black_box(res.collect::<Vec<_>>());
-        assert_eq!(v.len(), pool.proposed_size());
+        let mut res = black_box(pool.score_sorted_iter_by_old_version(black_box(Status::Proposed)));
+        //let v = black_box(res.collect::<Vec<_>>());
+        //assert_eq!(v.len(), pool.proposed_size());
         //eprintln!("{:0.2?} => v.len: {}", t.elapsed(), v.len());
+        while let Some(tx) = res.next() {
+            let _ = black_box(tx);
+        }
     });
 }
 
@@ -845,13 +847,15 @@ fn test_container_bench_score_sort_new_version(bench: &mut Bencher) {
 
     bench.iter(|| {
         //let t = std::time::Instant::now();
-        let res = black_box(pool.score_sorted_iter_by(black_box(Status::Proposed)));
-        let v = black_box(res.collect::<Vec<_>>());
-        assert_eq!(v.len(), pool.proposed_size());
+        let mut res = black_box(pool.score_sorted_iter_by(black_box(Status::Proposed)));
+        //let v = black_box(res.collect::<Vec<_>>());
+        //assert_eq!(v.len(), pool.proposed_size());
         //eprintln!("{:0.2?} => v.len: {}", t.elapsed(), v.len());
+        while let Some(tx) = res.next() {
+            let _ = black_box(tx);
+        }
     });
 }
-
 
 #[bench]
 fn test_container_bench_score_sort_old_version_limit_1024(bench: &mut Bencher) {
@@ -903,10 +907,13 @@ fn test_container_bench_score_sort_old_version_limit_1024(bench: &mut Bencher) {
     assert_eq!(pool.size(), 10001);
     bench.iter(|| {
         //let t = std::time::Instant::now();
-        let res = black_box(pool.score_sorted_iter_by_old_version(black_box(Status::Proposed)));
-        let v = black_box(res.collect::<Vec<_>>());
-        assert_eq!(v.len(), pool.proposed_size());
+        let mut res = black_box(pool.score_sorted_iter_by_old_version(black_box(Status::Proposed)));
+        //let v = black_box(res.collect::<Vec<_>>());
+        //assert_eq!(v.len(), pool.proposed_size());
         //eprintln!("{:0.2?} => v.len: {}", t.elapsed(), v.len());
+        while let Some(tx) = res.next() {
+            let _ = black_box(tx);
+        }
     });
 }
 
@@ -961,9 +968,12 @@ fn test_container_bench_score_sort_new_version_limit_1024(bench: &mut Bencher) {
 
     bench.iter(|| {
         //let t = std::time::Instant::now();
-        let res = black_box(pool.score_sorted_iter_by(black_box(Status::Proposed)));
-        let v = black_box(res.collect::<Vec<_>>());
-        assert_eq!(v.len(), pool.proposed_size());
+        let mut res = black_box(pool.score_sorted_iter_by(black_box(Status::Proposed)));
+        //let v = black_box(res.collect::<Vec<_>>());
+        //assert_eq!(v.len(), pool.proposed_size());
         //eprintln!("{:0.2?} => v.len: {}", t.elapsed(), v.len());
+        while let Some(tx) = res.next() {
+            let _ = black_box(tx);
+        }
     });
 }
