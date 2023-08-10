@@ -45,7 +45,7 @@ pub struct PoolEntry {
     pub id: ProposalShortId,
     #[multi_index(ordered_non_unique)]
     pub score: AncestorsScoreSortKey,
-    #[multi_index(ordered_non_unique)]
+    #[multi_index(hashed_non_unique)]
     pub status: Status,
     #[multi_index(ordered_non_unique)]
     pub evict_key: EvictKey,
@@ -128,7 +128,7 @@ impl PoolMap {
     }
 
     pub(crate) fn sorted_proposed_iter(&self) -> impl Iterator<Item = &TxEntry> {
-        self.score_sorted_iter_by(vec![Status::Proposed])
+        self.score_sorted_iter_by(Status::Proposed)
     }
 
     pub(crate) fn get(&self, id: &ProposalShortId) -> Option<&TxEntry> {
@@ -278,7 +278,7 @@ impl PoolMap {
         proposals: &mut HashSet<ProposalShortId>,
         status: Status,
     ) {
-        for entry in self.score_sorted_iter_by(vec![status]) {
+        for entry in self.score_sorted_iter_by(status) {
             if proposals.len() == limit {
                 break;
             }
@@ -306,7 +306,7 @@ impl PoolMap {
         self.links.clear();
     }
 
-    pub(crate) fn score_sorted_iter_by(
+    pub(crate) fn score_sorted_iter_by_statuses(
         &self,
         statuses: Vec<Status>,
     ) -> impl Iterator<Item = &TxEntry> {
@@ -315,6 +315,14 @@ impl PoolMap {
             .rev()
             .filter(move |entry| statuses.contains(&entry.status))
             .map(|entry| &entry.inner)
+    }
+
+    // filter by status and then sort by score, because we have number limits on `Gap` and `Proposed`
+    // we can avoid to iterate the whole tx-pool entries by filtering first
+    pub(crate) fn score_sorted_iter_by(&self, status: Status) -> impl Iterator<Item = &TxEntry> {
+        let mut res = self.entries.get_by_status(&status);
+        res.sort_by(|a, b| b.inner.cmp(&a.inner));
+        res.into_iter().map(|x| &x.inner)
     }
 
     fn remove_entry_links(&mut self, id: &ProposalShortId) {
