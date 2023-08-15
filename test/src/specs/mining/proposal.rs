@@ -2,6 +2,9 @@ use crate::generic::GetProposalTxIds;
 use crate::util::cell::gen_spendable;
 use crate::util::transaction::always_success_transaction;
 use crate::{Node, Spec};
+use ckb_jsonrpc_types::Status;
+use ckb_types::packed::CellInput;
+use ckb_types::packed::OutPoint;
 use ckb_types::prelude::*;
 
 pub struct AvoidDuplicatedProposalsWithUncles;
@@ -43,6 +46,56 @@ impl Spec for AvoidDuplicatedProposalsWithUncles {
             block.get_proposal_tx_ids().is_empty(),
             "expect empty proposals, actual: {:?}",
             block.get_proposal_tx_ids()
+        );
+    }
+}
+
+pub struct AvoidReproposeGap;
+impl Spec for AvoidReproposeGap {
+    fn run(&self, nodes: &mut Vec<Node>) {
+        let node0 = &nodes[0];
+
+        node0.mine_until_out_bootstrap_period();
+        let tx0 = node0.new_transaction_spend_tip_cellbase();
+        let mut txs = vec![tx0.clone()];
+
+        eprintln!("tx0 now: {:?}", tx0.hash());
+        while txs.len() < 10 {
+            let parent = txs.last().unwrap();
+            let child = parent
+                .as_advanced_builder()
+                .set_inputs(vec![{
+                    CellInput::new_builder()
+                        .previous_output(OutPoint::new(parent.hash(), 0))
+                        .build()
+                }])
+                .set_outputs(vec![parent.output(0).unwrap()])
+                .build();
+            txs.push(child);
+        }
+        for tx in txs.iter() {
+            let ret = node0.rpc_client().send_transaction_result(tx.data().into());
+            if ret.is_err() {
+                eprintln!("send tx: {:?} error: {:?}", tx.hash(), ret);
+            }
+            assert!(ret.is_ok());
+            eprintln!("send tx: {:?}", tx.hash());
+        }
+
+        node0.mine_with_blocking(|template| template.proposals.len() != txs.len());
+        let res = node0.rpc_client().get_raw_tx_pool(Some(true));
+        eprintln!("tx_pool: {:?}", res);
+
+        let ret = node0.rpc_client().get_transaction(txs[2].hash());
+        assert!(
+            matches!(ret.tx_status.status, Status::Pending),
+            "tx1 should be pending"
+        );
+        node0.mine(1);
+        let ret = node0.rpc_client().get_transaction(txs[2].hash());
+        assert!(
+            matches!(ret.tx_status.status, Status::Proposed),
+            "tx1 should be proposed"
         );
     }
 }

@@ -499,6 +499,21 @@ impl ChainService {
             let (detached_proposal_id, new_proposals) = self
                 .proposal_table
                 .finalize(origin_proposals, tip_header.number());
+
+            eprintln!(
+                "origin_proposals gap({:?}): {:?}\norigin_proposals set({:?}): {:?}",
+                origin_proposals.gap().len(),
+                origin_proposals.gap(),
+                origin_proposals.set().len(),
+                origin_proposals.set()
+            );
+            eprintln!(
+                "new_proposals gap({:?}): {:?}\nnew_proposals set({:?}): {:?}",
+                new_proposals.gap().len(),
+                new_proposals.gap(),
+                new_proposals.set().len(),
+                new_proposals.set()
+            );
             fork.detached_proposal_id = detached_proposal_id;
 
             let new_snapshot =

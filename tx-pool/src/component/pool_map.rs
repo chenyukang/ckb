@@ -283,6 +283,7 @@ impl PoolMap {
         proposals: &mut HashSet<ProposalShortId>,
         status: Status,
     ) {
+        eprintln!("fill_proposals: {:?} with limit {}", status, limit);
         for entry in self.score_sorted_iter_by(vec![status]) {
             if proposals.len() == limit {
                 break;
