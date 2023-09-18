@@ -431,6 +431,7 @@ fn all_specs() -> Vec<Box<dyn Spec>> {
         Box::new(TxsRelayOrder),
         Box::new(SendTxChain),
         Box::new(DifferentTxsWithSameInput),
+        Box::new(DifferentTxsWithSameParent),
         Box::new(CompactBlockEmpty),
         Box::new(CompactBlockEmptyParentUnknown),
         Box::new(CompactBlockPrefilled),

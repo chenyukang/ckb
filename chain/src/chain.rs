@@ -474,7 +474,7 @@ impl ChainService {
 
         if new_best_block {
             let tip_header = block.header();
-            info!(
+            eprintln!(
                 "block: {}, hash: {:#x}, epoch: {:#}, total_diff: {:#x}, txs: {}",
                 tip_header.number(),
                 tip_header.hash(),
@@ -482,6 +482,9 @@ impl ChainService {
                 total_difficulty,
                 block.transactions().len()
             );
+            for tx in block.transactions() {
+                eprintln!("insert block tx: {:#x}", tx.hash());
+            }
 
             self.update_proposal_table(&fork);
             let (detached_proposal_id, new_proposals) = self

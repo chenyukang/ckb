@@ -196,6 +196,10 @@ impl BlockAssembler {
             (proposals, txs, basic_size)
         };
 
+        for tx in txs.iter() {
+            eprintln!("update_full calc_dao: {:?}", tx.transaction().hash());
+        }
+
         let proposals_size = proposals.len() * ProposalShortId::serialized_size();
         let (dao, checked_txs) = Self::calc_dao(
             &current.snapshot,
@@ -405,7 +409,12 @@ impl BlockAssembler {
                 .package_txs(max_block_cycles, txs_size_limit.expect("overflow checked"));
             txs
         };
-
+        for tx in txs.iter() {
+            eprintln!(
+                "update_transactions calc_dao: {:?}",
+                tx.transaction().hash()
+            );
+        }
         if let Ok((dao, checked_txs)) = Self::calc_dao(
             &current.snapshot,
             &current.epoch,
@@ -430,7 +439,7 @@ impl BlockAssembler {
             current.size.txs = new_txs_size;
             current.size.total = new_total_size;
 
-            trace!(
+            eprintln!(
                 "[BlockAssembler] update_transactions-{} epoch-{} uncles-{} proposals-{} txs-{}",
                 current.template.number,
                 current.template.epoch.number(),
@@ -593,7 +602,7 @@ impl BlockAssembler {
                             .rtx
                             .check(&mut seen_inputs, &overlay_cell_checker, snapshot)
                     {
-                        error!(
+                        eprintln!(
                             "resolve transactions when build block template, \
                              tip_number: {}, tip_hash: {}, tx_hash: {}, error: {:?}",
                             tip_header.number(),
@@ -609,6 +618,7 @@ impl BlockAssembler {
                 })
                 .collect()
         });
+        eprintln!("calc_dao checked entries: {:?}", checked_entries);
 
         let dummy_cellbase_entry = TxEntry::dummy_resolve(cellbase, 0, Capacity::zero(), 0);
         let entries_iter = iter::once(&dummy_cellbase_entry)

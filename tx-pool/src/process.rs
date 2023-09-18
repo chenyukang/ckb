@@ -939,13 +939,13 @@ fn _update_tx_pool_for_reorg(
         });
 
         for entry in entries {
-            debug!("tx move to proposed {}", entry.transaction().hash());
+            eprintln!("tx move to proposed {}", entry.transaction().hash());
             let cached = CacheEntry::completed(entry.cycles, entry.fee);
             let tx_hash = entry.transaction().hash();
             if let Err(e) =
                 tx_pool.proposed_rtx(cached, entry.size, entry.timestamp, Arc::clone(&entry.rtx))
             {
-                debug!("Failed to add proposed tx {}, reason: {}", tx_hash, e);
+                eprintln!("Failed to add proposed tx {}, reason: {}", tx_hash, e);
                 callbacks.call_reject(tx_pool, &entry, e.clone());
             } else {
                 callbacks.call_proposed(tx_pool, &entry, false);
@@ -953,7 +953,7 @@ fn _update_tx_pool_for_reorg(
         }
 
         for entry in gaps {
-            debug!("tx move to gap {}", entry.transaction().hash());
+            eprintln!("tx move to gap {}", entry.transaction().hash());
             let tx_hash = entry.transaction().hash();
             let cached = CacheEntry::completed(entry.cycles, entry.fee);
             if let Err(e) =

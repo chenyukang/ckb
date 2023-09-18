@@ -3,11 +3,12 @@ use ckb_jsonrpc_types::Status;
 use ckb_logger::info;
 use ckb_types::{
     core::{capacity_bytes, Capacity, TransactionView},
-    packed::CellOutputBuilder,
+    packed::{CellInput, CellOutputBuilder, OutPoint},
     prelude::*,
 };
 
 pub struct DifferentTxsWithSameInput;
+pub struct DifferentTxsWithSameParent;
 
 impl Spec for DifferentTxsWithSameInput {
     fn run(&self, nodes: &mut Vec<Node>) {
@@ -76,6 +77,102 @@ impl Spec for DifferentTxsWithSameInput {
         let ret = node0
             .rpc_client()
             .get_transaction_with_verbosity(tx2.hash(), 2);
+        assert!(ret.transaction.is_none());
+        assert!(matches!(ret.tx_status.status, Status::Rejected));
+    }
+}
+
+impl Spec for DifferentTxsWithSameParent {
+    fn run(&self, nodes: &mut Vec<Node>) {
+        let node0 = &nodes[0];
+
+        node0.mine_until_out_bootstrap_period();
+        node0.new_block_with_blocking(|template| template.number.value() != 13);
+        let tx_hash_0 = node0.generate_transaction();
+        info!("Generate 2 txs with same input");
+        let parent = node0.new_transaction(tx_hash_0.clone());
+
+        let child0 = parent
+            .as_advanced_builder()
+            .set_inputs(vec![{
+                CellInput::new_builder()
+                    .previous_output(OutPoint::new(parent.hash(), 0))
+                    .build()
+            }])
+            .set_outputs(vec![parent.output(0).unwrap()])
+            .build();
+
+        // Set tx2 fee to a higher value, tx1 capacity is 100, set tx2 capacity to 80 for +20 fee.
+        let output = CellOutputBuilder::default()
+            .capacity(capacity_bytes!(80).pack())
+            .build();
+        let child1 = parent
+            .as_advanced_builder()
+            .set_inputs(vec![{
+                CellInput::new_builder()
+                    .previous_output(OutPoint::new(parent.hash(), 0))
+                    .build()
+            }])
+            .set_outputs(vec![output])
+            .build();
+
+        eprintln!("parent: {:?}", parent.hash());
+        eprintln!("child0: {:?}", child0.hash());
+        eprintln!("child1: {:?}", child1.hash());
+
+        node0.rpc_client().send_transaction(parent.data().into());
+        node0.mine(1);
+        let ret = node0.rpc_client().get_transaction(parent.hash());
+        assert!(
+            matches!(ret.tx_status.status, Status::Pending),
+            "parent should be in Gap"
+        );
+        eprintln!("parent is status: {:?}", ret.tx_status.status);
+
+        node0.rpc_client().send_transaction(child0.data().into());
+        node0.rpc_client().send_transaction(child1.data().into());
+
+        node0.mine(1);
+        let ret = node0.rpc_client().get_transaction(parent.hash());
+        assert!(
+            matches!(ret.tx_status.status, Status::Proposed),
+            "parent should be in Proposed"
+        );
+        eprintln!("parent is status: {:?}", ret.tx_status.status);
+
+        eprintln!("now run here .....");
+        node0.mine_with_blocking(|template| template.proposals.len() != 2);
+        node0.mine_with_blocking(|template| template.number.value() != 16);
+        node0.mine_with_blocking(|template| template.transactions.len() != 1);
+
+        let tip_block = node0.get_tip_block();
+        let commit_txs_hash: Vec<_> = tip_block
+            .transactions()
+            .iter()
+            .map(TransactionView::hash)
+            .collect();
+
+        // RBF (Replace-By-Fees) is not implemented
+        assert!(commit_txs_hash.contains(&child0.hash()));
+        assert!(!commit_txs_hash.contains(&child1.hash()));
+
+        // when tx1 was confirmed, tx2 should be rejected
+        let ret = node0.rpc_client().get_transaction(child1.hash());
+        assert!(
+            matches!(ret.tx_status.status, Status::Rejected),
+            "tx2 should be rejected"
+        );
+
+        // verbosity = 1
+        let ret = node0
+            .rpc_client()
+            .get_transaction_with_verbosity(child0.hash(), 1);
+        assert!(ret.transaction.is_none());
+        assert!(matches!(ret.tx_status.status, Status::Committed));
+
+        let ret = node0
+            .rpc_client()
+            .get_transaction_with_verbosity(child1.hash(), 1);
         assert!(ret.transaction.is_none());
         assert!(matches!(ret.tx_status.status, Status::Rejected));
     }

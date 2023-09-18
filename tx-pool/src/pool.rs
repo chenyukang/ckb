@@ -474,7 +474,11 @@ impl TxPool {
         let snapshot = self.cloned_snapshot();
         let tip_header = snapshot.tip_header();
         let tx_env = TxVerifyEnv::new_proposed(tip_header, 1);
-        self.check_rtx_from_proposed(&rtx)?;
+        let res = self.check_rtx_from_proposed(&rtx);
+        if res.is_err() {
+            eprintln!("proposed_rtx error: {:?} error: {:?}", rtx, res);
+            return Err(res.err().unwrap());
+        }
 
         let max_cycles = snapshot.consensus().max_block_cycles();
         let verified = verify_rtx(
