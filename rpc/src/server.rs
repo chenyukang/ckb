@@ -1,23 +1,13 @@
 use crate::IoHandler;
-use axum::{
-    extract::State,
-    http::{header, HeaderMap, StatusCode},
-    response::IntoResponse,
-    routing::{get, post},
-};
 use ckb_app_config::RpcConfig;
 use ckb_notify::NotifyController;
-use futures_util::{TryStreamExt, SinkExt};
+use futures_util::{SinkExt, TryStreamExt};
 use jsonrpc_core::MetaIoHandler;
-use jsonrpc_pubsub::Session;
 use jsonrpc_utils::axum_utils::jsonrpc_router;
 use jsonrpc_utils::stream::{serve_stream_sink, StreamMsg, StreamServerConfig};
-use std::net::{SocketAddr, ToSocketAddrs};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::runtime::Handle;
-use jsonrpc_core::futures::TryStreamExt;
-use jsonrpc_core::futures::SinkExt;
 use tokio_util::codec::{FramedRead, FramedWrite, LinesCodec, LinesCodecError};
 
 #[doc(hidden)]

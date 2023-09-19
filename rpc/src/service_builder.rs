@@ -1,6 +1,6 @@
 #![allow(deprecated)]
 use crate::error::RPCError;
-use crate::module::SubscriptionSession;
+//use crate::module::SubscriptionSession;
 use crate::module::{
     add_alert_rpc_methods, add_chain_rpc_methods, add_integration_test_rpc_methods, AlertRpcImpl,
     ChainRpcImpl, DebugRpc, DebugRpcImpl, ExperimentRpc, ExperimentRpcImpl, IndexerRpc,
@@ -50,7 +50,7 @@ impl<'a> ServiceBuilder<'a> {
         self
     }
 
-     /*
+    /*
     /// Mounts methods from module Pool if it is enabled in the config.
     pub fn enable_pool(
         mut self,

@@ -1,12 +1,14 @@
+use async_trait::async_trait;
 use ckb_jsonrpc_types::Topic;
 use ckb_notify::NotifyController;
 
 use jsonrpc_core::{Metadata, Result};
-use jsonrpc_derive::rpc;
+//use jsonrpc_derive::rpc;
 use jsonrpc_pubsub::{
     typed::{Sink, Subscriber},
     SubscriptionId,
 };
+use jsonrpc_utils::rpc;
 
 use jsonrpc_utils::{axum_utils::handle_jsonrpc, pub_sub::Session};
 
@@ -37,7 +39,6 @@ impl SubscriptionSession {
 }
 
 impl Metadata for SubscriptionSession {}
-
 
 /// RPC Module Subscription that CKB node will push new messages to subscribers.
 ///
@@ -76,7 +77,8 @@ impl Metadata for SubscriptionSession {}
 /// socket.send(`{"id": 2, "jsonrpc": "2.0", "method": "unsubscribe", "params": ["0x0"]}`)
 /// ```
 #[allow(clippy::needless_return)]
-#[rpc(server)]
+#[rpc]
+#[async_trait]
 pub trait SubscriptionRpc {
     /// Context to implement the subscription RPC.
     type Metadata;
