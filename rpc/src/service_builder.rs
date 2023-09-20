@@ -61,12 +61,12 @@ impl<'a> ServiceBuilder<'a> {
         extra_well_known_type_scripts: Vec<Script>,
     ) -> Self {
         let mut meta_io = MetaIoHandler::default();
-        let rpc_methods = PoolRpcImpl::new(
-            shared,
-            extra_well_known_lock_scripts,
-            extra_well_known_type_scripts,
-        );
         if self.config.pool_enable() {
+            let rpc_methods = PoolRpcImpl::new(
+                shared,
+                extra_well_known_lock_scripts,
+                extra_well_known_type_scripts,
+            );
             add_pool_rpc_methods(&mut meta_io, rpc_methods);
             self.add_methods(meta_io);
         } else {
@@ -84,12 +84,12 @@ impl<'a> ServiceBuilder<'a> {
         enable: bool,
     ) -> Self {
         let mut meta_io = MetaIoHandler::default();
-        let rpc_methods = MinerRpcImpl {
-            shared,
-            chain,
-            network_controller,
-        };
         if enable && self.config.miner_enable() {
+            let rpc_methods = MinerRpcImpl {
+                shared,
+                chain,
+                network_controller,
+            };
             add_miner_rpc_methods(&mut meta_io, rpc_methods);
             self.add_methods(meta_io);
         } else {
@@ -105,11 +105,11 @@ impl<'a> ServiceBuilder<'a> {
         sync_shared: Arc<SyncShared>,
     ) -> Self {
         let mut meta_io = MetaIoHandler::default();
-        let rpc_methods = NetRpcImpl {
-            network_controller,
-            sync_shared,
-        };
         if self.config.net_enable() {
+            let rpc_methods = NetRpcImpl {
+                network_controller,
+                sync_shared,
+            };
             add_net_rpc_methods(&mut meta_io, rpc_methods);
         } else {
             self.update_disabled_methods("Net", meta_io);
@@ -124,11 +124,11 @@ impl<'a> ServiceBuilder<'a> {
         alert_notifier: Arc<Mutex<AlertNotifier>>,
     ) -> Self {
         let mut meta_io = MetaIoHandler::default();
-        let rpc_methods = StatsRpcImpl {
-            shared,
-            alert_notifier,
-        };
         if self.config.stats_enable() {
+            let rpc_methods = StatsRpcImpl {
+                shared,
+                alert_notifier,
+            };
             add_stats_rpc_methods(&mut meta_io, rpc_methods);
             self.add_methods(meta_io);
         } else {
@@ -215,11 +215,12 @@ impl<'a> ServiceBuilder<'a> {
         db_config: &DBConfig,
         indexer_config: &IndexerConfig,
     ) -> Self {
-        let indexer = IndexerService::new(db_config, indexer_config, shared.async_handle().clone());
-        let indexer_handle = indexer.handle();
-        let rpc_methods = IndexerRpcImpl::new(indexer_handle);
         let mut meta_io = MetaIoHandler::default();
         if self.config.indexer_enable() {
+            let indexer =
+                IndexerService::new(db_config, indexer_config, shared.async_handle().clone());
+            let indexer_handle = indexer.handle();
+            let rpc_methods = IndexerRpcImpl::new(indexer_handle);
             start_indexer(&shared, indexer, indexer_config.index_tx_pool);
             add_indexer_rpc_methods(&mut meta_io, rpc_methods);
             self.add_methods(meta_io);
@@ -236,9 +237,9 @@ impl<'a> ServiceBuilder<'a> {
         let enable_deprecated_rpc = self.config.enable_deprecated_rpc;
         self.io_handler
             .extend_with(rpc_methods.into_iter().map(|(name, method)| {
-                if let Some(deprecated_method_name) = name.strip_prefix(DEPRECATED_RPC_PREFIX) {
+                if let Some(striped_method_name) = name.strip_prefix(DEPRECATED_RPC_PREFIX) {
                     (
-                        deprecated_method_name.to_owned(),
+                        striped_method_name.to_owned(),
                         if enable_deprecated_rpc {
                             method
                         } else {
@@ -272,7 +273,7 @@ impl<'a> ServiceBuilder<'a> {
     /// Builds the RPC methods handler used in the RPC server.
     pub fn build(self) -> IoHandler {
         let mut io_handler = self.io_handler;
-        io_handler.add_method("@ping", |_| async move { Ok("pong".into()) });
+        io_handler.add_method("ping", |_| async move { Ok("pong".into()) });
         io_handler
     }
 }
