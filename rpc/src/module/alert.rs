@@ -70,7 +70,7 @@ pub trait AlertRpc {
     /// }
     /// ```
     #[rpc(name = "send_alert")]
-    async fn send_alert(&self, alert: Alert) -> Result<()>;
+    fn send_alert(&self, alert: Alert) -> Result<()>;
 }
 
 #[derive(Clone)]
@@ -96,7 +96,7 @@ impl AlertRpcImpl {
 
 #[async_trait]
 impl AlertRpc for AlertRpcImpl {
-    async fn send_alert(&self, alert: Alert) -> Result<()> {
+    fn send_alert(&self, alert: Alert) -> Result<()> {
         let alert: packed::Alert = alert.into();
         let now_ms = ckb_systemtime::unix_time_as_millis();
         let notice_until: u64 = alert.raw().notice_until().unpack();

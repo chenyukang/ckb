@@ -44,7 +44,7 @@ pub trait IndexerRpc {
     /// }
     /// ```
     #[rpc(name = "get_indexer_tip")]
-    async fn get_indexer_tip(&self) -> Result<Option<IndexerTip>>;
+    fn get_indexer_tip(&self) -> Result<Option<IndexerTip>>;
 
     /// Returns the live cells collection by the lock or type script.
     ///
@@ -390,7 +390,7 @@ pub trait IndexerRpc {
     /// }
     /// ```
     #[rpc(name = "get_cells")]
-    async fn get_cells(
+    fn get_cells(
         &self,
         search_key: IndexerSearchKey,
         order: IndexerOrder,
@@ -802,7 +802,7 @@ pub trait IndexerRpc {
     /// }
     /// ```
     #[rpc(name = "get_transactions")]
-    async fn get_transactions(
+    fn get_transactions(
         &self,
         search_key: IndexerSearchKey,
         order: IndexerOrder,
@@ -865,7 +865,7 @@ pub trait IndexerRpc {
     /// }
     /// ```
     #[rpc(name = "get_cells_capacity")]
-    async fn get_cells_capacity(
+    fn get_cells_capacity(
         &self,
         search_key: IndexerSearchKey,
     ) -> Result<Option<IndexerCellsCapacity>>;
@@ -884,13 +884,13 @@ impl IndexerRpcImpl {
 
 #[async_trait]
 impl IndexerRpc for IndexerRpcImpl {
-    async fn get_indexer_tip(&self) -> Result<Option<IndexerTip>> {
+    fn get_indexer_tip(&self) -> Result<Option<IndexerTip>> {
         self.handle
             .get_indexer_tip()
             .map_err(|e| RPCError::custom(RPCError::Indexer, e))
     }
 
-    async fn get_cells(
+    fn get_cells(
         &self,
         search_key: IndexerSearchKey,
         order: IndexerOrder,
@@ -902,7 +902,7 @@ impl IndexerRpc for IndexerRpcImpl {
             .map_err(|e| RPCError::custom(RPCError::Indexer, e))
     }
 
-    async fn get_transactions(
+    fn get_transactions(
         &self,
         search_key: IndexerSearchKey,
         order: IndexerOrder,
@@ -914,7 +914,7 @@ impl IndexerRpc for IndexerRpcImpl {
             .map_err(|e| RPCError::custom(RPCError::Indexer, e))
     }
 
-    async fn get_cells_capacity(
+    fn get_cells_capacity(
         &self,
         search_key: IndexerSearchKey,
     ) -> Result<Option<IndexerCellsCapacity>> {

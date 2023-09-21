@@ -134,7 +134,7 @@ pub trait MinerRpc {
     /// }
     /// ```
     #[rpc(name = "get_block_template")]
-    async fn get_block_template(
+    fn get_block_template(
         &self,
         bytes_limit: Option<Uint64>,
         proposals_limit: Option<Uint64>,
@@ -223,7 +223,7 @@ pub trait MinerRpc {
     /// }
     /// ```
     #[rpc(name = "submit_block")]
-    async fn submit_block(&self, work_id: String, block: Block) -> Result<H256>;
+    fn submit_block(&self, work_id: String, block: Block) -> Result<H256>;
 }
 
 #[derive(Clone)]
@@ -235,7 +235,7 @@ pub(crate) struct MinerRpcImpl {
 
 #[async_trait]
 impl MinerRpc for MinerRpcImpl {
-    async fn get_block_template(
+    fn get_block_template(
         &self,
         bytes_limit: Option<Uint64>,
         proposals_limit: Option<Uint64>,
@@ -257,7 +257,7 @@ impl MinerRpc for MinerRpcImpl {
             })
     }
 
-    async fn submit_block(&self, work_id: String, block: Block) -> Result<H256> {
+    fn submit_block(&self, work_id: String, block: Block) -> Result<H256> {
         let block: packed::Block = block.into();
         let block: Arc<core::BlockView> = Arc::new(block.into_view());
         let header = block.header();
