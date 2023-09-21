@@ -12,7 +12,6 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
-use tokio::runtime::Handle;
 use tokio_util::codec::{FramedRead, FramedWrite, LinesCodec, LinesCodecError};
 use tower_http::timeout::TimeoutLayer;
 
@@ -34,7 +33,6 @@ impl RpcServer {
         config: RpcConfig,
         io_handler: IoHandler,
         _notify_controller: &NotifyController,
-        _handle: Handle,
     ) -> Self {
         let rpc = Arc::new(io_handler);
         let stream_config = StreamServerConfig::default()

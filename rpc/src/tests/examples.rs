@@ -264,14 +264,8 @@ fn setup_rpc_test_suite(height: u64) -> RpcTestSuite {
 
     let shared_clone = shared.clone();
     let handler = shared_clone.async_handle().clone();
-    let rpc_server = handler.clone().block_on(async move {
-        RpcServer::new(
-            rpc_config,
-            io_handler,
-            shared_clone.notify_controller(),
-            handler.into_inner(),
-        )
-        .await
+    let rpc_server = handler.block_on(async move {
+        RpcServer::new(rpc_config, io_handler, shared_clone.notify_controller()).await
     });
 
     let rpc_client = reqwest::blocking::Client::new();
