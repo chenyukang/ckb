@@ -420,7 +420,7 @@ impl Launcher {
             .enable_debug();
         let io_handler = builder.build();
 
-        let _ = RpcServer::new(
+        RpcServer::new(
             rpc_config,
             io_handler,
             shared.notify_controller(),

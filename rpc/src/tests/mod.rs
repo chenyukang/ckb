@@ -89,7 +89,7 @@ struct RpcTestSuite {
 impl RpcTestSuite {
     fn rpc(&self, request: &RpcTestRequest) -> RpcTestResponse {
         self.rpc_client
-            .post(&(self.rpc_uri.to_string() + "/"))
+            .post(&self.rpc_uri)
             .json(&request)
             .send()
             .unwrap_or_else(|e| {
