@@ -1,31 +1,14 @@
-use async_trait::async_trait;
-use ckb_jsonrpc_types::Topic;
+use ckb_async_runtime::Handle;
+
 use ckb_notify::NotifyController;
-
-use jsonrpc_core::{MetaIoHandler, Metadata, Params};
-use jsonrpc_utils::pub_sub::{add_pub_sub, PubSub};
-// use jsonrpc_pubsub::{
-//     typed::{Sink, Subscriber},
-//     SubscriptionId,
-// };
-use jsonrpc_utils::{pub_sub::PublishMsg, rpc};
-
-use futures_util::{stream::BoxStream, Stream};
-use jsonrpc_utils::{axum_utils::handle_jsonrpc, pub_sub::Session};
-use tokio::sync::broadcast::Sender;
-
-use core::result::Result;
 use futures_util::StreamExt;
-use std::collections::HashMap;
-use std::collections::HashSet;
-use std::sync::Arc;
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    RwLock,
-};
-use tokio::runtime::Handle;
+use jsonrpc_core::{MetaIoHandler, Params};
+use jsonrpc_utils::pub_sub::add_pub_sub;
+use jsonrpc_utils::pub_sub::PublishMsg;
+use jsonrpc_utils::pub_sub::Session;
 use tokio::sync::broadcast;
-use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
+
+use tokio_stream::wrappers::BroadcastStream;
 
 const SUBSCRIBER_NAME: &str = "TcpSubscription";
 
@@ -82,6 +65,9 @@ const SUBSCRIBER_NAME: &str = "TcpSubscription";
 ///
 /// socket.send(`{"id": 2, "jsonrpc": "2.0", "method": "unsubscribe", "params": ["0x0"]}`)
 /// ```
+///
+///
+/*
 #[allow(clippy::needless_return)]
 #[rpc]
 #[async_trait]
@@ -217,74 +203,49 @@ pub trait SubscriptionRpc {
     /// fn unsubscribe(&self, meta: Option<Self::Metadata>, id: SubscriptionId) -> Result<bool>;
      */
 }
+*/
 
-type SubscriptionId = u64;
-type Subscribers = HashSet<SubscriptionId>;
 #[derive(Clone)]
-pub struct SubscriptionRpcImpl {
-    pub(crate) new_tip_header_sender: Sender<PublishMsg<String>>,
-    pub(crate) new_tip_block_sender: Sender<PublishMsg<String>>,
-    pub(crate) new_transaction_sender: Sender<PublishMsg<String>>,
-    pub(crate) io_handler: Arc<MetaIoHandler<Option<Session>>>,
-}
+pub struct SubscriptionRpcImpl {}
 
 impl SubscriptionRpcImpl {
-    fn subscribe(&mut self, topic: Topic) -> String {
-        let tx = self.new_tip_block_sender.clone();
-        add_pub_sub(
-            &mut self.io_handler,
-            "subscribe",
-            "subscription",
-            "unsubscribe",
-            move |_params: Params| {
-                Ok(BroadcastStream::new(tx.subscribe()).map(|result| {
-                    result.unwrap_or_else(|_| {
-                        PublishMsg::error(&jsonrpc_core::Error {
-                            code: jsonrpc_core::ErrorCode::ServerError(-32000),
-                            message: "lagged".into(),
-                            data: None,
-                        })
-                    })
-                }))
-            },
-        );
-        "ok".to_owned()
-    }
-}
-
-impl SubscriptionRpcImpl {
-    pub fn new(
+    pub async fn new(
         notify_controller: NotifyController,
         handle: Handle,
-        io_handle: Arc<MetaIoHandler<Option<Session>>>,
-    ) -> Self {
-        let mut new_block_receiver =
-            handle.block_on(notify_controller.subscribe_new_block(SUBSCRIBER_NAME.to_string()));
-        let mut new_transaction_receiver = handle
-            .block_on(notify_controller.subscribe_new_transaction(SUBSCRIBER_NAME.to_string()));
-        let mut proposed_transaction_receiver = handle.block_on(
-            notify_controller.subscribe_proposed_transaction(SUBSCRIBER_NAME.to_string()),
-        );
-        let mut reject_transaction_receiver = handle
-            .block_on(notify_controller.subscribe_reject_transaction(SUBSCRIBER_NAME.to_string()));
+        io_handle: &mut MetaIoHandler<Option<Session>>,
+    ) {
+        let mut new_block_receiver = notify_controller
+            .subscribe_new_block(SUBSCRIBER_NAME.to_string())
+            .await;
+        let mut new_transaction_receiver = notify_controller
+            .subscribe_new_transaction(SUBSCRIBER_NAME.to_string())
+            .await;
+        let mut proposed_transaction_receiver = notify_controller
+            .subscribe_proposed_transaction(SUBSCRIBER_NAME.to_string())
+            .await;
+        let mut reject_transaction_receiver = notify_controller
+            .subscribe_reject_transaction(SUBSCRIBER_NAME.to_string())
+            .await;
 
         let (new_tip_header_sender, _) = broadcast::channel(10);
         let (new_tip_block_sender, _) = broadcast::channel(10);
+        let (proposed_transaction_sender, _) = broadcast::channel(10);
         let (new_transaction_sender, _) = broadcast::channel(10);
-        let subscription_rpc_impl = SubscriptionRpcImpl {
-            new_tip_header_sender,
-            new_tip_block_sender,
-            new_transaction_sender,
-            io_handler: Arc::clone(&io_handle),
-        };
+        let (new_reject_transaction_sender, _) = broadcast::channel(10);
+
         handle.spawn({
+            let new_tip_block_sender = new_tip_block_sender.clone();
             async move {
             loop {
                 tokio::select! {
                     Some(block) = new_block_receiver.recv() => {
+                        let header: ckb_jsonrpc_types::HeaderView = block.header().into();
+                        let json_string = serde_json::to_string(&header).expect("serialization should be ok");
+                        drop(new_tip_header_sender.send(PublishMsg::result(&json_string)));
+
                         let block: ckb_jsonrpc_types::BlockView  = block.into();
                         let json_string = serde_json::to_string(&block).expect("serialization should be ok");
-                        drop(new_tip_header_sender.send(PublishMsg::result(&json_string)));
+                        drop(new_tip_block_sender.send(PublishMsg::result(&json_string)));
                     },
                     Some(tx_entry) = new_transaction_receiver.recv() => {
                         let entry: ckb_jsonrpc_types::PoolTransactionEntry = tx_entry.into();
@@ -294,19 +255,43 @@ impl SubscriptionRpcImpl {
                     Some(tx_entry) = proposed_transaction_receiver.recv() => {
                         let entry: ckb_jsonrpc_types::PoolTransactionEntry = tx_entry.into();
                         let json_string = serde_json::to_string(&entry).expect("serialization should be ok");
-                        drop(new_transaction_sender.send(PublishMsg::result(&json_string)));
+                        drop(proposed_transaction_sender.send(PublishMsg::result(&json_string)));
                     },
                     Some((tx_entry, reject)) = reject_transaction_receiver.recv() => {
                         let entry: ckb_jsonrpc_types::PoolTransactionEntry = tx_entry.into();
                         let reject: ckb_jsonrpc_types::PoolTransactionReject = reject.into();
                         let json_string = serde_json::to_string(&(entry, reject)).expect("serialization should be ok");
-                        drop(new_transaction_sender.send(PublishMsg::result(&json_string)));
+                        drop(new_reject_transaction_sender.send(PublishMsg::result(&json_string)));
                     }
                     else => break,
                 }
             }
         }});
 
-        subscription_rpc_impl
+        let mut meta_io = MetaIoHandler::default();
+        add_pub_sub(
+            &mut meta_io,
+            "subscribe",
+            "subscription",
+            "unsubscribe",
+            move |params: Params| {
+                eprintln!("params: {:?}", params);
+                let params: Vec<String> = params.parse()?;
+                let topic = params.get(0).unwrap();
+                eprintln!("topic: {:?}", topic);
+                Ok(
+                    BroadcastStream::new(new_tip_block_sender.subscribe()).map(|result| {
+                        result.unwrap_or_else(|_| {
+                            PublishMsg::error(&jsonrpc_core::Error {
+                                code: jsonrpc_core::ErrorCode::ServerError(-32000),
+                                message: "lagged".into(),
+                                data: None,
+                            })
+                        })
+                    }),
+                )
+            },
+        );
+        io_handle.extend_with(meta_io.into_iter());
     }
 }

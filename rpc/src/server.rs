@@ -1,4 +1,4 @@
-use crate::module::SubscriptionRpcImpl;
+
 use crate::IoHandler;
 use axum::routing::{get, post};
 use axum::{Extension, Router};
@@ -36,16 +36,13 @@ impl RpcServer {
     pub async fn new(
         config: RpcConfig,
         io_handler: IoHandler,
-        handle: Handle,
-        notify_controller: &NotifyController,
+        _handle: Handle,
+        _notify_controller: &NotifyController,
     ) -> Self {
         let rpc = Arc::new(io_handler);
         let stream_config = StreamServerConfig::default()
             .with_channel_size(4)
             .with_pipeline_size(4);
-
-        let _subscription_rpc_impl =
-            SubscriptionRpcImpl::new(notify_controller.clone(), handle, rpc.clone());
 
         // HTTP and WS server.
         let method_router =

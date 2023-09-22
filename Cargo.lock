@@ -1210,6 +1210,7 @@ dependencies = [
  "async-trait",
  "axum",
  "ckb-app-config",
+ "ckb-async-runtime",
  "ckb-chain",
  "ckb-chain-spec",
  "ckb-constant",

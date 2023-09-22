@@ -322,7 +322,7 @@ fn setup(consensus: Consensus) -> RpcTestSuite {
         RpcServer::new(
             rpc_config,
             io_handler,
-            shared.async_handle().clone().into_inner(),
+            shared_clone.async_handle().clone().into_inner(),
             shared_clone.notify_controller(),
         )
         .await

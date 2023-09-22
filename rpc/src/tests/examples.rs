@@ -268,7 +268,7 @@ fn setup_rpc_test_suite(height: u64) -> RpcTestSuite {
         RpcServer::new(
             rpc_config,
             io_handler,
-            shared.async_handle().clone().into_inner(),
+            shared_clone.async_handle().clone().into_inner(),
             shared_clone.notify_controller(),
         )
         .await
