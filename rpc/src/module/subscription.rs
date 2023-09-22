@@ -2,15 +2,20 @@ use async_trait::async_trait;
 use ckb_jsonrpc_types::Topic;
 use ckb_notify::NotifyController;
 
-use jsonrpc_core::{Metadata, Result};
-use jsonrpc_pubsub::{
-    typed::{Sink, Subscriber},
-    SubscriptionId,
-};
-use jsonrpc_utils::rpc;
+use jsonrpc_core::{MetaIoHandler, Metadata, Params};
+use jsonrpc_utils::pub_sub::{add_pub_sub, PubSub};
+// use jsonrpc_pubsub::{
+//     typed::{Sink, Subscriber},
+//     SubscriptionId,
+// };
+use jsonrpc_utils::{pub_sub::PublishMsg, rpc};
 
+use futures_util::{stream::BoxStream, Stream};
 use jsonrpc_utils::{axum_utils::handle_jsonrpc, pub_sub::Session};
+use tokio::sync::broadcast::Sender;
 
+use core::result::Result;
+use futures_util::StreamExt;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -19,25 +24,27 @@ use std::sync::{
     RwLock,
 };
 use tokio::runtime::Handle;
+use tokio::sync::broadcast;
+use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
 
 const SUBSCRIBER_NAME: &str = "TcpSubscription";
 
-#[derive(Clone)]
-pub struct SubscriptionSession {
-    pub(crate) subscription_ids: Arc<RwLock<HashSet<SubscriptionId>>>,
-    pub(crate) session: Arc<Session>,
-}
+// #[derive(Clone)]
+// pub struct SubscriptionSession {
+//     pub(crate) subscription_ids: Arc<RwLock<HashSet<SubscriptionId>>>,
+//     pub(crate) session: Arc<Session>,
+// }
 
-impl SubscriptionSession {
-    pub fn new(session: Session) -> Self {
-        Self {
-            subscription_ids: Arc::new(RwLock::new(HashSet::new())),
-            session: Arc::new(session),
-        }
-    }
-}
+// impl SubscriptionSession {
+//     pub fn new(session: Session) -> Self {
+//         Self {
+//             subscription_ids: Arc::new(RwLock::new(HashSet::new())),
+//             session: Arc::new(session),
+//         }
+//     }
+// }
 
-impl Metadata for SubscriptionSession {}
+// impl Metadata for SubscriptionSession {}
 
 /// RPC Module Subscription that CKB node will push new messages to subscribers.
 ///
@@ -80,7 +87,7 @@ impl Metadata for SubscriptionSession {}
 #[async_trait]
 pub trait SubscriptionRpc {
     /// Context to implement the subscription RPC.
-    type Metadata;
+    /// type Metadata;
 
     /// Subscribes to a topic.
     ///
@@ -170,9 +177,12 @@ pub trait SubscriptionRpc {
     ///   "result": "0x2a"
     /// }
     /// ```
-    #[pubsub(subscription = "subscribe", subscribe, name = "subscribe")]
-    fn subscribe(&self, meta: Self::Metadata, subscriber: Subscriber<String>, topic: Topic);
+    //#[pubsub(subscription = "subscribe", subscribe, name = "subscribe")]
+    type S: Stream<Item = PublishMsg<String>> + Send + 'static;
+    #[rpc(pub_sub(notify = "subscribe", unsubscribe = "unsubscribe"))]
+    fn subscribe(&self, topic: Topic);
 
+    /*
     /// Unsubscribes from a subscribed topic.
     ///
     /// ## Params
@@ -203,78 +213,51 @@ pub trait SubscriptionRpc {
     ///   "result": true
     /// }
     /// ```
-    #[pubsub(subscription = "subscribe", unsubscribe, name = "unsubscribe")]
-    fn unsubscribe(&self, meta: Option<Self::Metadata>, id: SubscriptionId) -> Result<bool>;
+    /// #[pubsub(subscription = "subscribe", unsubscribe, name = "unsubscribe")]
+    /// fn unsubscribe(&self, meta: Option<Self::Metadata>, id: SubscriptionId) -> Result<bool>;
+     */
 }
 
-type Subscribers = HashMap<SubscriptionId, Sink<String>>;
-
-#[derive(Default)]
+type SubscriptionId = u64;
+type Subscribers = HashSet<SubscriptionId>;
+#[derive(Clone)]
 pub struct SubscriptionRpcImpl {
-    pub(crate) id_generator: AtomicUsize,
-    pub(crate) subscribers: Arc<RwLock<HashMap<Topic, Subscribers>>>,
+    pub(crate) new_tip_header_sender: Sender<PublishMsg<String>>,
+    pub(crate) new_tip_block_sender: Sender<PublishMsg<String>>,
+    pub(crate) new_transaction_sender: Sender<PublishMsg<String>>,
+    pub(crate) io_handler: Arc<MetaIoHandler<Option<Session>>>,
 }
 
-impl SubscriptionRpc for SubscriptionRpcImpl {
-    type Metadata = Option<SubscriptionSession>;
-
-    fn subscribe(&self, meta: Self::Metadata, subscriber: Subscriber<String>, topic: Topic) {
-        if let Some(session) = meta {
-            let id = SubscriptionId::String(format!(
-                "{:#x}",
-                self.id_generator.fetch_add(1, Ordering::SeqCst)
-            ));
-            if let Ok(sink) = subscriber.assign_id(id.clone()) {
-                let mut subscribers = self
-                    .subscribers
-                    .write()
-                    .expect("acquiring subscribers write lock");
-                subscribers
-                    .entry(topic)
-                    .or_default()
-                    .insert(id.clone(), sink);
-
-                session
-                    .subscription_ids
-                    .write()
-                    .expect("acquiring subscription_ids write lock")
-                    .insert(id);
-            }
-        }
-    }
-
-    fn unsubscribe(&self, meta: Option<Self::Metadata>, id: SubscriptionId) -> Result<bool> {
-        let mut subscribers = self
-            .subscribers
-            .write()
-            .expect("acquiring subscribers write lock");
-        match meta {
-            // unsubscribe handler method is explicitly called.
-            Some(Some(session)) => {
-                if session
-                    .subscription_ids
-                    .write()
-                    .expect("acquiring subscription_ids write lock")
-                    .remove(&id)
-                {
-                    Ok(subscribers.values_mut().any(|s| s.remove(&id).is_some()))
-                } else {
-                    Ok(false)
-                }
-            }
-            // closed or dropped connection
-            _ => {
-                subscribers.values_mut().for_each(|s| {
-                    s.remove(&id);
-                });
-                Ok(true)
-            }
-        }
+impl SubscriptionRpcImpl {
+    fn subscribe(&mut self, topic: Topic) -> String {
+        let tx = self.new_tip_block_sender.clone();
+        add_pub_sub(
+            &mut self.io_handler,
+            "subscribe",
+            "subscription",
+            "unsubscribe",
+            move |_params: Params| {
+                Ok(BroadcastStream::new(tx.subscribe()).map(|result| {
+                    result.unwrap_or_else(|_| {
+                        PublishMsg::error(&jsonrpc_core::Error {
+                            code: jsonrpc_core::ErrorCode::ServerError(-32000),
+                            message: "lagged".into(),
+                            data: None,
+                        })
+                    })
+                }))
+            },
+        );
+        "ok".to_owned()
     }
 }
 
 impl SubscriptionRpcImpl {
-    pub fn new(notify_controller: NotifyController, handle: Handle) -> Self {
+    pub fn new(
+        notify_controller: NotifyController,
+        handle: Handle,
+        io_handle: Arc<MetaIoHandler<Option<Session>>>,
+    ) -> Self {
         let mut new_block_receiver =
             handle.block_on(notify_controller.subscribe_new_block(SUBSCRIBER_NAME.to_string()));
         let mut new_transaction_receiver = handle
@@ -285,63 +268,44 @@ impl SubscriptionRpcImpl {
         let mut reject_transaction_receiver = handle
             .block_on(notify_controller.subscribe_reject_transaction(SUBSCRIBER_NAME.to_string()));
 
-        let subscription_rpc_impl = SubscriptionRpcImpl::default();
-        let subscribers = Arc::clone(&subscription_rpc_impl.subscribers);
-        handle.spawn(async move {
+        let (new_tip_header_sender, _) = broadcast::channel(10);
+        let (new_tip_block_sender, _) = broadcast::channel(10);
+        let (new_transaction_sender, _) = broadcast::channel(10);
+        let subscription_rpc_impl = SubscriptionRpcImpl {
+            new_tip_header_sender,
+            new_tip_block_sender,
+            new_transaction_sender,
+            io_handler: Arc::clone(&io_handle),
+        };
+        handle.spawn({
+            async move {
             loop {
                 tokio::select! {
                     Some(block) = new_block_receiver.recv() => {
-                        let subscribers = subscribers.read().expect("acquiring subscribers read lock");
-                        if let Some(new_tip_header_subscribers) = subscribers.get(&Topic::NewTipHeader) {
-                            let header: ckb_jsonrpc_types::HeaderView  = block.header().into();
-                            let json_string = Ok(serde_json::to_string(&header).expect("serialization should be ok"));
-                            for sink in new_tip_header_subscribers.values() {
-                                let _ = sink.notify(json_string.clone());
-                            }
-                        }
-                        if let Some(new_tip_block_subscribers) = subscribers.get(&Topic::NewTipBlock) {
-                            let block: ckb_jsonrpc_types::BlockView  = block.into();
-                            let json_string = Ok(serde_json::to_string(&block).expect("serialization should be ok"));
-                            for sink in new_tip_block_subscribers.values() {
-                                let _ = sink.notify(json_string.clone());
-                            }
-                        }
+                        let block: ckb_jsonrpc_types::BlockView  = block.into();
+                        let json_string = serde_json::to_string(&block).expect("serialization should be ok");
+                        drop(new_tip_header_sender.send(PublishMsg::result(&json_string)));
                     },
                     Some(tx_entry) = new_transaction_receiver.recv() => {
-                        let subscribers = subscribers.read().expect("acquiring subscribers read lock");
-                        if let Some(new_transaction_subscribers) = subscribers.get(&Topic::NewTransaction) {
-                            let entry: ckb_jsonrpc_types::PoolTransactionEntry = tx_entry.into();
-                            let json_string = Ok(serde_json::to_string(&entry).expect("serialization should be ok"));
-                            for sink in new_transaction_subscribers.values() {
-                                let _ = sink.notify(json_string.clone());
-                            }
-                        }
+                        let entry: ckb_jsonrpc_types::PoolTransactionEntry = tx_entry.into();
+                        let json_string = serde_json::to_string(&entry).expect("serialization should be ok");
+                        drop(new_transaction_sender.send(PublishMsg::result(&json_string)));
                     },
                     Some(tx_entry) = proposed_transaction_receiver.recv() => {
-                        let subscribers = subscribers.read().expect("acquiring subscribers read lock");
-                        if let Some(new_transaction_subscribers) = subscribers.get(&Topic::ProposedTransaction) {
-                            let entry: ckb_jsonrpc_types::PoolTransactionEntry = tx_entry.into();
-                            let json_string = Ok(serde_json::to_string(&entry).expect("serialization should be ok"));
-                            for sink in new_transaction_subscribers.values() {
-                                let _ = sink.notify(json_string.clone());
-                            }
-                        }
+                        let entry: ckb_jsonrpc_types::PoolTransactionEntry = tx_entry.into();
+                        let json_string = serde_json::to_string(&entry).expect("serialization should be ok");
+                        drop(new_transaction_sender.send(PublishMsg::result(&json_string)));
                     },
                     Some((tx_entry, reject)) = reject_transaction_receiver.recv() => {
-                        let subscribers = subscribers.read().expect("acquiring subscribers read lock");
-                        if let Some(new_transaction_subscribers) = subscribers.get(&Topic::RejectedTransaction) {
-                            let entry: ckb_jsonrpc_types::PoolTransactionEntry = tx_entry.into();
-                            let reject: ckb_jsonrpc_types::PoolTransactionReject = reject.into();
-                            let json_string = Ok(serde_json::to_string(&(entry, reject)).expect("serialization should be ok"));
-                            for sink in new_transaction_subscribers.values() {
-                                let _ = sink.notify(json_string.clone());
-                            }
-                        }
+                        let entry: ckb_jsonrpc_types::PoolTransactionEntry = tx_entry.into();
+                        let reject: ckb_jsonrpc_types::PoolTransactionReject = reject.into();
+                        let json_string = serde_json::to_string(&(entry, reject)).expect("serialization should be ok");
+                        drop(new_transaction_sender.send(PublishMsg::result(&json_string)));
                     }
                     else => break,
                 }
             }
-        });
+        }});
 
         subscription_rpc_impl
     }

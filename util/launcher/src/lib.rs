@@ -420,7 +420,13 @@ impl Launcher {
             .enable_debug();
         let io_handler = builder.build();
 
-        RpcServer::new(rpc_config, io_handler, shared.notify_controller()).await;
+        RpcServer::new(
+            rpc_config,
+            io_handler,
+            self.async_handle.clone().into_inner(),
+            shared.notify_controller(),
+        )
+        .await;
 
         network_controller
     }
