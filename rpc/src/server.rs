@@ -42,11 +42,11 @@ impl RpcServer {
     ) -> Self {
         let rpc = Arc::new(io_handler);
 
-        let http_address = Self::start_server(rpc.clone(), config.listen_address.to_owned()).await;
+        let http_address = Self::start_server(&rpc, config.listen_address.to_owned()).await;
         info!("Listen HTTP RPCServer on address {}", http_address);
 
         let ws_address = if let Some(addr) = config.ws_listen_address {
-            let local_addr = Self::start_server(rpc.clone(), addr).await;
+            let local_addr = Self::start_server(&rpc, addr).await;
             info!("Listen WebSocket RPCServer on address {}", local_addr);
             Some(local_addr)
         } else {
@@ -103,7 +103,10 @@ impl RpcServer {
         }
     }
 
-    async fn start_server(rpc: Arc<MetaIoHandler<Option<Session>>>, address: String) -> SocketAddr {
+    async fn start_server(
+        rpc: &Arc<MetaIoHandler<Option<Session>>>,
+        address: String,
+    ) -> SocketAddr {
         let stream_config = StreamServerConfig::default()
             .with_channel_size(4)
             .with_pipeline_size(4);
@@ -116,7 +119,7 @@ impl RpcServer {
         let app = Router::new()
             .route("/", method_router.clone())
             .route("/*path", method_router)
-            .layer(Extension(Arc::clone(&rpc)))
+            .layer(Extension(Arc::clone(rpc)))
             .layer(Extension(ws_config))
             .layer(TimeoutLayer::new(Duration::from_secs(30)));
 
