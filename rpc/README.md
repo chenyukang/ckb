@@ -4950,9 +4950,9 @@ Unsubscribe Response
 
 ```
 {
- "id": 42,
- "jsonrpc": "2.0",
- "result": true
+  "id": 42,
+  "jsonrpc": "2.0",
+  "result": true
 }
 ```
 
