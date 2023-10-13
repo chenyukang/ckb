@@ -1237,6 +1237,7 @@ dependencies = [
  "futures-util",
  "itertools 0.11.0",
  "jsonrpc-core",
+ "jsonrpc-utils",
  "pretty_assertions",
  "reqwest",
  "serde",
