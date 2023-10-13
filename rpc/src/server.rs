@@ -1,6 +1,7 @@
 use crate::IoHandler;
+use axum::error_handling::HandleErrorLayer;
 use axum::routing::post;
-use axum::{Extension, Router};
+use axum::{http::StatusCode, BoxError, Extension, Router};
 use ckb_app_config::RpcConfig;
 use ckb_error::AnyError;
 use ckb_logger::info;
@@ -15,9 +16,9 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
+use tower_http::timeout::TimeoutLayer;
 
 use tokio_util::codec::{FramedRead, FramedWrite, LinesCodec, LinesCodecError};
-use tower_http::timeout::TimeoutLayer;
 
 #[doc(hidden)]
 #[derive(Debug)]
@@ -76,6 +77,7 @@ impl RpcServer {
         rpc: &Arc<MetaIoHandler<Option<Session>>>,
         address: String,
     ) -> Result<SocketAddr, AnyError> {
+        use tower::ServiceBuilder;
         let stream_config = StreamServerConfig::default()
             .with_channel_size(4)
             .with_pipeline_size(4);
@@ -88,9 +90,14 @@ impl RpcServer {
         let app = Router::new()
             .route("/", method_router.clone())
             .route("/*path", method_router)
-            .layer(Extension(Arc::clone(rpc)))
             .layer(Extension(ws_config))
-            .layer(TimeoutLayer::new(Duration::from_secs(30)));
+            .layer(Extension(Arc::clone(rpc)))
+            .layer(TimeoutLayer::new(Duration::from_secs(3)));
+        // .layer(
+        //     ServiceBuilder::new()
+        //         .layer(HandleErrorLayer::new(handle_timeout_error))
+        //         .timeout(Duration::from_secs(3)),
+        // );
 
         let (tx_addr, rx_addr) = tokio::sync::oneshot::channel::<SocketAddr>();
         tokio::spawn({
@@ -165,5 +172,19 @@ impl RpcServer {
             }
         });
         Ok(tcp_address)
+    }
+}
+
+async fn handle_timeout_error(err: BoxError) -> (StatusCode, String) {
+    if err.is::<tower::timeout::error::Elapsed>() {
+        (
+            StatusCode::REQUEST_TIMEOUT,
+            "Request took too long".to_string(),
+        )
+    } else {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Unhandled internal error: {}", err),
+        )
     }
 }

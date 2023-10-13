@@ -28,8 +28,11 @@ use ckb_verification::ScriptVerifier;
 use ckb_verification::TxVerifyEnv;
 use jsonrpc_core::Result;
 use jsonrpc_utils::rpc;
+use std;
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::thread;
+use tokio::sync::mpsc::channel;
 
 /// RPC Module Chain for methods related to the canonical chain.
 ///
@@ -314,7 +317,7 @@ pub trait ChainRpc {
     /// }
     /// ```
     #[rpc(name = "get_block_by_number")]
-    fn get_block_by_number(
+    async fn get_block_by_number(
         &self,
         block_number: BlockNumber,
         verbosity: Option<Uint32>,
@@ -1606,6 +1609,13 @@ pub trait ChainRpc {
     /// ```
     #[rpc(name = "get_fee_rate_statistics")]
     fn get_fee_rate_statistics(&self, target: Option<Uint64>) -> Result<Option<FeeRateStatistics>>;
+
+    async fn get_block_by_number_inner(
+        &self,
+        block_number: BlockNumber,
+        verbosity: Option<Uint32>,
+        with_cycles: Option<bool>,
+    ) -> Result<Option<BlockResponse>>;
 }
 
 #[derive(Clone)]
@@ -1631,17 +1641,22 @@ impl ChainRpc for ChainRpcImpl {
         self.get_block_by_hash(&snapshot, &block_hash, verbosity, with_cycles)
     }
 
-    fn get_block_by_number(
+    async fn get_block_by_number_inner(
         &self,
         block_number: BlockNumber,
         verbosity: Option<Uint32>,
         with_cycles: Option<bool>,
     ) -> Result<Option<BlockResponse>> {
+        use tokio::time::Duration;
+
         let snapshot = self.shared.snapshot();
         let block_hash = match snapshot.get_block_hash(block_number.into()) {
             Some(block_hash) => block_hash,
             None => return Ok(None),
         };
+
+        // sleep 10 seconds
+        tokio::time::sleep(Duration::from_secs(5)).await;
 
         let ret = self.get_block_by_hash(&snapshot, &block_hash, verbosity, with_cycles);
         if ret == Ok(None) {
@@ -1654,6 +1669,58 @@ impl ChainRpc for ChainRpcImpl {
                 message,
             ));
         }
+        ret
+    }
+
+    async fn get_block_by_number(
+        &self,
+        block_number: BlockNumber,
+        verbosity: Option<Uint32>,
+        with_cycles: Option<bool>,
+    ) -> Result<Option<BlockResponse>> {
+        // use tokio::time::timeout;
+        // use tokio::time::Duration;
+        // eprintln!("begin get_block_by_number_inner ...");
+        // let (tx, rx) = channel(1);
+
+        // // Spawn a separate thread to run the blocking operation.
+        // thread::spawn(async move {
+        //     let res = self
+        //         .get_block_by_number_inner(block_number, verbosity, with_cycles)
+        //         .await;
+        //     // Send a message to the channel when the blocking operation is done.
+        //     tx.send(res);
+        // });
+
+        // match timeout(Duration::from_secs(2), rx.recv()).await {
+        //     Ok(res) => res.unwrap(),
+        //     Err(_) => Err(RPCError::invalid_params("timeout")),
+        // }
+
+        use tokio::time::Duration;
+
+        let snapshot = self.shared.snapshot();
+        let block_hash = match snapshot.get_block_hash(block_number.into()) {
+            Some(block_hash) => block_hash,
+            None => return Ok(None),
+        };
+
+        // sleep 10 seconds
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        //thread::sleep(Duration::from_secs(50));
+
+        let ret = self.get_block_by_hash(&snapshot, &block_hash, verbosity, with_cycles);
+        if ret == Ok(None) {
+            let message = format!(
+                "Chain Index says block #{block_number} is {block_hash:#x}, but that block is not in the database"
+            );
+            error!("{message}");
+            return Err(RPCError::custom(
+                RPCError::ChainIndexIsInconsistent,
+                message,
+            ));
+        }
+        //while true {}
         ret
     }
 
