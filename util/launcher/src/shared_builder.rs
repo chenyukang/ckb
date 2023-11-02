@@ -26,6 +26,7 @@ use ckb_tx_pool::{
     error::Reject, service::TxVerificationResult, TokioRwLock, TxEntry, TxPool,
     TxPoolServiceBuilder,
 };
+use ckb_types::core::hardfork::HardForks;
 use ckb_types::core::EpochExt;
 use ckb_types::core::HeaderView;
 use ckb_verification::cache::init_cache;
@@ -40,7 +41,7 @@ use tempfile::TempDir;
 pub struct SharedBuilder {
     db: RocksDB,
     ancient_path: Option<PathBuf>,
-    consensus: Option<Consensus>,
+    consensus: Consensus,
     tx_pool_config: Option<TxPoolConfig>,
     store_config: Option<StoreConfig>,
     block_assembler_config: Option<BlockAssemblerConfig>,
@@ -52,8 +53,9 @@ pub fn open_or_create_db(
     bin_name: &str,
     root_dir: &Path,
     config: &DBConfig,
+    hardforks: HardForks,
 ) -> Result<RocksDB, ExitCode> {
-    let migrate = Migrate::new(&config.path);
+    let migrate = Migrate::new(&config.path, hardforks);
 
     let read_only_db = migrate.open_read_only_db().map_err(|e| {
         eprintln!("migrate error {e}");
@@ -121,13 +123,19 @@ impl SharedBuilder {
         db_config: &DBConfig,
         ancient: Option<PathBuf>,
         async_handle: Handle,
+        consensus: Consensus,
     ) -> Result<SharedBuilder, ExitCode> {
-        let db = open_or_create_db(bin_name, root_dir, db_config)?;
+        let db = open_or_create_db(
+            bin_name,
+            root_dir,
+            db_config,
+            consensus.hardfork_switch.clone(),
+        )?;
 
         Ok(SharedBuilder {
             db,
             ancient_path: ancient,
-            consensus: None,
+            consensus,
             tx_pool_config: None,
             notify_config: None,
             store_config: None,
@@ -172,7 +180,7 @@ impl SharedBuilder {
         RUNTIME_HANDLE.with(|runtime| SharedBuilder {
             db,
             ancient_path: None,
-            consensus: None,
+            consensus: Consensus::default(),
             tx_pool_config: None,
             notify_config: None,
             store_config: None,
@@ -185,7 +193,7 @@ impl SharedBuilder {
 impl SharedBuilder {
     /// TODO(doc): @quake
     pub fn consensus(mut self, value: Consensus) -> Self {
-        self.consensus = Some(value);
+        self.consensus = value;
         self
     }
 
@@ -318,7 +326,7 @@ impl SharedBuilder {
         let tx_pool_config = tx_pool_config.unwrap_or_default();
         let notify_config = notify_config.unwrap_or_default();
         let store_config = store_config.unwrap_or_default();
-        let consensus = Arc::new(consensus.unwrap_or_default());
+        let consensus = Arc::new(consensus);
 
         let notify_controller = start_notify_service(notify_config, async_handle.clone());
 
