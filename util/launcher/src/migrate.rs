@@ -5,6 +5,7 @@ use ckb_db::{ReadOnlyDB, RocksDB};
 use ckb_db_migration::{DefaultMigration, Migrations};
 use ckb_db_schema::{COLUMNS, COLUMN_META};
 use ckb_error::Error;
+use ckb_types::core::hardfork::HardForks;
 use std::cmp::Ordering;
 use std::path::PathBuf;
 
@@ -18,7 +19,7 @@ pub struct Migrate {
 
 impl Migrate {
     /// Construct new migrate
-    pub fn new<P: Into<PathBuf>>(path: P) -> Self {
+    pub fn new<P: Into<PathBuf>>(path: P, hardforks: HardForks) -> Self {
         let mut migrations = Migrations::default();
         migrations.add_migration(Box::new(DefaultMigration::new(INIT_DB_VERSION)));
         migrations.add_migration(Box::new(migrations::ChangeMoleculeTableToStruct)); // since v0.35.0
@@ -29,6 +30,7 @@ impl Migrate {
         migrations.add_migration(Box::new(migrations::AddChainRootMMR)); // TODO(light-client) update the comment: which version?
         migrations.add_migration(Box::new(migrations::AddBlockFilterColumnFamily)); // since v0.105.0
         migrations.add_migration(Box::new(migrations::AddBlockFilterHash)); // since v0.108.0
+        migrations.add_migration(Box::new(migrations::BlockExt2019ToZero::new(hardforks))); // since v0.111.1
 
         Migrate {
             migrations,

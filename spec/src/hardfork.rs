@@ -20,11 +20,7 @@ impl HardForkConfig {
     /// sets all `None` to default values, otherwise, return an `Err`.
     pub fn complete_mainnet(&self) -> Result<HardForks, String> {
         let mut ckb2021 = CKB2021::new_builder();
-        ckb2021 = self.update_2021(
-            ckb2021,
-            mainnet::CKB2021_START_EPOCH,
-            mainnet::RFC0028_START_EPOCH,
-        )?;
+        ckb2021 = self.update_2021(ckb2021, mainnet::CKB2021_START_EPOCH)?;
 
         Ok(HardForks {
             ckb2021: ckb2021.build()?,
@@ -36,11 +32,7 @@ impl HardForkConfig {
     /// sets all `None` to default values, otherwise, return an `Err`.
     pub fn complete_testnet(&self) -> Result<HardForks, String> {
         let mut ckb2021 = CKB2021::new_builder();
-        ckb2021 = self.update_2021(
-            ckb2021,
-            testnet::CKB2021_START_EPOCH,
-            testnet::RFC0028_START_EPOCH,
-        )?;
+        ckb2021 = self.update_2021(ckb2021, testnet::CKB2021_START_EPOCH)?;
         let mut ckb2023 = CKB2023::new_builder();
         ckb2023 = self.update_2023(ckb2023, testnet::CKB2023_START_EPOCH)?;
 
@@ -54,10 +46,9 @@ impl HardForkConfig {
         &self,
         builder: CKB2021Builder,
         ckb2021: EpochNumber,
-        rfc_0028_start: EpochNumber,
     ) -> Result<CKB2021Builder, String> {
         let builder = builder
-            .rfc_0028(rfc_0028_start)
+            .rfc_0028(ckb2021)
             .rfc_0029(ckb2021)
             .rfc_0030(ckb2021)
             .rfc_0031(ckb2021)
@@ -80,12 +71,7 @@ impl HardForkConfig {
     ///
     /// Enable features which are set to `None` at the dev default config.
     pub fn complete_with_dev_default(&self) -> Result<HardForks, String> {
-        let mut ckb2021 = CKB2021::new_builder();
-        ckb2021 = self.update_2021(
-            ckb2021,
-            testnet::CKB2021_START_EPOCH,
-            testnet::RFC0028_START_EPOCH,
-        )?;
+        let ckb2021 = CKB2021::new_dev_default();
 
         let ckb2023 = if let Some(epoch) = self.ckb2023 {
             CKB2023::new_with_specified(epoch)
@@ -93,9 +79,6 @@ impl HardForkConfig {
             CKB2023::new_dev_default()
         };
 
-        Ok(HardForks {
-            ckb2021: ckb2021.build()?,
-            ckb2023,
-        })
+        Ok(HardForks { ckb2021, ckb2023 })
     }
 }
