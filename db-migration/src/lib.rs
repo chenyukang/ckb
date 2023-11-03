@@ -8,6 +8,8 @@ pub use indicatif::{HumanDuration, MultiProgress, ProgressBar, ProgressDrawTarge
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::sync::Mutex;
+use std::thread;
 
 #[cfg(test)]
 mod tests;
@@ -19,7 +21,36 @@ fn internal_error(reason: String) -> Error {
 /// TODO(doc): @quake
 #[derive(Default)]
 pub struct Migrations {
-    migrations: BTreeMap<String, Box<dyn Migration>>,
+    migrations: BTreeMap<String, Arc<dyn Migration>>,
+}
+
+pub struct MigrationWorker {
+    tasks: Arc<Mutex<Vec<(String, Arc<dyn Migration>)>>>,
+    db: RocksDB,
+}
+
+impl MigrationWorker {
+    pub fn new(tasks: Arc<Mutex<Vec<(String, Arc<dyn Migration>)>>>, db: RocksDB) -> Self {
+        Self { tasks, db }
+    }
+
+    pub fn start(&self) {
+        let db = self.db.clone();
+        let tasks = self.tasks.clone();
+        thread::spawn(move || loop {
+            // Progress Bar is no need in background, but here we fake one
+            let db = db.clone();
+            let pb = move |_count: u64| -> ProgressBar { ProgressBar::new(0) };
+            if let Some((_, task)) = tasks.lock().unwrap().pop() {
+                let db = task.migrate(db, Arc::new(pb)).unwrap();
+                db.put_default(MIGRATION_VERSION_KEY, task.version())
+                    .map_err(|err| internal_error(format!("failed to migrate the database: {err}")))
+                    .unwrap();
+            } else {
+                break;
+            }
+        });
+    }
 }
 
 impl Migrations {
@@ -31,7 +62,7 @@ impl Migrations {
     }
 
     /// TODO(doc): @quake
-    pub fn add_migration(&mut self, migration: Box<dyn Migration>) {
+    pub fn add_migration(&mut self, migration: Arc<dyn Migration>) {
         self.migrations
             .insert(migration.version().to_string(), migration);
     }
@@ -97,6 +128,27 @@ impl Migrations {
             .any(|m| m.expensive())
     }
 
+    pub fn run_in_background(&self, db: &ReadOnlyDB) -> bool {
+        let db_version = match db
+            .get_pinned_default(MIGRATION_VERSION_KEY)
+            .expect("get the version of database")
+        {
+            Some(version_bytes) => {
+                String::from_utf8(version_bytes.to_vec()).expect("version bytes to utf8")
+            }
+            None => {
+                // if version is none, but db is not empty
+                // patch 220464f
+                return self.is_non_empty_rdb(db);
+            }
+        };
+
+        self.migrations
+            .values()
+            .skip_while(|m| m.version() <= db_version.as_str())
+            .all(|m| m.run_in_background())
+    }
+
     fn is_non_empty_rdb(&self, db: &ReadOnlyDB) -> bool {
         if let Ok(v) = db.get_pinned(COLUMN_META, META_TIP_HEADER_KEY) {
             if v.is_some() {
@@ -137,6 +189,19 @@ impl Migrations {
         }
         mpb.join_and_clear().expect("MultiProgress join");
         Ok(db)
+    }
+
+    fn run_migrate_async(&self, db: RocksDB, v: &str) {
+        let migrations: Vec<(String, Arc<dyn Migration>)> = self
+            .migrations
+            .iter()
+            .filter(|(mv, _)| mv.as_str() > v)
+            .map(|(mv, m)| (mv.to_string(), Arc::clone(m)))
+            .collect::<Vec<_>>();
+
+        let tasks = Arc::new(Mutex::new(migrations));
+        let worker = MigrationWorker::new(tasks, db.clone());
+        worker.start();
     }
 
     fn get_migration_version(&self, db: &RocksDB) -> Result<Option<String>, Error> {
@@ -199,6 +264,38 @@ impl Migrations {
         }
     }
 
+    /// TODO(doc): @quake
+    pub fn migrate_async(&self, db: RocksDB) -> Result<RocksDB, Error> {
+        let db_version = self.get_migration_version(&db)?;
+        match db_version {
+            Some(ref v) => {
+                info!("Current database version {}", v);
+                if let Some(m) = self.migrations.values().last() {
+                    if m.version() < v.as_str() {
+                        error!(
+                            "Database downgrade detected. \
+                            The database schema version is newer than client schema version,\
+                            please upgrade to the newer version"
+                        );
+                        return Err(internal_error(
+                            "Database downgrade is not supported".to_string(),
+                        ));
+                    }
+                }
+                self.run_migrate_async(db.clone(), v.as_str());
+                Ok(db)
+            }
+            None => {
+                // if version is none, but db is not empty
+                // patch 220464f
+                if self.is_non_empty_db(&db) {
+                    return self.patch_220464f(db);
+                }
+                Ok(db)
+            }
+        }
+    }
+
     fn patch_220464f(&self, db: RocksDB) -> Result<RocksDB, Error> {
         const V: &str = "20210609195048"; // AddExtraDataHash - 1
         self.run_migrate(db, V)
@@ -206,7 +303,7 @@ impl Migrations {
 }
 
 /// TODO(doc): @quake
-pub trait Migration {
+pub trait Migration: Send + Sync {
     /// TODO(doc): @quake
     fn migrate(
         &self,
@@ -222,6 +319,10 @@ pub trait Migration {
     /// Override this function for `Migrations` which could be executed very fast.
     fn expensive(&self) -> bool {
         true
+    }
+
+    fn run_in_background(&self) -> bool {
+        false
     }
 }
 

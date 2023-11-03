@@ -74,7 +74,8 @@ pub fn open_or_create_db(
             }
             Ordering::Equal => Ok(RocksDB::open(config, COLUMNS)),
             Ordering::Less => {
-                if migrate.require_expensive(&db) {
+                let can_run_in_background = migrate.can_run_in_background(&db);
+                if migrate.require_expensive(&db) && !can_run_in_background {
                     eprintln!(
                         "For optimal performance, CKB wants to migrate the data into new format.\n\
                         You can use the old version CKB if you don't want to do the migration.\n\
@@ -95,10 +96,17 @@ pub fn open_or_create_db(
                     })?;
 
                     if let Some(db) = bulk_load_db_db {
-                        migrate.migrate(db).map_err(|err| {
-                            eprintln!("Run error: {err:?}");
-                            ExitCode::Failure
-                        })?;
+                        if can_run_in_background {
+                            migrate.migrate_async(db).map_err(|err| {
+                                eprintln!("Run error: {err:?}");
+                                ExitCode::Failure
+                            })?;
+                        } else {
+                            migrate.migrate(db).map_err(|err| {
+                                eprintln!("Run error: {err:?}");
+                                ExitCode::Failure
+                            })?;
+                        }
                     }
 
                     Ok(RocksDB::open(config, COLUMNS))

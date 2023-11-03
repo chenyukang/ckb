@@ -20,6 +20,10 @@ impl BlockExt2019ToZero {
 }
 
 impl Migration for BlockExt2019ToZero {
+    fn run_in_background(&self) -> bool {
+        true
+    }
+
     fn migrate(
         &self,
         db: ckb_db::RocksDB,
