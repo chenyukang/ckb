@@ -1,4 +1,5 @@
 //! TODO(doc): @quake
+use ckb_channel::{unbounded, Receiver};
 use ckb_db::{ReadOnlyDB, RocksDB};
 use ckb_db_schema::{COLUMN_META, META_TIP_HEADER_KEY, MIGRATION_VERSION_KEY};
 use ckb_error::{Error, InternalErrorKind};
@@ -10,6 +11,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread;
+use std::thread::JoinHandle;
 
 #[cfg(test)]
 mod tests;
@@ -24,32 +26,55 @@ pub struct Migrations {
     migrations: BTreeMap<String, Arc<dyn Migration>>,
 }
 
-pub struct MigrationWorker {
+/// Commands
+#[derive(PartialEq, Eq)]
+enum Command {
+    Start,
+    //Stop,
+}
+
+struct MigrationWorker {
     tasks: Arc<Mutex<Vec<(String, Arc<dyn Migration>)>>>,
     db: RocksDB,
+    inbox: Receiver<Command>,
 }
 
 impl MigrationWorker {
-    pub fn new(tasks: Arc<Mutex<Vec<(String, Arc<dyn Migration>)>>>, db: RocksDB) -> Self {
-        Self { tasks, db }
+    pub fn new(
+        tasks: Arc<Mutex<Vec<(String, Arc<dyn Migration>)>>>,
+        db: RocksDB,
+        inbox: Receiver<Command>,
+    ) -> Self {
+        Self { tasks, db, inbox }
     }
 
-    pub fn start(&self) {
-        let db = self.db.clone();
-        let tasks = self.tasks.clone();
+    pub fn start(self) -> JoinHandle<()> {
         thread::spawn(move || loop {
-            // Progress Bar is no need in background, but here we fake one
-            let db = db.clone();
-            let pb = move |_count: u64| -> ProgressBar { ProgressBar::new(0) };
-            if let Some((_, task)) = tasks.lock().unwrap().pop() {
-                let db = task.migrate(db, Arc::new(pb)).unwrap();
-                db.put_default(MIGRATION_VERSION_KEY, task.version())
-                    .map_err(|err| internal_error(format!("failed to migrate the database: {err}")))
-                    .unwrap();
-            } else {
-                break;
+            let msg = match self.inbox.recv() {
+                Ok(msg) => Some(msg),
+                Err(_err) => break,
+            };
+
+            // if let Some(Command::Stop) = msg {
+            //     break;
+            // }
+
+            if let Some(Command::Start) = msg {
+                // Progress Bar is no need in background, but here we fake one
+                let db = self.db.clone();
+                let pb = move |_count: u64| -> ProgressBar { ProgressBar::new(0) };
+                if let Some((_, task)) = self.tasks.lock().unwrap().pop() {
+                    let db = task.migrate(db, Arc::new(pb)).unwrap();
+                    db.put_default(MIGRATION_VERSION_KEY, task.version())
+                        .map_err(|err| {
+                            internal_error(format!("failed to migrate the database: {err}"))
+                        })
+                        .unwrap();
+                } else {
+                    break;
+                }
             }
-        });
+        })
     }
 }
 
@@ -199,9 +224,18 @@ impl Migrations {
             .map(|(mv, m)| (mv.to_string(), Arc::clone(m)))
             .collect::<Vec<_>>();
 
+        for (m, _) in migrations.iter() {
+            eprintln!("run migrate: {}", m);
+        }
+
         let tasks = Arc::new(Mutex::new(migrations));
-        let worker = MigrationWorker::new(tasks, db.clone());
-        worker.start();
+        let (tx, rx) = unbounded();
+        let worker = MigrationWorker::new(tasks, db.clone(), rx);
+        eprintln!("start to run migrate");
+        let _handler = worker.start();
+        tx.send(Command::Start).expect("send start command");
+        //handler.join().expect("MigrationWorker join");
+        eprintln!("run migrate done");
     }
 
     fn get_migration_version(&self, db: &RocksDB) -> Result<Option<String>, Error> {
