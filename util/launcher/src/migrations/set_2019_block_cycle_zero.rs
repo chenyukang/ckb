@@ -1,4 +1,5 @@
 use ckb_app_config::StoreConfig;
+//use ckb_db_migration::SHUTDOWN_BACKGROUND_MIGRATION;
 use ckb_db_migration::{Migration, ProgressBar, ProgressStyle};
 use ckb_db_schema::COLUMN_EPOCH;
 use ckb_store::{ChainDB, ChainStore};
@@ -20,6 +21,10 @@ impl BlockExt2019ToZero {
 }
 
 impl Migration for BlockExt2019ToZero {
+    fn run_in_background(&self) -> bool {
+        true
+    }
+
     fn migrate(
         &self,
         db: ckb_db::RocksDB,
@@ -28,11 +33,22 @@ impl Migration for BlockExt2019ToZero {
         let chain_db = ChainDB::new(db, StoreConfig::default());
         let limit_epoch = self.hardforks.ckb2021.rfc_0032();
 
+        // while (true) {
+        //     let res = self.stop_background();
+        //     let shutdown = format!("\n got shutdown: {}", res);
+        //     append_to_file("/tmp/ckb_migration", &shutdown).unwrap();
+        //     if res {
+        //         break;
+        //     }
+        // }
+        eprintln!("begin to run block_ext 2019 to zero migrate...");
         if limit_epoch == 0 {
             return Ok(chain_db.into_inner());
         }
 
+        eprintln!("now limit epoch is {}", limit_epoch);
         let epoch_number: packed::Uint64 = limit_epoch.pack();
+
         if let Some(epoch_hash) = chain_db.get(COLUMN_EPOCH, epoch_number.as_slice()) {
             let epoch_ext = chain_db
                 .get_epoch_ext(
