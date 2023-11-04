@@ -4,6 +4,7 @@ use ckb_db::{ReadOnlyDB, RocksDB};
 use ckb_db_schema::{COLUMN_META, META_TIP_HEADER_KEY, MIGRATION_VERSION_KEY};
 use ckb_error::{Error, InternalErrorKind};
 use ckb_logger::{debug, error, info};
+use ckb_stop_handler::register_thread;
 use console::Term;
 pub use indicatif::{HumanDuration, MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use std::cmp::Ordering;
@@ -231,10 +232,7 @@ impl Migrations {
             .map(|(mv, m)| (mv.to_string(), Arc::clone(m)))
             .collect::<VecDeque<_>>();
 
-        for (m, _) in migrations.iter() {
-            eprintln!("run migrate: {}", m);
-        }
-
+        let all_can_resume = migrations.iter().all(|(_, m)| m.can_resume());
         let tasks = Arc::new(Mutex::new(migrations));
         let (tx, rx) = unbounded();
         let worker = MigrationWorker::new(tasks, db.clone(), rx);
@@ -246,8 +244,12 @@ impl Migrations {
             eprintln!("set shutdown flat to true");
         });
 
-        let _handler = worker.start();
+        let handler = worker.start();
         tx.send(Command::Start).expect("send start command");
+        if all_can_resume {
+            eprintln!("register thread: migration ....");
+            register_thread("migration", handler);
+        }
     }
 
     fn get_migration_version(&self, db: &RocksDB) -> Result<Option<String>, Error> {
@@ -376,6 +378,18 @@ pub trait Migration: Send + Sync {
     /// store the migration progress when exiting and recover from the current progress when restarting.
     fn stop_background(&self) -> bool {
         SHUTDOWN_BACKGROUND_MIGRATION.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Check if the background migration can be resumed.
+    ///
+    /// If a migration can be resumed, it should implement the recovery logic in `migrate` function.
+    /// and the `MigirateWorker` will add the migration's handler with `register_thread`, so that then
+    /// main thread can wait for the background migration to store the progress and exit.
+    ///
+    /// Otherwise, the migration will be restarted from the beginning.
+    ///
+    fn can_resume(&self) -> bool {
+        false
     }
 }
 
