@@ -8,10 +8,17 @@ use console::Term;
 pub use indicatif::{HumanDuration, MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
+use std::collections::VecDeque;
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread;
 use std::thread::JoinHandle;
+
+pub static SHUTDOWN_BACKGROUND_MIGRATION: once_cell::sync::Lazy<AtomicBool> =
+    once_cell::sync::Lazy::new(|| AtomicBool::new(false));
 
 #[cfg(test)]
 mod tests;
@@ -34,14 +41,14 @@ enum Command {
 }
 
 struct MigrationWorker {
-    tasks: Arc<Mutex<Vec<(String, Arc<dyn Migration>)>>>,
+    tasks: Arc<Mutex<VecDeque<(String, Arc<dyn Migration>)>>>,
     db: RocksDB,
     inbox: Receiver<Command>,
 }
 
 impl MigrationWorker {
     pub fn new(
-        tasks: Arc<Mutex<Vec<(String, Arc<dyn Migration>)>>>,
+        tasks: Arc<Mutex<VecDeque<(String, Arc<dyn Migration>)>>>,
         db: RocksDB,
         inbox: Receiver<Command>,
     ) -> Self {
@@ -49,29 +56,29 @@ impl MigrationWorker {
     }
 
     pub fn start(self) -> JoinHandle<()> {
-        thread::spawn(move || loop {
+        thread::spawn(move || {
             let msg = match self.inbox.recv() {
                 Ok(msg) => Some(msg),
-                Err(_err) => break,
+                Err(_err) => return,
             };
 
-            // if let Some(Command::Stop) = msg {
-            //     break;
-            // }
-
             if let Some(Command::Start) = msg {
-                // Progress Bar is no need in background, but here we fake one
-                let db = self.db.clone();
-                let pb = move |_count: u64| -> ProgressBar { ProgressBar::new(0) };
-                if let Some((_, task)) = self.tasks.lock().unwrap().pop() {
-                    let db = task.migrate(db, Arc::new(pb)).unwrap();
-                    db.put_default(MIGRATION_VERSION_KEY, task.version())
-                        .map_err(|err| {
-                            internal_error(format!("failed to migrate the database: {err}"))
-                        })
-                        .unwrap();
-                } else {
-                    break;
+                // Progress Bar is no need in background, but here we fake one to keep the trait API
+                // consistent with the foreground migration.
+                loop {
+                    let db = self.db.clone();
+                    let pb = move |_count: u64| -> ProgressBar { ProgressBar::new(0) };
+                    if let Some((name, task)) = self.tasks.lock().unwrap().pop_front() {
+                        eprintln!("start to run migrate: {}", name);
+                        let db = task.migrate(db, Arc::new(pb)).unwrap();
+                        db.put_default(MIGRATION_VERSION_KEY, task.version())
+                            .map_err(|err| {
+                                internal_error(format!("failed to migrate the database: {err}"))
+                            })
+                            .unwrap();
+                    } else {
+                        break;
+                    }
                 }
             }
         })
@@ -217,12 +224,12 @@ impl Migrations {
     }
 
     fn run_migrate_async(&self, db: RocksDB, v: &str) {
-        let migrations: Vec<(String, Arc<dyn Migration>)> = self
+        let migrations: VecDeque<(String, Arc<dyn Migration>)> = self
             .migrations
             .iter()
             .filter(|(mv, _)| mv.as_str() > v)
             .map(|(mv, m)| (mv.to_string(), Arc::clone(m)))
-            .collect::<Vec<_>>();
+            .collect::<VecDeque<_>>();
 
         for (m, _) in migrations.iter() {
             eprintln!("run migrate: {}", m);
@@ -231,11 +238,16 @@ impl Migrations {
         let tasks = Arc::new(Mutex::new(migrations));
         let (tx, rx) = unbounded();
         let worker = MigrationWorker::new(tasks, db.clone(), rx);
-        eprintln!("start to run migrate");
+
+        let exit_signal = ckb_stop_handler::new_crossbeam_exit_rx();
+        thread::spawn(move || {
+            let _ = exit_signal.recv();
+            SHUTDOWN_BACKGROUND_MIGRATION.store(true, std::sync::atomic::Ordering::SeqCst);
+            eprintln!("set shutdown flat to true");
+        });
+
         let _handler = worker.start();
         tx.send(Command::Start).expect("send start command");
-        //handler.join().expect("MigrationWorker join");
-        eprintln!("run migrate done");
     }
 
     fn get_migration_version(&self, db: &RocksDB) -> Result<Option<String>, Error> {
@@ -358,6 +370,13 @@ pub trait Migration: Send + Sync {
     fn run_in_background(&self) -> bool {
         false
     }
+
+    /// Check if the background migration should be stopped.
+    /// If a migration need to implement the recovery logic, it should check this flag periodically,
+    /// store the migration progress when exiting and recover from the current progress when restarting.
+    fn stop_background(&self) -> bool {
+        SHUTDOWN_BACKGROUND_MIGRATION.load(std::sync::atomic::Ordering::SeqCst)
+    }
 }
 
 /// TODO(doc): @quake
@@ -390,4 +409,14 @@ impl Migration for DefaultMigration {
     fn expensive(&self) -> bool {
         false
     }
+}
+
+pub fn append_to_file(path: &str, data: &str) -> std::io::Result<()> {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .append(true)
+        .create(true)
+        .open(path)?;
+
+    writeln!(file, "{}", data)
 }

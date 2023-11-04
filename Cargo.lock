@@ -704,8 +704,10 @@ dependencies = [
  "ckb-db-schema",
  "ckb-error",
  "ckb-logger",
+ "ckb-stop-handler",
  "console",
  "indicatif",
+ "once_cell",
  "tempfile",
 ]
 
