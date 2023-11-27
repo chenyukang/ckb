@@ -56,13 +56,16 @@ impl Handle {
         F::Output: Send + 'static,
     {
         let tokio_task_guard = self.guard.clone();
+        //eprintln!("tokio_task_guard: {:?}", tokio_task_guard);
 
         self.inner.spawn(async move {
             // move tokio_task_guard into the spawned future
             // so that it will be dropped when the future is finished
             let _guard = tokio_task_guard;
-
-            future.await
+            //eprintln!("begin tokio task");
+            let res = future.await;
+            //eprintln!("exit tokio task _guard: {:?}", _guard);
+            res
         })
     }
 

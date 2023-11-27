@@ -5,11 +5,12 @@ mod helper;
 mod setup_guard;
 mod subcommand;
 
+use std::{process, time::Duration};
+
 use ckb_app_config::{cli, ExitCode, Setup};
-use ckb_async_runtime::new_global_runtime;
+use ckb_async_runtime::{new_global_runtime, tokio::time::timeout};
 use ckb_build_info::Version;
 use ckb_logger::info;
-use ckb_network::tokio;
 use helper::raise_fd_limit;
 use setup_guard::SetupGuard;
 
@@ -79,9 +80,14 @@ pub fn run_app(version: Version) -> Result<(), ExitCode> {
     if matches!(cmd, cli::CMD_RUN) {
         handle.drop_guard();
 
-        tokio::task::block_in_place(|| {
-            info!("waiting all tokio tasks exit...");
-            handle_stop_rx.blocking_recv();
+        handle.block_on(async move {
+            match timeout(Duration::from_secs(50), handle_stop_rx.recv()).await {
+                Ok(_) => info!("all tokio tasks and threads have exited, ckb shutdown"),
+                Err(_) => {
+                    eprintln!("tokio tasks did not exit in time, forcing shutdown");
+                    process::exit(1);
+                }
+            }
             info!("all tokio tasks and threads have exited, ckb shutdown");
         });
     }
