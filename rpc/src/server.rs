@@ -105,11 +105,27 @@ impl RpcServer {
                 .serve(app.clone().into_make_service());
 
                 let _ = tx_addr.send(server.local_addr());
+                let exit = new_tokio_exit_rx();
                 let graceful = server.with_graceful_shutdown(async move {
-                    let exit = new_tokio_exit_rx();
+                    eprintln!("created exit signal ...........");
                     exit.cancelled().await;
+                    eprintln!("got exit signal ...........");
                 });
-                drop(graceful.await);
+                //drop(graceful.await);
+                // if let Err(e) = graceful.await {
+                //     eprintln!("server error: {}", e);
+                // }
+                // Wait for the server to shut down, but timeout after 30 seconds
+                match tokio::time::timeout(Duration::from_secs(3), graceful).await {
+                    Ok(result) => {
+                        if let Err(e) = result {
+                            eprintln!("server error: {}", e);
+                        }
+                    }
+                    Err(_) => {
+                        eprintln!("server shutdown timed out");
+                    }
+                }
             }
         });
         Ok(rx_addr.await?)
