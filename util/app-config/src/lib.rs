@@ -86,9 +86,12 @@ impl Setup {
                 u256!("0x0")
             };
 
-        config.network.sync.assume_valid_target = matches
-            .get_one::<String>(cli::ARG_ASSUME_VALID_TARGET)
-            .and_then(|s| H256::from_str(&s[2..]).ok());
+        config.network.sync.assume_valid_target =
+            if let Ok(Some(v)) = matches.try_get_one::<String>(cli::ARG_ASSUME_VALID_TARGET) {
+                Some(H256::from_str(&v[2..]).expect("assume-valid-target"))
+            } else {
+                None
+            };
 
         Ok(RunArgs {
             config,
@@ -221,10 +224,12 @@ impl Setup {
 
     /// Executes `ckb daemon`.
     pub fn daemon(self, matches: &ArgMatches) -> Result<DaemonArgs, ExitCode> {
+        let start = matches.get_flag(cli::ARG_DAEMON_START);
         let check = matches.get_flag(cli::ARG_DAEMON_CHECK);
         let stop = matches.get_flag(cli::ARG_DAEMON_STOP);
         let pid_file = Setup::daemon_pid_file_path(matches)?;
         Ok(DaemonArgs {
+            start,
             check,
             stop,
             pid_file,

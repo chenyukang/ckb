@@ -63,7 +63,10 @@ pub fn run_app(version: Version) -> Result<(), ExitCode> {
         .expect("SubcommandRequiredElseHelp");
 
     if run_deamon(cmd, matches) {
-        run_app_in_daemon(version, bin_name, cmd, matches)
+        eprintln!("version: {}", version);
+        eprintln!("bin_name: {}", bin_name);
+        eprintln!("matches: {:?}", matches);
+        run_app_in_daemon(version, bin_name, matches)
     } else {
         debug!("ckb version: {}", version);
         run_app_inner(version, bin_name, cmd, matches)
@@ -73,20 +76,19 @@ pub fn run_app(version: Version) -> Result<(), ExitCode> {
 fn run_app_in_daemon(
     version: Version,
     bin_name: String,
-    cmd: &str,
     matches: &ArgMatches,
 ) -> Result<(), ExitCode> {
     eprintln!("starting CKB in daemon mode ...");
     eprintln!("check status : `{}`", "ckb daemon --check".green());
     eprintln!("stop daemon  : `{}`", "ckb daemon --stop".yellow());
 
-    assert!(matches!(cmd, cli::CMD_RUN));
     let root_dir = Setup::root_dir_from_matches(matches)?;
     let daemon_dir = root_dir.join("data/daemon");
     // make sure daemon dir exists
     std::fs::create_dir_all(daemon_dir)?;
     let pid_file = Setup::daemon_pid_file_path(matches)?;
 
+    eprintln!("pid_file: {:?}", pid_file);
     if check_process(&pid_file).is_ok() {
         eprintln!("{}", "ckb is already running".red());
         return Ok(());
@@ -102,7 +104,7 @@ fn run_app_in_daemon(
     match daemon.start() {
         Ok(_) => {
             info!("Success, daemonized ...");
-            run_app_inner(version, bin_name, cmd, matches)
+            run_app_inner(version, bin_name, cli::CMD_RUN, matches)
         }
         Err(e) => {
             info!("daemonize error: {}", e);
@@ -157,6 +159,7 @@ fn run_deamon(cmd: &str, matches: &ArgMatches) -> bool {
 
     match cmd {
         cli::CMD_RUN => matches.get_flag(cli::ARG_DAEMON),
+        cli::CMD_DAEMON => matches.get_flag(cli::ARG_DAEMON_START),
         _ => false,
     }
 }

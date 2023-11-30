@@ -112,6 +112,8 @@ pub const ARG_SKIP_CHAIN_SPEC_CHECK: &str = "skip-spec-check";
 pub const ARG_OVERWRITE_CHAIN_SPEC: &str = "overwrite-spec";
 /// Command line argument `--assume-valid-target`.
 pub const ARG_ASSUME_VALID_TARGET: &str = "assume-valid-target";
+/// Command line argument `--start`
+pub const ARG_DAEMON_START: &str = "start";
 /// Command line argument `--check`.
 pub const ARG_MIGRATE_CHECK: &str = "check";
 /// Command line argument `daemon --check`
@@ -396,17 +398,25 @@ fn daemon() -> Command {
     Command::new(CMD_DAEMON)
         .about("Runs ckb daemon command")
         .arg(
+            Arg::new(ARG_DAEMON_START)
+                .long(ARG_DAEMON_START)
+                .action(clap::ArgAction::SetTrue)
+                .conflicts_with_all(vec![ARG_DAEMON_CHECK, ARG_DAEMON_STOP])
+                .help("Start the daemon service"),
+        )
+        .arg(
             Arg::new(ARG_DAEMON_CHECK)
                 .long(ARG_DAEMON_CHECK)
                 .action(clap::ArgAction::SetTrue)
-                .help("Check the daemon status"),
+                .conflicts_with_all(vec![ARG_DAEMON_START, ARG_DAEMON_STOP])
+                .help("Check the daemon service status"),
         )
         .arg(
             Arg::new(ARG_DAEMON_STOP)
                 .long(ARG_DAEMON_STOP)
                 .action(clap::ArgAction::SetTrue)
-                .conflicts_with(ARG_DAEMON_CHECK)
-                .help("Stop the daemon process, both the miner and the node"),
+                .conflicts_with_all(vec![ARG_DAEMON_START, ARG_DAEMON_CHECK])
+                .help("Stop the daemon service"),
         )
 }
 

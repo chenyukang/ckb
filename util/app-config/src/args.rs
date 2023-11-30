@@ -20,6 +20,8 @@ pub struct ExportArgs {
 #[derive(Debug)]
 /// Parsed command line arguments for `ckb daemon`.
 pub struct DaemonArgs {
+    /// Start the daemon process
+    pub start: bool,
     /// Check the daemon status
     pub check: bool,
     /// Stop daemon process
