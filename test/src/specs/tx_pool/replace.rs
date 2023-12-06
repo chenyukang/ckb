@@ -1,4 +1,4 @@
-use crate::{utils::wait_until, Node, Spec};
+use crate::{rpc::RpcClient, utils::wait_until, Node, Spec};
 use ckb_jsonrpc_types::Status;
 use ckb_logger::info;
 use ckb_types::{
@@ -687,7 +687,7 @@ impl Spec for RbfReplaceProposedSuccess {
         let tx2_status = node0.rpc_client().get_transaction(tx2.hash()).tx_status;
         assert_eq!(tx2_status.status, Status::Pending);
 
-        // submit a black block
+        // submit a blank block
         let example = node0.new_block(None, None, None);
         let blank_block = example
             .as_advanced_builder()
@@ -724,6 +724,74 @@ impl Spec for RbfReplaceProposedSuccess {
             .rpc_client()
             .send_transaction_result(tx2.data().into());
         assert!(res.is_err(), "tx2 should be rejected");
+    }
+
+    fn modify_app_config(&self, config: &mut ckb_app_config::CKBAppConfig) {
+        config.tx_pool.min_rbf_rate = ckb_types::core::FeeRate(1500);
+    }
+}
+
+pub struct RbfConcurrency;
+impl Spec for RbfConcurrency {
+    fn run(&self, nodes: &mut Vec<Node>) {
+        let node0 = &nodes[0];
+
+        node0.mine_until_out_bootstrap_period();
+        node0.new_block_with_blocking(|template| template.number.value() != 13);
+        let tx_hash_0 = node0.generate_transaction();
+        info!("Generate 4 txs with same input");
+        let tx1 = node0.new_transaction(tx_hash_0.clone());
+
+        let mut conflicts = vec![tx1];
+        let feeds = vec![
+            capacity_bytes!(83),
+            capacity_bytes!(82),
+            capacity_bytes!(81),
+            capacity_bytes!(80),
+        ];
+        for i in 0..4 {
+            let tx2_temp = node0.new_transaction(tx_hash_0.clone());
+            // Set fee to a higher value, tx1 capacity is 100, set tx2 capacity to 80 for +20 fee.
+            let output = CellOutputBuilder::default()
+                .capacity(feeds[i].pack())
+                .build();
+
+            let tx2 = tx2_temp
+                .as_advanced_builder()
+                .set_outputs(vec![output])
+                .build();
+            conflicts.push(tx2);
+        }
+
+        // make 4 threads to set_transaction concurrently
+        let mut handles = vec![];
+        for tx in &conflicts {
+            let cur_tx = tx.clone();
+            let rpc_address = node0.rpc_listen();
+            let handle = std::thread::spawn(move || {
+                let rpc_client = RpcClient::new(&rpc_address);
+                let _ = rpc_client.send_transaction_result(cur_tx.data().into());
+            });
+            handles.push(handle);
+        }
+        for handle in handles {
+            let _ = handle.join();
+        }
+
+        let status: Vec<_> = conflicts
+            .iter()
+            .map(|tx| {
+                let res = node0.rpc_client().get_transaction(tx.hash());
+                res.tx_status.status
+            })
+            .collect();
+
+        eprintln!("status: {:?}", status);
+        // the last tx should be in Pending(with the largest fee), others should be in Rejected
+        assert_eq!(status[4], Status::Pending);
+        for i in 0..4 {
+            assert_eq!(status[i], Status::Rejected);
+        }
     }
 
     fn modify_app_config(&self, config: &mut ckb_app_config::CKBAppConfig) {

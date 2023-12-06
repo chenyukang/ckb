@@ -28,6 +28,10 @@ impl Edges {
     }
 
     pub(crate) fn insert_input(&mut self, out_point: OutPoint, txid: ProposalShortId) {
+        if self.inputs.contains_key(&out_point) {
+            eprintln!("out_point: {:?}, txid: {:?}", out_point, txid);
+            //panic!("already exists");
+        }
         self.inputs.insert(out_point, txid);
     }
 

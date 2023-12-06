@@ -11,6 +11,7 @@ use ckb_app_config::TxPoolConfig;
 use ckb_logger::{debug, error, warn};
 use ckb_snapshot::Snapshot;
 use ckb_store::ChainStore;
+//use ckb_types::packed::OutPoint;
 use ckb_types::core::tx_pool::PoolTxDetailInfo;
 use ckb_types::core::CapacityError;
 use ckb_types::{
@@ -522,6 +523,11 @@ impl TxPool {
         }
         (entries, size, cycles)
     }
+
+    // pub(crate) fn find_conflict_tx(&self, txv: &TransactionView) -> HashSet<ProposalShortId> {
+    //     let tx_inputs: Vec<OutPoint> = txv.input_pts_iter().collect();
+    //     self.pool_map.find_conflict_tx(&tx_inputs)
+    // }
 
     pub(crate) fn check_rbf(
         &self,
