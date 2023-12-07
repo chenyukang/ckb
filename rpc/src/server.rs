@@ -13,6 +13,7 @@ use jsonrpc_utils::axum_utils::{handle_jsonrpc, handle_jsonrpc_ws};
 use jsonrpc_utils::pub_sub::Session;
 use jsonrpc_utils::stream::{serve_stream_sink, StreamMsg, StreamServerConfig};
 use std::net::{SocketAddr, ToSocketAddrs};
+
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
@@ -109,16 +110,32 @@ impl RpcServer {
         let (tx_addr, rx_addr) = tokio::sync::oneshot::channel::<SocketAddr>();
 
         handler.spawn(async move {
-            let server = axum::Server::bind(
+            // let listener = tokio::net::TcpListener::bind(
+            //     &address
+            //         .to_socket_addrs()
+            //         .expect("config listen_address")
+            //         .next()
+            //         .unwrap(),
+            // )
+            // .await
+            // .unwrap();
+            // let _ = tx_addr.send(listener.local_addr().unwrap());
+            // let server = axum::serve(listener, app);
+            // let exit = new_tokio_exit_rx();
+            // let _ = server.await;
+
+            let server = hyper::Server::bind(
                 &address
                     .to_socket_addrs()
                     .expect("config listen_address parsed")
                     .next()
                     .expect("config listen_address parsed"),
             )
-            .serve(app.clone().into_make_service());
+            .serve(app.into_make_service())
+            .with_graceful_shutdown(async move {
+                new_tokio_exit_rx().cancelled().await;
+            });
 
-            let _ = tx_addr.send(server.local_addr());
             let graceful = server.with_graceful_shutdown(async move {
                 new_tokio_exit_rx().cancelled().await;
             });
@@ -126,6 +143,7 @@ impl RpcServer {
         });
 
         let rx_addr = handler.block_on(rx_addr)?;
+        eprintln!("debug now rx_addr: {:?}", rx_addr);
         Ok(rx_addr)
     }
 
