@@ -90,6 +90,12 @@ impl Setup {
             .get_one::<String>(cli::ARG_ASSUME_VALID_TARGET)
             .and_then(|s| H256::from_str(&s[2..]).ok());
 
+        let daemon_path = if matches.get_flag(cli::ARG_DAEMON) {
+            let root_dir = Setup::root_dir_from_matches(matches)?;
+            Some(root_dir.join("data/daemon"))
+        } else {
+            None
+        };
         Ok(RunArgs {
             config,
             consensus,
@@ -98,7 +104,7 @@ impl Setup {
             overwrite_chain_spec: matches.get_flag(cli::ARG_OVERWRITE_CHAIN_SPEC),
             chain_spec_hash,
             indexer: matches.get_flag(cli::ARG_INDEXER),
-            daemon: matches.get_flag(cli::ARG_DAEMON),
+            daemon_path,
         })
     }
 

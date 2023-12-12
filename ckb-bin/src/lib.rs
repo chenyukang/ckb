@@ -9,14 +9,8 @@ use ckb_async_runtime::new_global_runtime;
 use ckb_build_info::Version;
 use ckb_logger::{debug, info};
 use ckb_network::tokio;
-use clap::ArgMatches;
-use colored::Colorize;
-use daemonize::Daemonize;
 use helper::raise_fd_limit;
 use setup_guard::SetupGuard;
-
-#[cfg(not(target_os = "windows"))]
-use subcommand::check_process;
 
 #[cfg(feature = "with_sentry")]
 pub(crate) const LOG_TARGET_SENTRY: &str = "sentry";
@@ -62,61 +56,7 @@ pub fn run_app(version: Version) -> Result<(), ExitCode> {
         .subcommand()
         .expect("SubcommandRequiredElseHelp");
 
-    if run_deamon(cmd, matches) {
-        run_app_in_daemon(version, bin_name, cmd, matches)
-    } else {
-        debug!("ckb version: {}", version);
-        run_app_inner(version, bin_name, cmd, matches)
-    }
-}
-
-fn run_app_in_daemon(
-    version: Version,
-    bin_name: String,
-    cmd: &str,
-    matches: &ArgMatches,
-) -> Result<(), ExitCode> {
-    eprintln!("starting CKB in daemon mode ...");
-    eprintln!("check status : `{}`", "ckb daemon --check".green());
-    eprintln!("stop daemon  : `{}`", "ckb daemon --stop".yellow());
-
-    assert!(matches!(cmd, cli::CMD_RUN));
-    let root_dir = Setup::root_dir_from_matches(matches)?;
-    let daemon_dir = root_dir.join("data/daemon");
-    // make sure daemon dir exists
-    std::fs::create_dir_all(daemon_dir)?;
-    let pid_file = Setup::daemon_pid_file_path(matches)?;
-
-    if check_process(&pid_file).is_ok() {
-        eprintln!("{}", "ckb is already running".red());
-        return Ok(());
-    }
-    eprintln!("no ckb process, starting ...");
-
-    let pwd = std::env::current_dir()?;
-    let daemon = Daemonize::new()
-        .pid_file(pid_file)
-        .chown_pid_file(true)
-        .working_directory(pwd);
-
-    match daemon.start() {
-        Ok(_) => {
-            info!("Success, daemonized ...");
-            run_app_inner(version, bin_name, cmd, matches)
-        }
-        Err(e) => {
-            info!("daemonize error: {}", e);
-            Err(ExitCode::Failure)
-        }
-    }
-}
-
-fn run_app_inner(
-    version: Version,
-    bin_name: String,
-    cmd: &str,
-    matches: &ArgMatches,
-) -> Result<(), ExitCode> {
+    debug!("ckb version: {}", version);
     let is_silent_logging = is_silent_logging(cmd);
     let (mut handle, mut handle_stop_rx, _runtime) = new_global_runtime();
     let setup = Setup::from_matches(bin_name, cmd, matches)?;
@@ -149,16 +89,6 @@ fn run_app_inner(
     }
 
     ret
-}
-
-fn run_deamon(cmd: &str, matches: &ArgMatches) -> bool {
-    #[cfg(target_os = "windows")]
-    return false;
-
-    match cmd {
-        cli::CMD_RUN => matches.get_flag(cli::ARG_DAEMON),
-        _ => false,
-    }
 }
 
 type Silent = bool;

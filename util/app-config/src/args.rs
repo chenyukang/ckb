@@ -57,7 +57,7 @@ pub struct RunArgs {
     /// Whether start indexer, default false
     pub indexer: bool,
     /// Whether start in daemon mode
-    pub daemon: bool,
+    pub daemon_path: Option<PathBuf>,
 }
 
 /// Enable profile on blocks in the range `[from, to]`.
