@@ -358,6 +358,15 @@ impl<DL: CellDataProvider + HeaderProvider + ExtensionProvider + Send + Sync + C
         Ok(ret)
     }
 
+    pub fn resumable_verify_with_signal(
+        &self,
+        limit_cycles: Cycle,
+        signal: &TransactionState,
+    ) -> Result<VerifyResult, Error> {
+        let ret = self.inner.resumable_verify(limit_cycles)?;
+        Ok(ret)
+    }
+
     /// Perform verification resume from snapshot
     pub fn resume_from_snap(
         &self,
