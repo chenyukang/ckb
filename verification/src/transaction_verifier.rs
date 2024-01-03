@@ -5,7 +5,9 @@ use ckb_chain_spec::consensus::Consensus;
 use ckb_dao::DaoCalculator;
 use ckb_dao_utils::DaoError;
 use ckb_error::Error;
-use ckb_script::{TransactionScriptsVerifier, TransactionSnapshot, TransactionState, VerifyResult};
+use ckb_script::{
+    ChunkCommand, TransactionScriptsVerifier, TransactionSnapshot, TransactionState, VerifyResult,
+};
 use ckb_traits::{
     CellDataProvider, EpochProvider, ExtensionProvider, HeaderFieldsProvider, HeaderProvider,
 };
@@ -358,12 +360,15 @@ impl<DL: CellDataProvider + HeaderProvider + ExtensionProvider + Send + Sync + C
         Ok(ret)
     }
 
-    pub fn resumable_verify_with_signal(
+    pub async fn resumable_verify_with_signal(
         &self,
         limit_cycles: Cycle,
-        signal: &TransactionState,
+        command_rx: &mut tokio::sync::watch::Receiver<ChunkCommand>,
     ) -> Result<VerifyResult, Error> {
-        let ret = self.inner.resumable_verify(limit_cycles)?;
+        let ret = self
+            .inner
+            .resumable_verify_with_signal(limit_cycles, command_rx)
+            .await?;
         Ok(ret)
     }
 
