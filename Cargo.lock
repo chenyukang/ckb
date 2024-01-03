@@ -1542,6 +1542,7 @@ dependencies = [
  "ckb-metrics",
  "ckb-network",
  "ckb-reward-calculator",
+ "ckb-script",
  "ckb-snapshot",
  "ckb-stop-handler",
  "ckb-store",
@@ -1618,6 +1619,7 @@ dependencies = [
  "ckb-verification-traits",
  "derive_more",
  "lru",
+ "tokio",
 ]
 
 [[package]]
