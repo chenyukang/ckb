@@ -1735,6 +1735,7 @@ dependencies = [
 [[package]]
 name = "ckb-vm"
 version = "0.24.7"
+source = "git+https://github.com/chenyukang/ckb-vm.git?branch=yukang-local-changes#f799b2a4416197a4e6c15372983feac649f6e5bd"
 dependencies = [
  "byteorder",
  "bytes",
@@ -1751,8 +1752,7 @@ dependencies = [
 [[package]]
 name = "ckb-vm-definitions"
 version = "0.24.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd940885b250d3bc14b1d2b9fb45ceafdc857b2c5c43610cf9bf944f08dc511f"
+source = "git+https://github.com/chenyukang/ckb-vm.git?branch=yukang-local-changes#f799b2a4416197a4e6c15372983feac649f6e5bd"
 dependencies = [
  "paste",
 ]
