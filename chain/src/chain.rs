@@ -237,8 +237,10 @@ impl ChainService {
                     recv(process_block_receiver) -> msg => match msg {
                         Ok(Request { responder, arguments: (block, verify) }) => {
                             let _ = tx_control.suspend_chunk_process();
+                            eprintln!("suspend chunk process");
                             let _ = responder.send(self.process_block(block, verify));
                             let _ = tx_control.continue_chunk_process();
+                            eprintln!("continue chunk process");
                         },
                         _ => {
                             error!("process_block_receiver closed");
