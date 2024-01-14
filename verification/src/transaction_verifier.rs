@@ -360,6 +360,9 @@ impl<DL: CellDataProvider + HeaderProvider + ExtensionProvider + Send + Sync + C
         Ok(ret)
     }
 
+    /// Perform resumable script verification with signal
+    /// The verification will be interrupted when receiving a signal,
+    /// it will hang until the `Resume` command is received.
     pub async fn resumable_verify_with_signal(
         &self,
         limit_cycles: Cycle,
