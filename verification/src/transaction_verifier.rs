@@ -173,7 +173,6 @@ where
             .script
             .resumable_verify_with_signal(limit_cycles, &mut command_rx)
             .await?;
-        eprintln!("resumable_verify_with_signal ret: {:?}", ret);
         Ok((ret, fee))
     }
 
@@ -372,7 +371,7 @@ impl<DL: CellDataProvider + HeaderProvider + ExtensionProvider + Send + Sync + C
     }
 
     /// Perform resumable script verification with signal
-    /// The verification will be interrupted when receiving a signal,
+    /// The verification will be interrupted when receiving a Suspend command,
     /// it will hang until the `Resume` command is received.
     pub async fn resumable_verify_with_signal(
         &self,
