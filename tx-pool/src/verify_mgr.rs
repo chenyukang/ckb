@@ -49,13 +49,15 @@ impl Worker {
             let queue_ready = self.tasks.read().await.subscribe();
             let mut interval = tokio::time::interval(Duration::from_millis(500));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            let mut status = ChunkCommand::Resume;
             loop {
                 let try_pick = tokio::select! {
                     _ = self.exit_signal.cancelled() => {
                         break;
                     }
                     _ = self.command_rx.changed() => {
-                        *self.command_rx.borrow() == ChunkCommand::Resume
+                        status = self.command_rx.borrow().to_owned();
+                        status == ChunkCommand::Resume
                     }
                     _ = queue_ready.notified() => {
                         true
@@ -64,7 +66,7 @@ impl Worker {
                         true
                     }
                 };
-                if try_pick {
+                if try_pick && status == ChunkCommand::Resume {
                     self.process_inner().await;
                 }
             }
@@ -72,6 +74,7 @@ impl Worker {
     }
 
     async fn process_inner(&mut self) {
+        // query with cheap read first
         if self.tasks.read().await.peek().is_none() {
             return;
         }
