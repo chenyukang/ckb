@@ -11,7 +11,10 @@ use ckb_types::{
 use ckb_util::shrink_to_fit;
 use multi_index_map::MultiIndexMap;
 use std::sync::Arc;
-use tokio::sync::Notify;
+use tokio::sync::{
+    mpsc::{UnboundedReceiver, UnboundedSender},
+    Mutex,
+};
 
 const DEFAULT_MAX_VERIFY_TRANSACTIONS: usize = 100;
 const SHRINK_THRESHOLD: usize = 100;
@@ -47,16 +50,20 @@ pub struct VerifyEntry {
 pub struct VerifyQueue {
     /// inner tx entry
     inner: MultiIndexVerifyEntryMap,
+    /// add a notify to this channel to notify the queue is not empty
+    ready_tx: UnboundedSender<()>,
     /// subscribe this notify to get be notified when there is item in the queue
-    ready_rx: Arc<Notify>,
+    ready_rx: Arc<Mutex<UnboundedReceiver<()>>>,
 }
 
 impl VerifyQueue {
     /// Create a new VerifyQueue
     pub(crate) fn new() -> Self {
+        let (ready_tx, ready_rx) = tokio::sync::mpsc::unbounded_channel();
         VerifyQueue {
             inner: MultiIndexVerifyEntryMap::default(),
-            ready_rx: Arc::new(Notify::new()),
+            ready_tx,
+            ready_rx: Arc::new(Mutex::new(ready_rx)),
         }
     }
 
@@ -87,7 +94,7 @@ impl VerifyQueue {
     }
 
     /// get a queue_rx to subscribe the txs count in the queue
-    pub fn subscribe(&self) -> Arc<Notify> {
+    pub fn subscribe(&self) -> Arc<Mutex<UnboundedReceiver<()>>> {
         Arc::clone(&self.ready_rx)
     }
 
@@ -145,7 +152,7 @@ impl VerifyQueue {
             added_time: unix_time_as_millis(),
             inner: Entry { tx, remote },
         });
-        self.ready_rx.notify_one();
+        self.ready_tx.send(()).unwrap();
         Ok(true)
     }
 

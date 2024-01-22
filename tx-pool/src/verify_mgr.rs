@@ -5,7 +5,6 @@ use ckb_logger::info;
 use ckb_script::ChunkCommand;
 use ckb_stop_handler::CancellationToken;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::{watch, RwLock};
 use tokio::task::JoinHandle;
 
@@ -13,7 +12,6 @@ struct Worker {
     tasks: Arc<RwLock<VerifyQueue>>,
     command_rx: watch::Receiver<ChunkCommand>,
     service: TxPoolService,
-    exit_signal: CancellationToken,
 }
 
 impl Clone for Worker {
@@ -21,7 +19,6 @@ impl Clone for Worker {
         Self {
             tasks: Arc::clone(&self.tasks),
             command_rx: self.command_rx.clone(),
-            exit_signal: self.exit_signal.clone(),
             service: self.service.clone(),
         }
     }
@@ -32,40 +29,42 @@ impl Worker {
         service: TxPoolService,
         tasks: Arc<RwLock<VerifyQueue>>,
         command_rx: watch::Receiver<ChunkCommand>,
-        exit_signal: CancellationToken,
     ) -> Self {
         Worker {
             service,
             tasks,
             command_rx,
-            exit_signal,
         }
     }
 
     pub fn start(mut self) -> JoinHandle<()> {
         tokio::spawn(async move {
-            // use a notify to receive the queue change event makes sure the worker
-            // know immediately when the queue is changed, otherwise we may have a delay of `interval`
             let queue_ready = self.tasks.read().await.subscribe();
-            let mut interval = tokio::time::interval(Duration::from_millis(500));
-            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            let mut status = self.command_rx.borrow().to_owned();
             loop {
-                let try_pick = tokio::select! {
-                    _ = self.exit_signal.cancelled() => {
+                match status {
+                    ChunkCommand::Resume => {
+                        // wait for queue ready only when resume,
+                        // keep sure whenever `ready.recv` returned, worker will pop a entry
+                        // otherwise, there maybe item left in queue but not processed
+                        let mut ready = queue_ready.lock().await;
+                        tokio::select! {
+                            _ = self.command_rx.changed() => {
+                                status = self.command_rx.borrow().to_owned();
+                            }
+                            Some(_) = ready.recv() => {
+                                self.process_inner().await;
+                            }
+                        }
+                    }
+                    ChunkCommand::Suspend => {
+                        // otherwise, just wait for command
+                        let _ = self.command_rx.changed().await;
+                        status = self.command_rx.borrow().to_owned();
+                    }
+                    ChunkCommand::Stop => {
                         break;
                     }
-                    _ = self.command_rx.changed() => {
-                        *self.command_rx.borrow() == ChunkCommand::Resume
-                    }
-                    _ = queue_ready.notified() => {
-                        true
-                    }
-                    _ = interval.tick() => {
-                        true
-                    }
-                };
-                if try_pick {
-                    self.process_inner().await;
                 }
             }
         })
@@ -109,17 +108,11 @@ impl VerifyMgr {
         let workers: Vec<_> = (0..num_cpus::get())
             .map({
                 let tasks = Arc::clone(&service.verify_queue);
-                let signal_exit = signal_exit.clone();
                 move |_| {
                     let (child_tx, child_rx) = watch::channel(ChunkCommand::Resume);
                     (
                         child_tx,
-                        Worker::new(
-                            service.clone(),
-                            Arc::clone(&tasks),
-                            child_rx,
-                            signal_exit.clone(),
-                        ),
+                        Worker::new(service.clone(), Arc::clone(&tasks), child_rx),
                     )
                 }
             })

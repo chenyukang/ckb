@@ -21,8 +21,9 @@ async fn verify_queue_basic() {
     let count = tokio::spawn(async move {
         let mut count = 0;
         loop {
+            let mut ready = queue_rx.lock().await;
             select! {
-                _ = queue_rx.notified() => {
+                _ = ready.recv() => {
                     count += 1;
                 }
                 _ = exit_rx.changed() => {
