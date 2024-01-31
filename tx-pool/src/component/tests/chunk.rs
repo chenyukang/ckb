@@ -11,6 +11,7 @@ async fn verify_queue_basic() {
     let entry = Entry {
         tx: tx.clone(),
         remote: None,
+        notify: None,
     };
     let tx2 = build_tx(vec![(&tx.hash(), 0)], 1);
 
@@ -33,23 +34,23 @@ async fn verify_queue_basic() {
         count
     });
 
-    assert!(queue.add_tx(tx.clone(), None).unwrap());
+    assert!(queue.add_tx(tx.clone(), None, None).unwrap());
     sleep(std::time::Duration::from_millis(100)).await;
 
-    assert!(!queue.add_tx(tx.clone(), None).unwrap());
+    assert!(!queue.add_tx(tx.clone(), None, None).unwrap());
 
     assert_eq!(queue.pop_first().as_ref(), Some(&entry));
     assert!(!queue.contains_key(&id));
 
-    assert!(queue.add_tx(tx.clone(), None).unwrap());
+    assert!(queue.add_tx(tx.clone(), None, None).unwrap());
     sleep(std::time::Duration::from_millis(100)).await;
 
     assert_eq!(queue.pop_first().as_ref(), Some(&entry));
 
-    assert!(queue.add_tx(tx.clone(), None).unwrap());
+    assert!(queue.add_tx(tx.clone(), None, None).unwrap());
     sleep(std::time::Duration::from_millis(100)).await;
 
-    assert!(queue.add_tx(tx2.clone(), None).unwrap());
+    assert!(queue.add_tx(tx2.clone(), None, None).unwrap());
     sleep(std::time::Duration::from_millis(100)).await;
 
     exit_tx.send(()).unwrap();

@@ -3,24 +3,29 @@
 extern crate rustc_hash;
 extern crate slab;
 use ckb_network::PeerIndex;
+use ckb_snapshot::Snapshot;
 use ckb_systemtime::unix_time_as_millis;
 use ckb_types::{
     core::{tx_pool::Reject, Cycle, TransactionView},
     packed::ProposalShortId,
 };
 use ckb_util::shrink_to_fit;
+use ckb_verification::cache::Completed;
 use multi_index_map::MultiIndexMap;
 use std::sync::Arc;
-use tokio::sync::Notify;
+use tokio::sync::{mpsc, Notify};
 
 const DEFAULT_MAX_VERIFY_TRANSACTIONS: usize = 100;
 const SHRINK_THRESHOLD: usize = 100;
 
+pub type NotifyResult = (Result<Completed, Reject>, Arc<Snapshot>);
+
 /// The verify queue Entry to verify.
-#[derive(Debug, Clone, Eq)]
+#[derive(Debug, Clone)]
 pub struct Entry {
     pub(crate) tx: TransactionView,
     pub(crate) remote: Option<(Cycle, PeerIndex)>,
+    pub(crate) notify: Option<mpsc::Sender<NotifyResult>>,
 }
 
 impl PartialEq for Entry {
@@ -28,6 +33,8 @@ impl PartialEq for Entry {
         self.tx == other.tx
     }
 }
+
+impl Eq for Entry {}
 
 #[derive(MultiIndexMap, Clone)]
 pub struct VerifyEntry {
@@ -130,6 +137,7 @@ impl VerifyQueue {
         &mut self,
         tx: TransactionView,
         remote: Option<(Cycle, PeerIndex)>,
+        notify: Option<tokio::sync::mpsc::Sender<NotifyResult>>,
     ) -> Result<bool, Reject> {
         if self.contains_key(&tx.proposal_short_id()) {
             return Ok(false);
@@ -143,7 +151,7 @@ impl VerifyQueue {
         self.inner.insert(VerifyEntry {
             id: tx.proposal_short_id(),
             added_time: unix_time_as_millis(),
-            inner: Entry { tx, remote },
+            inner: Entry { tx, remote, notify },
         });
         self.ready_rx.notify_one();
         Ok(true)

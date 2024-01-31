@@ -2,6 +2,7 @@ use crate::callback::Callbacks;
 use crate::component::entry::TxEntry;
 use crate::component::orphan::Entry as OrphanEntry;
 use crate::component::pool_map::Status;
+use crate::component::verify_queue::NotifyResult;
 use crate::error::Reject;
 use crate::pool::TxPool;
 use crate::service::{BlockAssemblerMessage, TxPoolService, TxVerificationResult};
@@ -35,8 +36,11 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::watch;
+use tokio::task::JoinHandle;
+use tokio::time::timeout;
 
 const DELAY_LIMIT: usize = 1_500 * 21; // 1_500 per block, 21 blocks
+pub const DELAY_LIMIT_TO_WAIT: u64 = 5; // wait 5 seconds before verify queue notify result
 
 /// A list for plug target for `plug_entry` method
 pub enum PlugTarget {
@@ -289,6 +293,7 @@ impl TxPoolService {
         &self,
         tx: TransactionView,
         remote: Option<(Cycle, PeerIndex)>,
+        wait: bool,
     ) -> Result<(), Reject> {
         // non contextual verify first
         self.non_contextual_verify(&tx, None)?;
@@ -302,7 +307,7 @@ impl TxPoolService {
             return Err(Reject::Duplicated(tx.hash()));
         }
 
-        if let Some((ret, snapshot)) = self._resumeble_process_tx(tx.clone(), remote).await {
+        if let Some((ret, snapshot)) = self._resumeble_process_tx(tx.clone(), remote, wait).await {
             match ret {
                 Ok(processed) => {
                     if let ProcessResult::Completed(completed) = processed {
@@ -531,7 +536,7 @@ impl TxPoolService {
                         tx.hash(),
                     );
                     self.remove_orphan_tx(&orphan.tx.proposal_short_id()).await;
-                    self.enqueue_verify_queue(orphan.tx, Some((orphan.cycle, orphan.peer)))
+                    self.enqueue_verify_queue(orphan.tx, Some((orphan.cycle, orphan.peer)), None)
                         .await
                         .expect("enqueue suspended tx");
                 } else if let Some((ret, snapshot)) = self
@@ -633,6 +638,7 @@ impl TxPoolService {
         &self,
         tx: TransactionView,
         remote: Option<(Cycle, PeerIndex)>,
+        wait: bool,
     ) -> Option<(Result<ProcessResult, Reject>, Arc<Snapshot>)> {
         let tx_hash = tx.hash();
 
@@ -672,14 +678,33 @@ impl TxPoolService {
                 Some((Ok(ProcessResult::Completed(completed)), submit_snapshot))
             }
             None => {
-                // for remote transaction with decleard cycles, we enqueue it to verify queue directly
-                // notified transaction now don't have decleard cycles, we may need to fix it in future,
-                // now we also enqueue it to verify queue directly
+                let (handler, notify_tx) = if !wait {
+                    // for remote transaction with decleard cycles, we enqueue it to verify queue directly
+                    // notified transaction now don't have decleard cycles, we may need to fix it in future,
+                    // now we also enqueue it to verify queue directly
+                    (None, None)
+                } else {
+                    // for local submitted transaction, we wait for the result for a specified time
+                    let (notify_tx, mut notify_rx) = tokio::sync::mpsc::channel(1);
+                    let handle: JoinHandle<Option<NotifyResult>> = tokio::spawn(async move {
+                        let timeout_duration = Duration::from_secs(DELAY_LIMIT_TO_WAIT);
+                        match timeout(timeout_duration, notify_rx.recv()).await {
+                            Ok(res) => res,
+                            Err(_) => None, // timeout here, return `Suspended`
+                        }
+                    });
+                    (Some(handle), Some(notify_tx))
+                };
                 let ret = self
-                    .enqueue_verify_queue(rtx.transaction.clone(), remote)
+                    .enqueue_verify_queue(rtx.transaction.clone(), remote, notify_tx)
                     .await;
                 try_or_return_with_snapshot!(ret, snapshot);
-                error!("added to verify queue: {:?}", tx.proposal_short_id());
+                if let Some(res) = handler {
+                    if let Ok(Some((completed, snapshot))) = res.await {
+                        let completed = try_or_return_with_snapshot!(completed, snapshot);
+                        return Some((Ok(ProcessResult::Completed(completed)), snapshot));
+                    }
+                }
                 Some((Ok(ProcessResult::Suspended), snapshot))
             }
         }
@@ -689,9 +714,10 @@ impl TxPoolService {
         &self,
         tx: TransactionView,
         remote: Option<(Cycle, PeerIndex)>,
+        notify: Option<tokio::sync::mpsc::Sender<NotifyResult>>,
     ) -> Result<bool, Reject> {
         let mut queue = self.verify_queue.write().await;
-        queue.add_tx(tx, remote)
+        queue.add_tx(tx, remote, notify)
     }
 
     pub(crate) async fn _process_tx(
@@ -699,7 +725,7 @@ impl TxPoolService {
         tx: TransactionView,
         declared_cycles: Option<Cycle>,
         command_rx: Option<&mut watch::Receiver<ChunkCommand>>,
-    ) -> Option<(Result<Completed, Reject>, Arc<Snapshot>)> {
+    ) -> Option<NotifyResult> {
         let tx_hash = tx.hash();
 
         let (ret, snapshot) = self.pre_check(&tx).await;

@@ -89,6 +89,10 @@ impl Worker {
                 .await
                 .expect("verify worker _process_tx failed");
 
+            if let Some(notify) = entry.notify {
+                // ignore the result of notify.send, the receiver must be waiting for it
+                let _res = notify.send((res.clone(), Arc::clone(&snapshot))).await;
+            }
             self.service
                 .after_process(entry.tx, entry.remote, &snapshot, &res)
                 .await;
