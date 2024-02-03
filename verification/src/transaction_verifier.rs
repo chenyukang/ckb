@@ -183,15 +183,10 @@ where
         self.time_relative.verify()?;
         self.capacity.verify()?;
         let fee = self.fee_calculator.transaction_fee()?;
-        let ret = self
+        let cycles = self
             .script
             .resumable_verify_with_signal(max_cycles, command_rx)
             .await?;
-        let cycles = if let VerifyResult::Completed(cycles) = ret {
-            cycles
-        } else {
-            unimplemented!("should not in suspend here");
-        };
         Ok(Completed { cycles, fee })
     }
 
@@ -380,7 +375,7 @@ impl<DL: CellDataProvider + HeaderProvider + ExtensionProvider + Send + Sync + C
         &self,
         limit_cycles: Cycle,
         command_rx: &mut tokio::sync::watch::Receiver<ChunkCommand>,
-    ) -> Result<VerifyResult, Error> {
+    ) -> Result<Cycle, Error> {
         let ret = self
             .inner
             .resumable_verify_with_signal(limit_cycles, command_rx)
