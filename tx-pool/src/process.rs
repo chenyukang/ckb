@@ -352,6 +352,7 @@ impl TxPoolService {
         match remote {
             Some((declared_cycle, peer)) => match ret {
                 Ok(_) => {
+                    debug!("after_process remote {} success", tx_hash);
                     self.send_result_to_relayer(TxVerificationResult::Ok {
                         original_peer: Some(peer),
                         with_vm_2023,
@@ -360,7 +361,7 @@ impl TxPoolService {
                     self.process_orphan_tx(&tx).await;
                 }
                 Err(reject) => {
-                    debug!("after_process {} reject: {} ", tx_hash, reject);
+                    debug!("after_process remote {} reject: {} ", tx_hash, reject);
                     if is_missing_input(reject) && all_inputs_is_unknown(snapshot, &tx) {
                         self.add_orphan(tx, peer, declared_cycle).await;
                     } else {
@@ -382,6 +383,7 @@ impl TxPoolService {
             None => {
                 match ret {
                     Ok(_) => {
+                        debug!("after_process local {} success", tx_hash);
                         self.send_result_to_relayer(TxVerificationResult::Ok {
                             original_peer: None,
                             with_vm_2023,
@@ -391,6 +393,7 @@ impl TxPoolService {
                     }
                     Err(Reject::Duplicated(_)) => {
                         // re-broadcast tx when it's duplicated and submitted through local rpc
+                        debug!("after_process local {} duplicated", tx_hash);
                         self.send_result_to_relayer(TxVerificationResult::Ok {
                             original_peer: None,
                             with_vm_2023,
@@ -398,6 +401,7 @@ impl TxPoolService {
                         });
                     }
                     Err(reject) => {
+                        debug!("after_process local {} reject: {} ", tx_hash, reject);
                         if matches!(reject, Reject::Resolve(..) | Reject::Verification(..)) {
                             self.put_recent_reject(&tx_hash, reject).await;
                         }
