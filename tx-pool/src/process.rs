@@ -436,6 +436,7 @@ impl TxPoolService {
         match remote {
             Some((declared_cycle, peer)) => match ret {
                 Ok(_) => {
+                    debug!("after_process remote send_result_to_relayer {}", tx_hash);
                     self.send_result_to_relayer(TxVerificationResult::Ok {
                         original_peer: Some(peer),
                         with_vm_2023,
@@ -471,6 +472,7 @@ impl TxPoolService {
             None => {
                 match ret {
                     Ok(_) => {
+                        debug!("after_process local send_result_to_relayer {}", tx_hash);
                         self.send_result_to_relayer(TxVerificationResult::Ok {
                             original_peer: None,
                             with_vm_2023,
@@ -479,6 +481,7 @@ impl TxPoolService {
                         self.process_orphan_tx(&tx).await;
                     }
                     Err(Reject::Duplicated(_)) => {
+                        debug!("after_process {} duplicated", tx_hash);
                         // re-broadcast tx when it's duplicated and submitted through local rpc
                         self.send_result_to_relayer(TxVerificationResult::Ok {
                             original_peer: None,
