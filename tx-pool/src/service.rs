@@ -682,6 +682,7 @@ async fn process(mut service: TxPoolService, message: Message) {
             responder,
             arguments: tx,
         }) => {
+            debug!("Receive submit_local_tx for hash: {}", tx.hash());
             let result = service.resumeble_process_tx(tx, None).await;
             if let Err(e) = responder.send(result) {
                 error!("responder send submit_tx result failed {:?}", e);
@@ -700,6 +701,11 @@ async fn process(mut service: TxPoolService, message: Message) {
             responder,
             arguments: (tx, declared_cycles, peer),
         }) => {
+            debug!(
+                "Receive submit_remote_tx from peer {:?} hash: {}",
+                peer,
+                tx.hash()
+            );
             if declared_cycles > service.tx_pool_config.max_tx_verify_cycles {
                 let _result = service
                     .resumeble_process_tx(tx, Some((declared_cycles, peer)))
@@ -733,6 +739,7 @@ async fn process(mut service: TxPoolService, message: Message) {
             responder,
             arguments: hash,
         }) => {
+            debug!("Receive get_tx_status for hash: {}", hash);
             let id = ProposalShortId::from_tx_hash(&hash);
             let tx_pool = service.tx_pool.read().await;
             let ret = if let Some(entry) = tx_pool.proposed.get(&id) {
@@ -762,6 +769,7 @@ async fn process(mut service: TxPoolService, message: Message) {
             responder,
             arguments: hash,
         }) => {
+            debug!("Receive get_transaction_with_status for hash: {}", hash);
             let id = ProposalShortId::from_tx_hash(&hash);
             let tx_pool = service.tx_pool.read().await;
             let ret = if let Some(entry) = tx_pool.proposed.get(&id) {
@@ -799,6 +807,7 @@ async fn process(mut service: TxPoolService, message: Message) {
             responder,
             arguments: short_ids,
         }) => {
+            debug!("Receive fetch_txs for short_ids: {:?}", short_ids);
             let tx_pool = service.tx_pool.read().await;
             let txs = short_ids
                 .into_iter()
@@ -816,6 +825,10 @@ async fn process(mut service: TxPoolService, message: Message) {
             responder,
             arguments: short_ids,
         }) => {
+            debug!(
+                "Receive fetch_txs_with_cycles for short_ids: {:?}",
+                short_ids
+            );
             let tx_pool = service.tx_pool.read().await;
             let txs = short_ids
                 .into_iter()
