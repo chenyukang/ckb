@@ -153,7 +153,7 @@ The crate `ckb-rpc`'s minimum supported rustc version is 1.71.1.
         * [Method `notify_transaction`](#method-notify_transaction)
         * [Method `generate_block_with_template`](#method-generate_block_with_template)
         * [Method `calculate_dao_field`](#method-calculate_dao_field)
-    * [Module Miner](#module-miner)
+    * [Module Miner](#module-miner) [👉 OpenRPC spec](http://playground.open-rpc.org/?uiSchema[appBar][ui:title]=CKB-Miner&uiSchema[appBar][ui:splitView]=false&uiSchema[appBar][ui:examplesDropdown]=false&uiSchema[appBar][ui:logoUrl]=https://raw.githubusercontent.com/cryptape/ckb-rpc-resources/main/ckb-logo.jpg&schemaUrl=https://raw.githubusercontent.com/cryptape/ckb-rpc-resources/e7b5c1c42c07d4ac93acd1b02e9b29458658d3fa/json/miner_rpc_doc.json)
         * [Method `get_block_template`](#method-get_block_template)
         * [Method `submit_block`](#method-submit_block)
     * [Module Net](#module-net) [👉 OpenRPC spec](http://playground.open-rpc.org/?uiSchema[appBar][ui:title]=CKB-Net&uiSchema[appBar][ui:splitView]=false&uiSchema[appBar][ui:examplesDropdown]=false&uiSchema[appBar][ui:logoUrl]=https://raw.githubusercontent.com/cryptape/ckb-rpc-resources/main/ckb-logo.jpg&schemaUrl=https://raw.githubusercontent.com/cryptape/ckb-rpc-resources/e7b5c1c42c07d4ac93acd1b02e9b29458658d3fa/json/net_rpc_doc.json)
@@ -3588,12 +3588,17 @@ Response
 ```
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 ### Module `Miner`
 - [👉 OpenRPC spec](http://playground.open-rpc.org/?uiSchema[appBar][ui:title]=CKB-Miner&uiSchema[appBar][ui:splitView]=false&uiSchema[appBar][ui:examplesDropdown]=false&uiSchema[appBar][ui:logoUrl]=https://raw.githubusercontent.com/cryptape/ckb-rpc-resources/main/ckb-logo.jpg&schemaUrl=https://raw.githubusercontent.com/cryptape/ckb-rpc-resources/5ff94076d47877fb5f2663a9a9ed76e9b9eea8eb/json/miner_rpc_doc.json)
 =======
 
 ### Module Miner
 >>>>>>> 7aa48a583 (add send_test_transaction to help verify testing, we may need to rollback this commit)
+=======
+### Module `Miner`
+- [👉 OpenRPC spec](http://playground.open-rpc.org/?uiSchema[appBar][ui:title]=CKB-Miner&uiSchema[appBar][ui:splitView]=false&uiSchema[appBar][ui:examplesDropdown]=false&uiSchema[appBar][ui:logoUrl]=https://raw.githubusercontent.com/cryptape/ckb-rpc-resources/main/ckb-logo.jpg&schemaUrl=https://raw.githubusercontent.com/cryptape/ckb-rpc-resources/e7b5c1c42c07d4ac93acd1b02e9b29458658d3fa/json/miner_rpc_doc.json)
+>>>>>>> 3f1cf4a65 (rebase develop)
 
 RPC Module Miner for miners.
 
