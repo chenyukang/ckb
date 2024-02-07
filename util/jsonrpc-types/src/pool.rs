@@ -81,7 +81,7 @@ impl From<CoreTxPoolInfo> for TxPoolInfo {
 }
 
 /// The transaction entry in the pool.
-#[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug, JsonSchema)]
 pub struct PoolTransactionEntry {
     /// The transaction.
     pub transaction: TransactionView,
