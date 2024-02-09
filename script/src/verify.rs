@@ -17,6 +17,7 @@ use crate::{
     },
     verify_env::TxVerifyEnv,
 };
+use arc_swap::ArcSwap;
 use ckb_chain_spec::consensus::{Consensus, TYPE_ID_CODE_HASH};
 use ckb_error::Error;
 #[cfg(feature = "logging")]
@@ -36,7 +37,6 @@ use ckb_vm::{
     snapshot::{resume, Snapshot},
     DefaultMachineBuilder, Error as VMInternalError, SupportMachine, Syscalls,
 };
-use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
 
@@ -68,29 +68,46 @@ enum DataGuard {
 }
 
 /// LazyData wrapper make sure not-loaded data will be loaded only after one access
-#[derive(Debug, PartialEq, Eq, Clone)]
-struct LazyData(RefCell<DataGuard>);
+#[derive(Debug)]
+struct LazyData(ArcSwap<DataGuard>);
 
 impl LazyData {
     fn from_cell_meta(cell_meta: &CellMeta) -> LazyData {
         match &cell_meta.mem_cell_data {
-            Some(data) => LazyData(RefCell::new(DataGuard::Loaded(data.to_owned()))),
-            None => LazyData(RefCell::new(DataGuard::NotLoaded(
-                cell_meta.out_point.clone(),
-            ))),
+            Some(data) => LazyData(ArcSwap::new(DataGuard::Loaded(data.to_owned()).into())),
+            None => LazyData(ArcSwap::new(
+                DataGuard::NotLoaded(cell_meta.out_point.clone()).into(),
+            )),
         }
     }
 
     fn access<DL: CellDataProvider>(&self, data_loader: &DL) -> Bytes {
-        let guard = self.0.borrow().to_owned();
-        match guard {
+        match self.0.load().as_ref().to_owned() {
             DataGuard::NotLoaded(out_point) => {
                 let data = data_loader.get_cell_data(&out_point).expect("cell data");
-                self.0.replace(DataGuard::Loaded(data.to_owned()));
+                self.0.store(DataGuard::Loaded(data.to_owned()).into());
                 data
             }
             DataGuard::Loaded(bytes) => bytes,
         }
+    }
+}
+
+impl PartialEq for LazyData {
+    fn eq(&self, other: &Self) -> bool {
+        match (self.0.load().as_ref(), other.0.load().as_ref()) {
+            (DataGuard::NotLoaded(o1), DataGuard::NotLoaded(o2)) => o1 == o2,
+            (DataGuard::Loaded(b1), DataGuard::Loaded(b2)) => b1 == b2,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for LazyData {}
+
+impl Clone for LazyData {
+    fn clone(&self) -> Self {
+        LazyData(Arc::clone(&self.0.load()).into())
     }
 }
 
