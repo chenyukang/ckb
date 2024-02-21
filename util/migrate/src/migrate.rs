@@ -32,6 +32,11 @@ impl Migrate {
         migrations.add_migration(Arc::new(migrations::AddBlockFilterColumnFamily)); // since v0.105.0
         migrations.add_migration(Arc::new(migrations::AddBlockFilterHash)); // since v0.108.0
         migrations.add_migration(Arc::new(migrations::BlockExt2019ToZero::new(hardforks))); // since v0.111.1
+        migrations.add_migration(Arc::new(migrations::Dummy1)); // since v0.108.0
+        migrations.add_migration(Arc::new(migrations::Dummy2)); // since v0.108.0
+        migrations.add_migration(Arc::new(migrations::Dummy3)); // since v0.108.0
+        migrations.add_migration(Arc::new(migrations::Dummy4)); // since v0.108.0
+        migrations.add_migration(Arc::new(migrations::Dummy5)); // since v0.108.0
 
         Migrate {
             migrations,

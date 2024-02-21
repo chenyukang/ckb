@@ -133,7 +133,7 @@ impl Migrations {
                 }
             }
         };
-        debug!("Current database version [{}]", db_version);
+        eprintln!("Current database version [{}]", db_version);
 
         let migrations = self
             .migrations
@@ -144,7 +144,7 @@ impl Migrations {
             .last()
             .unwrap_or_else(|| panic!("should have at least one version"))
             .version();
-        debug!("Latest database version [{}]", latest_version);
+        eprintln!("Latest database version [{}]", latest_version);
 
         db_version.as_str().cmp(latest_version)
     }
@@ -225,6 +225,8 @@ impl Migrations {
         let migrations_count = migrations.len();
         for (idx, (_, m)) in migrations.iter().enumerate() {
             let mpbc = Arc::clone(&mpb);
+            let version = m.version();
+            eprintln!("now begin to migrate: {:?}", version);
             let pb = move |count: u64| -> ProgressBar {
                 let pb = mpbc.add(ProgressBar::new(count));
                 pb.set_draw_target(ProgressDrawTarget::term(Term::stdout(), None));
@@ -234,6 +236,7 @@ impl Migrations {
             db = m.migrate(db, Arc::new(pb))?;
             db.put_default(MIGRATION_VERSION_KEY, m.version())
                 .map_err(|err| internal_error(format!("failed to migrate the database: {err}")))?;
+            eprintln!("end migrate: {:?}", version);
         }
         mpb.join_and_clear().expect("MultiProgress join");
         Ok(db)

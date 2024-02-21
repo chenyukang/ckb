@@ -40,6 +40,7 @@ pub fn migrate(args: MigrateArgs) -> Result<(), ExitCode> {
             }
 
             if matches!(db_status, Ordering::Equal) {
+                eprintln!("db equal ...");
                 return Ok(());
             }
 
