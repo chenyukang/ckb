@@ -36,8 +36,8 @@ use ckb_vm::{
     snapshot::{resume, Snapshot},
     DefaultMachineBuilder, Error as VMInternalError, SupportMachine, Syscalls,
 };
-use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
+use std::sync::RwLock;
 use std::sync::{Arc, Mutex};
 
 #[cfg(test)]
@@ -68,33 +68,43 @@ enum DataGuard {
 }
 
 /// LazyData wrapper make sure not-loaded data will be loaded only after one access
-#[derive(Debug, PartialEq, Eq, Clone)]
-struct LazyData(RefCell<DataGuard>);
+#[derive(Debug, Clone)]
+struct LazyData(Arc<RwLock<DataGuard>>);
 
 impl LazyData {
     fn from_cell_meta(cell_meta: &CellMeta) -> LazyData {
         match &cell_meta.mem_cell_data {
-            Some(data) => LazyData(RefCell::new(DataGuard::Loaded(data.to_owned()))),
-            None => LazyData(RefCell::new(DataGuard::NotLoaded(
+            Some(data) => LazyData(Arc::new(RwLock::new(DataGuard::Loaded(data.to_owned())))),
+            None => LazyData(Arc::new(RwLock::new(DataGuard::NotLoaded(
                 cell_meta.out_point.clone(),
-            ))),
+            )))),
         }
     }
 
-    fn access<DL: CellDataProvider>(&self, data_loader: &DL) -> Bytes {
-        let guard = self.0.borrow().to_owned();
+    fn access<DL: CellDataProvider>(&self, data_loader: &DL) -> Result<Bytes, ScriptError> {
+        let guard = self
+            .0
+            .read()
+            .map_err(|_| ScriptError::Other("RwLock poisoned".into()))?
+            .to_owned();
         match guard {
             DataGuard::NotLoaded(out_point) => {
-                let data = data_loader.get_cell_data(&out_point).expect("cell data");
-                self.0.replace(DataGuard::Loaded(data.to_owned()));
-                data
+                let data = data_loader
+                    .get_cell_data(&out_point)
+                    .ok_or(ScriptError::Other("cell data not found".into()))?;
+                let mut write_guard = self
+                    .0
+                    .write()
+                    .map_err(|_| ScriptError::Other("RwLock poisoned".into()))?;
+                *write_guard = DataGuard::Loaded(data.clone());
+                Ok(data)
             }
-            DataGuard::Loaded(bytes) => bytes,
+            DataGuard::Loaded(bytes) => Ok(bytes),
         }
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, Clone)]
 enum Binaries {
     Unique(Byte32, LazyData),
     Duplicate(Byte32, LazyData),
@@ -517,7 +527,7 @@ impl<DL: CellDataProvider + HeaderProvider + ExtensionProvider + Send + Sync + C
         match script_hash_type {
             ScriptHashType::Data | ScriptHashType::Data1 | ScriptHashType::Data2 => {
                 if let Some(lazy) = self.binaries_by_data_hash.get(&script.code_hash()) {
-                    Ok(lazy.access(&self.data_loader))
+                    Ok(lazy.access(&self.data_loader)?)
                 } else {
                     Err(ScriptError::ScriptNotFound(script.code_hash()))
                 }
@@ -525,8 +535,8 @@ impl<DL: CellDataProvider + HeaderProvider + ExtensionProvider + Send + Sync + C
             ScriptHashType::Type => {
                 if let Some(ref bin) = self.binaries_by_type_hash.get(&script.code_hash()) {
                     match bin {
-                        Binaries::Unique(_, ref lazy) => Ok(lazy.access(&self.data_loader)),
-                        Binaries::Duplicate(_, ref lazy) => Ok(lazy.access(&self.data_loader)),
+                        Binaries::Unique(_, ref lazy) => Ok(lazy.access(&self.data_loader)?),
+                        Binaries::Duplicate(_, ref lazy) => Ok(lazy.access(&self.data_loader)?),
                         Binaries::Multiple => Err(ScriptError::MultipleMatches),
                     }
                 } else {
