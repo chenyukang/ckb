@@ -148,6 +148,7 @@ impl VerifyMgr {
     }
 
     async fn start_loop(&mut self) {
+        return;
         let mut join_handles = Vec::new();
         for w in self.workers.iter_mut() {
             let h = w.1.clone().start();
