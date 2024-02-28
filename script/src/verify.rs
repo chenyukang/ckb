@@ -98,25 +98,13 @@ impl LazyData {
     }
 }
 
-impl PartialEq for LazyData {
-    fn eq(&self, other: &Self) -> bool {
-        match (self.0.load().as_ref(), other.0.load().as_ref()) {
-            (DataGuard::NotLoaded(o1), DataGuard::NotLoaded(o2)) => o1 == o2,
-            (DataGuard::Loaded(b1), DataGuard::Loaded(b2)) => b1 == b2,
-            _ => false,
-        }
-    }
-}
-
-impl Eq for LazyData {}
-
 impl Clone for LazyData {
     fn clone(&self) -> Self {
         LazyData(Arc::clone(&self.0.load()).into())
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, Clone)]
 enum Binaries {
     Unique(Byte32, LazyData),
     Duplicate(Byte32, LazyData),
