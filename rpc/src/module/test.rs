@@ -2,9 +2,7 @@ use crate::error::RPCError;
 use async_trait::async_trait;
 use ckb_chain::chain::ChainController;
 use ckb_dao::DaoCalculator;
-use ckb_jsonrpc_types::{
-    Block, BlockTemplate, Byte32, EpochNumberWithFraction, Transaction,
-};
+use ckb_jsonrpc_types::{Block, BlockTemplate, Byte32, EpochNumberWithFraction, Transaction};
 use ckb_logger::error;
 use ckb_network::{NetworkController, SupportProtocols};
 use ckb_shared::{shared::Shared, Snapshot};
@@ -669,49 +667,6 @@ impl IntegrationTestRpc for IntegrationTestRpcImpl {
                 .into(),
         )
     }
-
-    // fn send_test_transaction(
-    //     &self,
-    //     tx: Transaction,
-    //     outputs_validator: Option<OutputsValidator>,
-    // ) -> Result<H256> {
-    //     let tx: packed::Transaction = tx.into();
-    //     let tx: core::TransactionView = tx.into_view();
-
-    //     if let Err(e) = match outputs_validator {
-    //         None | Some(OutputsValidator::Passthrough) => Ok(()),
-    //         Some(OutputsValidator::WellKnownScriptsOnly) => WellKnownScriptsOnlyValidator::new(
-    //             self.shared.consensus(),
-    //             &self.well_known_lock_scripts,
-    //             &self.well_known_type_scripts,
-    //         )
-    //         .validate(&tx),
-    //     } {
-    //         return Err(RPCError::custom_with_data(
-    //             RPCError::PoolRejectedTransactionByOutputsValidator,
-    //             format!(
-    //                 "The transaction is rejected by OutputsValidator set in params[1]: {}. \
-    //                 Please check the related information in https://github.com/nervosnetwork/ckb/wiki/Transaction-%C2%BB-Default-Outputs-Validator",
-    //                 outputs_validator.unwrap_or(OutputsValidator::WellKnownScriptsOnly).json_display()
-    //             ),
-    //             e,
-    //         ));
-    //     }
-
-    //     let tx_pool = self.shared.tx_pool_controller();
-    //     let submit_tx = tx_pool.submit_local_test_tx(tx.clone());
-
-    //     if let Err(e) = submit_tx {
-    //         error!("Send submit_tx request error {}", e);
-    //         return Err(RPCError::ckb_internal_error(e));
-    //     }
-
-    //     let tx_hash = tx.hash();
-    //     match submit_tx.unwrap() {
-    //         Ok(_) => Ok(tx_hash.unpack()),
-    //         Err(reject) => Err(RPCError::from_submit_transaction_reject(&reject)),
-    //     }
-    // }
 }
 
 impl IntegrationTestRpcImpl {
