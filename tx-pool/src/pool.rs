@@ -72,6 +72,8 @@ pub struct TxPool {
     pub recent_reject: Option<RecentReject>,
     // expiration milliseconds,
     pub(crate) expiry: u64,
+    /// conflicted cache to record conflicted transactions
+    pub(crate) conflicts_cache: lru::LruCache<ProposalShortId, TransactionView>,
 }
 
 impl TxPool {
@@ -90,6 +92,7 @@ impl TxPool {
             snapshot,
             recent_reject,
             expiry,
+            conflicts_cache: LruCache::new(150_000),
         }
     }
 
@@ -180,6 +183,26 @@ impl TxPool {
                     .get(id)
                     .map(|entry| (entry.transaction().clone(), entry.cycles))
             })
+    }
+
+    pub(crate) fn record_conflict(&mut self, tx: TransactionView) {
+        let short_id = tx.proposal_short_id();
+        self.conflicts_cache.put(short_id.clone(), tx);
+        debug!(
+            "record_conflict {:?} now cache size: {}",
+            short_id,
+            self.conflicts_cache.len()
+        );
+    }
+
+    pub(crate) fn remove_conflict(&mut self, tx: &TransactionView) {
+        let short_id = tx.proposal_short_id();
+        self.conflicts_cache.pop(&short_id);
+        debug!(
+            "remove_conflict {:?} now cache size: {}",
+            short_id,
+            self.conflicts_cache.len()
+        );
     }
 
     /// Returns tx corresponding to the id.
@@ -518,6 +541,7 @@ impl TxPool {
     ) -> Option<TransactionView> {
         self.get_tx_from_proposed_and_others(proposal_id)
             .cloned()
+            .or_else(|| self.conflicts_cache.peek(proposal_id).cloned())
             .or_else(|| {
                 self.committed_txs_hash_cache
                     .peek(proposal_id)

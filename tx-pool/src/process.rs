@@ -1097,6 +1097,8 @@ fn _update_tx_pool_for_reorg(
             {
                 debug!("Failed to add proposed tx {}, reason: {}", tx_hash, e);
                 callbacks.call_reject(tx_pool, &entry, e.clone());
+                let txv = entry.transaction().clone();
+                tx_pool.record_conflict(txv);
             } else {
                 callbacks.call_proposed(tx_pool, &entry, false);
             }
@@ -1111,6 +1113,8 @@ fn _update_tx_pool_for_reorg(
             {
                 debug!("Failed to add tx to gap {}, reason: {}", tx_hash, e);
                 callbacks.call_reject(tx_pool, &entry, e.clone());
+                let txv = entry.transaction().clone();
+                tx_pool.record_conflict(txv);
             }
         }
     }
