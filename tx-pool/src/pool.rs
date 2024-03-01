@@ -195,15 +195,15 @@ impl TxPool {
         );
     }
 
-    pub(crate) fn remove_conflict(&mut self, tx: &TransactionView) {
-        let short_id = tx.proposal_short_id();
-        self.conflicts_cache.pop(&short_id);
-        debug!(
-            "remove_conflict {:?} now cache size: {}",
-            short_id,
-            self.conflicts_cache.len()
-        );
-    }
+    // pub(crate) fn remove_conflict(&mut self, tx: &TransactionView) {
+    //     let short_id = tx.proposal_short_id();
+    //     self.conflicts_cache.pop(&short_id);
+    //     debug!(
+    //         "remove_conflict {:?} now cache size: {}",
+    //         short_id,
+    //         self.conflicts_cache.len()
+    //     );
+    // }
 
     /// Returns tx corresponding to the id.
     pub fn get_tx(&self, id: &ProposalShortId) -> Option<&TransactionView> {

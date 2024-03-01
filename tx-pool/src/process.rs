@@ -18,6 +18,7 @@ use ckb_network::PeerIndex;
 use ckb_snapshot::Snapshot;
 use ckb_store::data_loader_wrapper::AsDataLoader;
 use ckb_store::ChainStore;
+use ckb_types::core::error::OutPointError;
 use ckb_types::{
     core::{cell::ResolvedTransaction, BlockView, Capacity, Cycle, HeaderView, TransactionView},
     packed::{Byte32, ProposalShortId},
@@ -690,6 +691,17 @@ impl TxPoolService {
         let tx_hash = tx.hash();
 
         let (ret, snapshot) = self.pre_check(&tx).await;
+
+        match ret {
+            Err(Reject::Resolve(OutPointError::Dead(_))) => {
+                // this may not right, only for verifying and debugging issues
+                eprintln!("reject resolved dead: {:?}", tx.hash());
+                let _res = self
+                    .with_tx_pool_write_lock(|tx_pool, _| tx_pool.record_conflict(tx.clone()))
+                    .await;
+            }
+            _ => {}
+        }
 
         let (tip_hash, rtx, status, fee, tx_size) = try_or_return_with_snapshot!(ret, snapshot);
 
