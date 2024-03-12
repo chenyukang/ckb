@@ -824,6 +824,10 @@ impl<DL: CellDataProvider + HeaderProvider + ExtensionProvider + Send + Sync + C
         let mut current_used = 0;
         let mut cycles = current_cycles;
 
+        if limit_cycles == 8119 {
+            eprintln!("now cycles: {} current_used: {}", cycles, current_used);
+        }
+
         let (_hash, current_group) = self.groups().nth(current).ok_or_else(|| {
             ScriptError::Other(format!("snapshot group missing {current:?}")).unknown_source()
         })?;
@@ -833,14 +837,25 @@ impl<DL: CellDataProvider + HeaderProvider + ExtensionProvider + Send + Sync + C
         } else {
             vms.iter_mut()
                 .for_each(|vm| vm.set_max_cycles(limit_cycles));
+            if limit_cycles == 8119 {
+                eprintln!("here ......");
+            }
             run_vms(current_group, limit_cycles, vms, &machine_context)
         };
         match resumed_script_result {
             Ok(ChunkState::Completed(used_cycles)) => {
+                eprintln!("now change before: {}", current_used);
                 current_used = wrapping_cycles_add(current_used, used_cycles, current_group)?;
+                eprintln!(
+                    "limit_cycle: {}, now after changed: {}",
+                    limit_cycles, current_used
+                );
                 cycles = wrapping_cycles_add(cycles, used_cycles, current_group)?;
             }
             Ok(ChunkState::Suspended(vms, context)) => {
+                if limit_cycles == 8119 {
+                    eprintln!("hahah......");
+                }
                 let state = TransactionState::new(vms, context, current, cycles, limit_cycles);
                 return Ok(VerifyResult::Suspended(state));
             }
@@ -852,6 +867,10 @@ impl<DL: CellDataProvider + HeaderProvider + ExtensionProvider + Send + Sync + C
         }
 
         for (idx, (_hash, group)) in self.groups().enumerate().skip(current + 1) {
+            eprintln!(
+                "limit cycle: {}, current_cycle: {}",
+                limit_cycles, current_used
+            );
             let remain_cycles = limit_cycles.checked_sub(current_used).ok_or_else(|| {
                 ScriptError::Other(format!("expect invalid cycles {limit_cycles} {cycles}"))
                     .source(group)
