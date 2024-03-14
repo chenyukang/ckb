@@ -31,7 +31,7 @@ use ckb_verification::{
 use std::collections::HashSet;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::task::block_in_place;
 
 const DELAY_LIMIT: usize = 1_500 * 21; // 1_500 per block, 21 blocks
@@ -100,6 +100,8 @@ impl TxPoolService {
         entry: TxEntry,
         mut status: TxStatus,
     ) -> (Result<(), Reject>, Arc<Snapshot>) {
+        let instant = Instant::now();
+
         let (ret, snapshot) = self
             .with_tx_pool_write_lock(move |tx_pool, snapshot| {
                 // if snapshot changed by context switch
@@ -127,6 +129,8 @@ impl TxPoolService {
             })
             .await;
 
+        let duration = instant.elapsed();
+        debug!("[Perf] submit_entry: {:?}", duration);
         (ret, snapshot)
     }
 
@@ -195,8 +199,9 @@ impl TxPoolService {
         tx: &TransactionView,
     ) -> (Result<PreCheckedTx, Reject>, Arc<Snapshot>) {
         // Acquire read lock for cheap check
-        let tx_size = tx.data().serialized_size_in_block();
+        let instant = Instant::now();
 
+        let tx_size = tx.data().serialized_size_in_block();
         let (ret, snapshot) = self
             .with_tx_pool_read_lock(|tx_pool, snapshot| {
                 let tip_hash = snapshot.tip_hash();
@@ -211,6 +216,8 @@ impl TxPoolService {
             })
             .await;
 
+        let duration = instant.elapsed();
+        debug!("[Perf] _update_tx_pool_for_reorg: {:?}", duration);
         (ret, snapshot)
     }
 
@@ -1050,6 +1057,7 @@ fn _update_tx_pool_for_reorg(
     callbacks: &Callbacks,
     mine_mode: bool,
 ) {
+    let instant = Instant::now();
     tx_pool.snapshot = Arc::clone(&snapshot);
 
     // NOTE: `remove_by_detached_proposal` will try to re-put the given expired/detached proposals into
@@ -1120,6 +1128,9 @@ fn _update_tx_pool_for_reorg(
 
     // Remove transactions from the pool until its size <= size_limit.
     tx_pool.limit_size(callbacks);
+
+    let duration = instant.elapsed();
+    debug!("[Perf] _update_tx_pool_for_reorg: {:?}", duration);
 }
 
 pub fn all_inputs_is_unknown(snapshot: &Snapshot, tx: &TransactionView) -> bool {
