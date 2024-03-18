@@ -1102,6 +1102,7 @@ fn load_code_with_snapshot() {
         }
 
         let snap = init_snap.take().unwrap();
+        eprintln!("begin to run with max_cycles: {:?}", max_cycles);
         let result = verifier.resume_from_snap(&snap, max_cycles);
 
         match result.unwrap() {

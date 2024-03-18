@@ -245,6 +245,7 @@ where
                 .total_cycles
                 .checked_add(consumed_cycles)
                 .ok_or(Error::CyclesOverflow)?;
+            //eprintln!("vm result: {:?}", result);
             (result, consumed_cycles)
         };
         // 3. Process message box, update VM states accordingly

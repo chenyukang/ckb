@@ -651,7 +651,7 @@ where
     ///
     /// It returns the total consumed cycles if verification completed,
     /// If verify is suspended, a state will returned.
-    pub fn resumable_verify(&self, limit_cycles: Cycle) -> Result<VerifyResult, Error> {
+    pub fn resumable_verify(&self, limit_cycles: Cycle) -> Result<VerifyResult<DL>, Error> {
         let mut cycles = 0;
         let mut current_consumed_cycles = 0;
 
@@ -738,9 +738,9 @@ where
     /// If verify is suspended, a borrowed state will returned.
     pub fn resume_from_snap(
         &self,
-        snap: &TransactionSnapshot,
+        snap: &TransactionSnapshot<DL>,
         limit_cycles: Cycle,
-    ) -> Result<VerifyResult, Error> {
+    ) -> Result<VerifyResult<DL>, Error> {
         let current_group_used = snap.current_cycles;
         let mut cycles = snap.current_cycles;
         let mut current_used = 0;
@@ -750,7 +750,7 @@ where
                 .unknown_source()
         })?;
 
-        eprintln!("current_group_used: {}", current_group_used);
+        //eprintln!("current_group_used: {}", current_group_used);
 
         // continue snapshot current script
         match self.verify_group_with_chunk(current_group, limit_cycles, &snap.state) {
@@ -764,7 +764,9 @@ where
             }
             Ok(ChunkState::Suspended(state)) => {
                 let current = snap.current;
+                //eprintln!("now suspend now ......");
                 let state = TransactionState::new(state, current, cycles, limit_cycles);
+                //panic!("here");
                 return Ok(VerifyResult::Suspended(state));
             }
             Err(e) => {
@@ -775,6 +777,7 @@ where
         }
 
         for (idx, (_hash, group)) in self.groups().enumerate().skip(snap.current + 1) {
+            eprintln!("now idx: {:?}", idx);
             let remain_cycles = limit_cycles.checked_sub(current_used).ok_or_else(|| {
                 ScriptError::Other(format!("expect invalid cycles {limit_cycles} {cycles}"))
                     .source(group)
@@ -816,9 +819,9 @@ where
     /// If verify is suspended, a borrowed state will returned.
     pub fn resume_from_state(
         &self,
-        state: TransactionState,
+        state: TransactionState<DL>,
         limit_cycles: Cycle,
-    ) -> Result<VerifyResult, Error> {
+    ) -> Result<VerifyResult<DL>, Error> {
         let TransactionState {
             current,
             state,
@@ -895,7 +898,11 @@ where
     /// ## Returns
     ///
     /// It returns the total consumed cycles on completed, Otherwise it returns the verification error.
-    pub fn complete(&self, snap: &TransactionSnapshot, max_cycles: Cycle) -> Result<Cycle, Error> {
+    pub fn complete(
+        &self,
+        snap: &TransactionSnapshot<DL>,
+        max_cycles: Cycle,
+    ) -> Result<Cycle, Error> {
         let mut cycles = snap.current_cycles;
 
         let (_hash, current_group) = self.groups().nth(snap.current).ok_or_else(|| {

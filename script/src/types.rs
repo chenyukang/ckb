@@ -1,5 +1,6 @@
-use crate::v2_types::FullSuspendedState;
+use crate::{v2_scheduler::Scheduler, v2_types::FullSuspendedState};
 use ckb_error::Error;
+use ckb_traits::{CellDataProvider, ExtensionProvider, HeaderProvider};
 use ckb_types::{
     core::{Cycle, ScriptHashType},
     packed::{Byte32, Script},
@@ -305,11 +306,14 @@ impl fmt::Display for ScriptGroupType {
 
 /// Struct specifies which script has verified so far.
 /// Snapshot is lifetime free, but capture snapshot need heavy memory copy
-pub struct TransactionSnapshot {
+pub struct TransactionSnapshot<DL>
+where
+    DL: CellDataProvider + HeaderProvider + ExtensionProvider + Send + Sync + Clone + 'static,
+{
     /// current suspended script index
     pub current: usize,
     /// vm snapshots
-    pub state: Option<FullSuspendedState>,
+    pub state: Option<Scheduler<DL>>,
     /// current consumed cycle
     pub current_cycles: Cycle,
     /// limit cycles when snapshot create
@@ -318,18 +322,23 @@ pub struct TransactionSnapshot {
 
 /// Struct specifies which script has verified so far.
 /// State lifetime bound with vm machine.
-pub struct TransactionState {
+pub struct TransactionState<DL>
+where
+    DL: CellDataProvider + HeaderProvider + ExtensionProvider + Send + Sync + Clone + 'static,
+{
     /// current suspended script index
     pub current: usize,
     /// vm scheduler suspend state
-    pub state: Option<FullSuspendedState>,
+    pub state: Option<Scheduler<DL>>,
     /// current consumed cycle
     pub current_cycles: Cycle,
     /// limit cycles
     pub limit_cycles: Cycle,
 }
 
-impl TransactionState {
+impl<DL: CellDataProvider + HeaderProvider + ExtensionProvider + Send + Sync + Clone + 'static>
+    TransactionState<DL>
+{
     /// Creates a new TransactionState struct
     pub fn new(
         state: Option<FullSuspendedState>,
@@ -358,7 +367,7 @@ impl TransactionState {
     }
 }
 
-impl TransactionSnapshot {
+impl<DL: CellDataProvider + HeaderProvider + ExtensionProvider + Send + Sync + Clone + 'static> TransactionSnapshot<DL> {
     /// Return next limit cycles according to max_cycles and step_cycles
     pub fn next_limit_cycles(&self, step_cycles: Cycle, max_cycles: Cycle) -> (Cycle, bool) {
         let remain = max_cycles - self.current_cycles;
@@ -372,10 +381,10 @@ impl TransactionSnapshot {
     }
 }
 
-impl TryFrom<TransactionState> for TransactionSnapshot {
+impl<DL: CellDataProvider + HeaderProvider + ExtensionProvider + Send + Sync + Clone + 'static> TryFrom<TransactionState<DL>> for TransactionSnapshot<DL> {
     type Error = Error;
 
-    fn try_from(state: TransactionState) -> Result<Self, Self::Error> {
+    fn try_from(state: TransactionState<DL>) -> Result<Self, Self::Error> {
         let TransactionState {
             current,
             state,
@@ -396,14 +405,17 @@ impl TryFrom<TransactionState> for TransactionSnapshot {
 /// Enum represent resumable verify result
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-pub enum VerifyResult {
+pub enum VerifyResult<DL>
+where
+    DL: CellDataProvider + HeaderProvider + ExtensionProvider + Send + Sync + Clone + 'static,
+{
     /// Completed total cycles
     Completed(Cycle),
     /// Suspended state
-    Suspended(TransactionState),
+    Suspended(TransactionState<DL>),
 }
 
-impl std::fmt::Debug for TransactionSnapshot {
+impl<DL: CellDataProvider + HeaderProvider + ExtensionProvider + Send + Sync + Clone + 'static> std::fmt::Debug for TransactionSnapshot<DL> {
     fn fmt(&self, f: &mut ::core::fmt::Formatter) -> std::fmt::Result {
         f.debug_struct("TransactionSnapshot")
             .field("current", &self.current)
@@ -413,7 +425,7 @@ impl std::fmt::Debug for TransactionSnapshot {
     }
 }
 
-impl std::fmt::Debug for TransactionState {
+impl<DL: CellDataProvider + HeaderProvider + ExtensionProvider + Send + Sync + Clone + 'static> std::fmt::Debug for TransactionState<DL> {
     fn fmt(&self, f: &mut ::core::fmt::Formatter) -> std::fmt::Result {
         f.debug_struct("TransactionState")
             .field("current", &self.current)
