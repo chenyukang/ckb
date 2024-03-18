@@ -193,6 +193,9 @@ where
 
         while self.states[&ROOT_VM_ID] != VmState::Terminated {
             let consumed_cycles = self.iterate(pause.clone(), limit_cycles)?;
+            if limit_cycles < consumed_cycles {
+                eprintln!("suspended machine: {}", consumed_cycles);
+            }
             limit_cycles = limit_cycles
                 .checked_sub(consumed_cycles)
                 .ok_or(Error::CyclesExceeded)?;

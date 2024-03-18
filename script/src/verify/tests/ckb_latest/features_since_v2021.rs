@@ -550,8 +550,8 @@ fn _check_type_id_one_in_one_out_resume(step_cycles: Cycle) -> Result<(), TestCa
                     limit,
                     &Some(cur_state),
                 ) {
-                    Ok(ChunkState::Completed(used_cycles)) => {
-                        cycles += used_cycles;
+                    Ok(ChunkState::Completed(used_cycles, consumed_cycles)) => {
+                        cycles += consumed_cycles;
                         groups.pop_front();
                     }
                     Ok(ChunkState::Suspended(suspend_state)) => {
@@ -573,8 +573,8 @@ fn _check_type_id_one_in_one_out_resume(step_cycles: Cycle) -> Result<(), TestCa
                     .verify_group_with_chunk(group, limit, &tmp)
                     .unwrap()
                 {
-                    ChunkState::Completed(used_cycles) => {
-                        cycles += used_cycles;
+                    ChunkState::Completed(used_cycles, consumed_cycles) => {
+                        cycles += consumed_cycles;
                         groups.pop_front();
                         if groups.front().is_some() {
                             limit = step_cycles;
@@ -751,8 +751,8 @@ fn _check_typical_secp256k1_blake160_2_in_2_out_tx_with_chunk(step_cycles: Cycle
                     .verify_group_with_chunk(group, limit, &tmp)
                     .unwrap()
                 {
-                    ChunkState::Completed(used_cycles) => {
-                        cycles += used_cycles;
+                    ChunkState::Completed(used_cycles, consumed_cycles) => {
+                        cycles += consumed_cycles;
                     }
                     ChunkState::Suspended(snapshot) => {
                         tmp = snapshot;
@@ -984,6 +984,10 @@ fn check_typical_secp256k1_blake160_2_in_2_out_tx_with_complete() {
 
     let cycles_once = result.unwrap();
     assert!(cycles <= TWO_IN_TWO_OUT_CYCLES);
+    eprintln!("cycles: {}", cycles);
+    eprintln!("assert: {}", TWO_IN_TWO_OUT_CYCLES - CYCLE_BOUND);
+    eprintln!("once: {}", cycles_once);
+
     if script_version == crate::ScriptVersion::V2 {
         assert!(cycles >= TWO_IN_TWO_OUT_CYCLES - V2_CYCLE_BOUND);
     } else {
@@ -1093,6 +1097,7 @@ fn load_code_with_snapshot() {
         let mut init_snap: Option<TransactionSnapshot> = None;
 
         if let VerifyResult::Suspended(state) = verifier.resumable_verify(max_cycles).unwrap() {
+            eprintln!("now state cycle: {}", state.current_cycles);
             init_snap = Some(state.try_into().unwrap());
         }
 
@@ -1101,6 +1106,7 @@ fn load_code_with_snapshot() {
 
         match result.unwrap() {
             VerifyResult::Suspended(state) => {
+                eprintln!("state: {}", state.current_cycles);
                 panic!("should be completed, {state:?}");
             }
             VerifyResult::Completed(cycle) => {

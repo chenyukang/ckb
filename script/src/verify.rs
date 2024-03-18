@@ -55,7 +55,7 @@ mod tests;
 pub enum ChunkState {
     //Suspended(Vec<ResumableMachine>, Arc<Mutex<MachineContext>>),
     Suspended(Option<FullSuspendedState>),
-    Completed(Cycle),
+    Completed(Cycle, Cycle),
 }
 
 impl ChunkState {
@@ -653,17 +653,22 @@ where
     /// If verify is suspended, a state will returned.
     pub fn resumable_verify(&self, limit_cycles: Cycle) -> Result<VerifyResult, Error> {
         let mut cycles = 0;
+        let mut current_consumed_cycles = 0;
 
         let groups: Vec<_> = self.groups().collect();
         for (idx, (_hash, group)) in groups.iter().enumerate() {
             // vm should early return invalid cycles
-            let remain_cycles = limit_cycles.checked_sub(cycles).ok_or_else(|| {
-                ScriptError::Other(format!("expect invalid cycles {limit_cycles} {cycles}"))
-                    .source(group)
-            })?;
+            let remain_cycles = limit_cycles
+                .checked_sub(current_consumed_cycles)
+                .ok_or_else(|| {
+                    ScriptError::Other(format!("expect invalid cycles {limit_cycles} {cycles}"))
+                        .source(group)
+                })?;
 
             match self.verify_group_with_chunk(group, remain_cycles, &None) {
-                Ok(ChunkState::Completed(used_cycles)) => {
+                Ok(ChunkState::Completed(used_cycles, consumed_cycles)) => {
+                    current_consumed_cycles =
+                        wrapping_cycles_add(current_consumed_cycles, consumed_cycles, group)?;
                     cycles = wrapping_cycles_add(cycles, used_cycles, group)?;
                 }
                 Ok(ChunkState::Suspended(state)) => {
@@ -736,7 +741,7 @@ where
         snap: &TransactionSnapshot,
         limit_cycles: Cycle,
     ) -> Result<VerifyResult, Error> {
-        let current_group_used = snap.state.as_ref().map_or(0, |s| s.total_cycles);
+        let current_group_used = snap.current_cycles;
         let mut cycles = snap.current_cycles;
         let mut current_used = 0;
 
@@ -745,12 +750,14 @@ where
                 .unknown_source()
         })?;
 
+        eprintln!("current_group_used: {}", current_group_used);
+
         // continue snapshot current script
         match self.verify_group_with_chunk(current_group, limit_cycles, &snap.state) {
-            Ok(ChunkState::Completed(used_cycles)) => {
+            Ok(ChunkState::Completed(used_cycles, consumed_cycles)) => {
                 current_used = wrapping_cycles_add(
                     current_used,
-                    wrapping_cycles_sub(used_cycles, current_group_used, current_group)?,
+                    wrapping_cycles_sub(consumed_cycles, current_group_used, current_group)?,
                     current_group,
                 )?;
                 cycles = wrapping_cycles_add(cycles, used_cycles, current_group)?;
@@ -767,16 +774,15 @@ where
             }
         }
 
-        let skip = snap.current + 1;
-        for (idx, (_hash, group)) in self.groups().enumerate().skip(skip) {
+        for (idx, (_hash, group)) in self.groups().enumerate().skip(snap.current + 1) {
             let remain_cycles = limit_cycles.checked_sub(current_used).ok_or_else(|| {
                 ScriptError::Other(format!("expect invalid cycles {limit_cycles} {cycles}"))
                     .source(group)
             })?;
 
             match self.verify_group_with_chunk(group, remain_cycles, &None) {
-                Ok(ChunkState::Completed(used_cycles)) => {
-                    current_used = wrapping_cycles_add(current_used, used_cycles, group)?;
+                Ok(ChunkState::Completed(used_cycles, consumed_cycles)) => {
+                    current_used = wrapping_cycles_add(current_used, consumed_cycles, group)?;
                     cycles = wrapping_cycles_add(cycles, used_cycles, group)?;
                 }
                 Ok(ChunkState::Suspended(state)) => {
@@ -822,29 +828,18 @@ where
 
         let mut current_used = 0;
         let mut cycles = current_cycles;
-        if limit_cycles == 8119 {
-            eprintln!("now cycles: {} current_used: {}", cycles, current_used);
-        }
 
         let (_hash, current_group) = self.groups().nth(current).ok_or_else(|| {
             ScriptError::Other(format!("snapshot group missing {current:?}")).unknown_source()
         })?;
 
-        eprintln!("begin to run with limit_cycles: {}", limit_cycles);
+        //eprintln!("begin to run with limit_cycles: {}", limit_cycles);
         let resumed_script_result =
             self.verify_group_with_chunk(current_group, limit_cycles, &state);
 
         match resumed_script_result {
-            Ok(ChunkState::Completed(used_cycles)) => {
-                eprintln!(
-                    "now change before: {}, used_cycles: {}",
-                    current_used, used_cycles
-                );
-                current_used = wrapping_cycles_add(current_used, used_cycles, current_group)?;
-                eprintln!(
-                    "limit_cycles: {}, now after changed: {}",
-                    limit_cycles, current_used
-                );
+            Ok(ChunkState::Completed(used_cycles, consumed_cycles)) => {
+                current_used = wrapping_cycles_add(current_used, consumed_cycles, current_group)?;
                 cycles = wrapping_cycles_add(cycles, used_cycles, current_group)?;
             }
             Ok(ChunkState::Suspended(state)) => {
@@ -859,10 +854,6 @@ where
         }
 
         for (idx, (_hash, group)) in self.groups().enumerate().skip(current + 1) {
-            eprintln!(
-                "limit cycle: {}, current_cycle: {}",
-                limit_cycles, current_used
-            );
             let remain_cycles = limit_cycles.checked_sub(current_used).ok_or_else(|| {
                 ScriptError::Other(format!(
                     "here expect invalid cycles {limit_cycles} {cycles}"
@@ -871,9 +862,10 @@ where
             })?;
 
             match self.verify_group_with_chunk(group, remain_cycles, &None) {
-                Ok(ChunkState::Completed(used_cycles)) => {
-                    current_used = wrapping_cycles_add(current_used, used_cycles, group)?;
-                    cycles = wrapping_cycles_add(cycles, used_cycles, group)?;
+                Ok(ChunkState::Completed(used_cycles, consumed_cycles)) => {
+                    current_used = wrapping_cycles_add(current_used, consumed_cycles, group)?;
+                    eprintln!("used_cycles: {:?}", used_cycles);
+                    cycles = wrapping_cycles_add(cycles, consumed_cycles, group)?;
                 }
                 Ok(ChunkState::Suspended(state)) => {
                     let current = idx;
@@ -920,7 +912,7 @@ where
         // continue snapshot current script
         // max_cycles - cycles checked
         match self.verify_group_with_chunk(current_group, max_cycles - cycles, &snap.state) {
-            Ok(ChunkState::Completed(used_cycles)) => {
+            Ok(ChunkState::Completed(used_cycles, _consumed_cycles)) => {
                 cycles = wrapping_cycles_add(cycles, used_cycles, current_group)?;
             }
             Ok(ChunkState::Suspended(_)) => {
@@ -942,7 +934,7 @@ where
             })?;
 
             match self.verify_group_with_chunk(group, remain_cycles, &None) {
-                Ok(ChunkState::Completed(used_cycles)) => {
+                Ok(ChunkState::Completed(used_cycles, _consumed_cycles)) => {
                     cycles = wrapping_cycles_add(cycles, used_cycles, current_group)?;
                 }
                 Ok(ChunkState::Suspended(_)) => {
@@ -1027,7 +1019,7 @@ where
                 max_cycles,
             };
             match verifier.verify() {
-                Ok(cycles) => Ok(ChunkState::Completed(cycles)),
+                Ok(cycles) => Ok(ChunkState::Completed(cycles, cycles)),
                 Err(ScriptError::ExceededMaximumCycles(_)) => Ok(ChunkState::suspended_type_id()),
                 Err(e) => Err(e),
             }
@@ -1064,13 +1056,17 @@ where
             VMInternalError::CyclesExceeded => ScriptError::ExceededMaximumCycles(max_cycles),
             _ => ScriptError::VMInternalError(error),
         };
-        eprintln!("scheduler run with max_cycles: {}", max_cycles);
+        //eprintln!("scheduler run with max_cycles: {}", max_cycles);
+        let previous_cycles = scheduler.consumed_cycles();
         let res = scheduler.run(RunMode::LimitCycles(max_cycles));
         match res {
             Ok((exit_code, cycles)) => {
                 if exit_code == 0 {
-                    eprintln!("finished with cycles: {}", cycles);
-                    Ok(ChunkState::Completed(cycles))
+                    //eprintln!("finished with cycles: {}", cycles);
+                    Ok(ChunkState::Completed(
+                        cycles,
+                        scheduler.consumed_cycles() - previous_cycles,
+                    ))
                 } else {
                     Err(ScriptError::validation_failure(
                         &script_group.script,
@@ -1081,7 +1077,7 @@ where
             Err(error) => match error {
                 VMInternalError::CyclesExceeded => {
                     if let Ok(snapshot) = scheduler.suspend() {
-                        //eprintln!("now make snapshot ...");
+                        //eprintln!("now make snapshot ... : {}", snapshot.total_cycles);
                         return Ok(ChunkState::suspended(snapshot));
                     } else {
                         panic!("scheduler suspend error");
