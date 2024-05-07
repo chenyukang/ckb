@@ -30,6 +30,8 @@ use jsonrpc_core::Result;
 use jsonrpc_utils::rpc;
 use std::collections::HashSet;
 use std::sync::Arc;
+use tokio::sync::oneshot;
+use tokio::time::{timeout, Duration};
 
 /// RPC Module Chain for methods related to the canonical chain.
 ///
@@ -1008,7 +1010,10 @@ pub trait ChainRpc {
     /// }
     /// ```
     #[rpc(name = "get_block_economic_state")]
-    fn get_block_economic_state(&self, block_hash: H256) -> Result<Option<BlockEconomicState>>;
+    async fn get_block_economic_state(
+        &self,
+        block_hash: H256,
+    ) -> Result<Option<BlockEconomicState>>;
 
     /// Returns a Merkle proof that transactions are included in a block.
     ///
@@ -1826,8 +1831,40 @@ impl ChainRpc for ChainRpcImpl {
         Ok(self.shared.snapshot().tip_header().number().into())
     }
 
-    fn get_block_economic_state(&self, block_hash: H256) -> Result<Option<BlockEconomicState>> {
+    async fn get_block_economic_state(
+        &self,
+        block_hash: H256,
+    ) -> Result<Option<BlockEconomicState>> {
         let snapshot = self.shared.snapshot();
+
+        //let res = test_demo().await;
+        //eprintln!("res: {:?}", res);
+
+        let (tx, rx) = oneshot::channel();
+
+        let (cancel_tx, cancel_rx) = oneshot::channel::<i32>();
+
+        let task = tokio::spawn(async move {
+            let result = tokio::select! {
+                result = test_demo() => result,
+                _ = cancel_rx => {
+                    eprintln!("Task was cancelled");
+                    return;
+                }
+            };
+            let _ = tx.send(result);
+        });
+
+        let res = match timeout(Duration::from_secs(5), rx).await {
+            Ok(Ok(value)) => value,
+            Ok(Err(e)) => 2,
+            Err(_) => {
+                let _ = cancel_tx.send(1);
+                drop(task);
+                3
+            }
+        };
+        eprintln!("res: {:?}", res);
 
         let block_number = if let Some(block_number) = snapshot.get_block_number(&block_hash.pack())
         {
@@ -2388,4 +2425,11 @@ impl<'a> CyclesEstimator<'a> {
             )),
         }
     }
+}
+
+async fn test_demo() -> i32 {
+    loop {
+        eprintln!("test");
+    }
+    1
 }

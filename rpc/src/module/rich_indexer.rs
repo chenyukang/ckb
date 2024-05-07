@@ -7,6 +7,7 @@ use ckb_jsonrpc_types::{
 use ckb_rich_indexer::AsyncRichIndexerHandle;
 use jsonrpc_core::Result;
 use jsonrpc_utils::rpc;
+use tokio::time::{timeout, Duration};
 
 /// RPC Module Rich Indexer.
 #[rpc(openrpc)]
@@ -207,9 +208,15 @@ impl RichIndexerRpc for RichIndexerRpcImpl {
         &self,
         search_key: IndexerSearchKey,
     ) -> Result<Option<IndexerCellsCapacity>> {
-        self.handle
-            .get_cells_capacity(search_key)
-            .await
-            .map_err(|e| RPCError::custom(RPCError::Indexer, e))
+        let search_request = self.handle.get_cells_capacity(search_key);
+
+        let timeout_duration = Duration::from_secs(30); // Set timeout to 30 seconds
+        match timeout(timeout_duration, search_request).await {
+            Ok(result) => result.map_err(|e| RPCError::custom(RPCError::Indexer, e)),
+            Err(_) => Err(RPCError::custom(
+                RPCError::Indexer,
+                "Timeout occurred".to_string(),
+            )),
+        }
     }
 }
