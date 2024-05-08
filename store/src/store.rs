@@ -227,6 +227,7 @@ pub trait ChainStore: Send + Sync + Sized {
     fn get_block_extension(&self, hash: &packed::Byte32) -> Option<packed::Bytes> {
         if let Some(cache) = self.cache() {
             if let Some(data) = cache.block_extensions.lock().get(hash) {
+                eprintln!("get_block_extension cache hit");
                 return data.clone();
             }
         };

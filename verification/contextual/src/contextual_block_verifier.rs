@@ -397,6 +397,7 @@ impl<'a, 'b, CS: ChainStore + VersionbitsIndexer + 'static> BlockTxsVerifier<'a,
         };
 
         let tx_env = Arc::new(TxVerifyEnv::new_commit(&self.header));
+        //let skip_script_verify = false;
 
         // make verifiers orthogonal
         let ret = resolved
@@ -476,7 +477,7 @@ impl<'a, 'b, CS: ChainStore + VersionbitsIndexer + 'static> BlockTxsVerifier<'a,
             .collect::<Result<Vec<(Byte32, Completed)>, Error>>()?;
 
         let sum: Cycle = ret.iter().map(|(_, cache_entry)| cache_entry.cycles).sum();
-        let cache_entires = ret
+        let cache_entires: Vec<Completed> = ret
             .iter()
             .map(|(_, completed)| completed)
             .cloned()
@@ -484,6 +485,13 @@ impl<'a, 'b, CS: ChainStore + VersionbitsIndexer + 'static> BlockTxsVerifier<'a,
         if !ret.is_empty() {
             self.update_cache(ret);
         }
+
+        let clone = cache_entires.clone();
+        eprintln!(
+            "cache_entires: {:?}, skip_script_verify: {}",
+            clone.iter().map(|x| x.cycles).sum::<Cycle>(),
+            skip_script_verify
+        );
 
         if sum > self.context.consensus.max_block_cycles() {
             Err(BlockErrorKind::ExceededMaximumCycles.into())

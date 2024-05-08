@@ -180,6 +180,7 @@ impl StoreTransaction {
         self.insert_raw(COLUMN_BLOCK_HEADER, hash.as_slice(), header.as_slice())?;
         self.insert_raw(COLUMN_BLOCK_UNCLE, hash.as_slice(), uncles.as_slice())?;
         if let Some(extension) = block.extension() {
+            eprintln!("insert block extension: {hash}");
             self.insert_raw(
                 COLUMN_BLOCK_EXTENSION,
                 hash.as_slice(),
@@ -246,6 +247,7 @@ impl StoreTransaction {
         ext: &BlockExt,
     ) -> Result<(), Error> {
         let packed_ext: packed::BlockExtV1 = ext.pack();
+        eprintln!("insert block ext: {block_hash} {:?}", ext.cycles);
         self.insert_raw(
             COLUMN_BLOCK_EXT,
             block_hash.as_slice(),

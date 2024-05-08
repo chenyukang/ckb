@@ -483,6 +483,7 @@ impl ChainService {
             db_txn.insert_block_ext(&block.header().hash(), &ext)?;
         }
         db_txn.commit()?;
+        eprintln!("commit success");
 
         if new_best_block {
             let tip_header = block.header();
@@ -839,6 +840,7 @@ impl ChainService {
                 attach_block_cell(&txn, b)?;
                 mmr.push(b.digest())
                     .map_err(|e| InternalErrorKind::MMR.other(e))?;
+                eprintln!("begin to insert ok ext with none ....");
                 self.insert_ok_ext(&txn, &b.header().hash(), ext.clone(), None, None)?;
             }
         }
@@ -888,6 +890,7 @@ impl ChainService {
                 .iter()
                 .map(|entry| (entry.fee, entry.cycles))
                 .unzip();
+            eprintln!("hash: {} cycles: {:?}", hash, cycles);
             ext.txs_fees = txs_fees;
             ext.cycles = Some(cycles);
         }
@@ -902,6 +905,7 @@ impl ChainService {
         mut ext: BlockExt,
     ) -> Result<(), Error> {
         ext.verified = Some(false);
+        eprintln!("insert failed hash: {} cycles: {:?}", hash, ext.cycles);
         txn.insert_block_ext(hash, &ext)
     }
 

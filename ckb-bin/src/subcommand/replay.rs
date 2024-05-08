@@ -113,7 +113,7 @@ fn process_range_block(
     tx_count
 }
 
-fn sanity_check(shared: Shared, mut chain: ChainService, full_verification: bool) {
+fn sanity_check(shared: Shared, mut chain: ChainService, _full_verification: bool) {
     let tip_header = shared.snapshot().tip_header().clone();
     let chain_iter = ChainIterator::new(shared.store());
     let pb = ProgressBar::new(chain_iter.len());
@@ -124,14 +124,24 @@ fn sanity_check(shared: Shared, mut chain: ChainService, full_verification: bool
             )
             .progress_chars("#>-"),
     );
-    let switch = if full_verification {
-        Switch::NONE
-    } else {
-        Switch::DISABLE_ALL - Switch::DISABLE_NON_CONTEXTUAL
-    };
+    let switch = Switch::NONE;
+    // if full_verification {
+    //     Switch::NONE
+    // } else {
+    //     Switch::DISABLE_ALL - Switch::DISABLE_NON_CONTEXTUAL
+    // };
     let mut cursor = shared.consensus().genesis_block().header();
     for block in chain_iter {
         let header = block.header();
+        let block_hash = header.hash();
+        let block_number = header.number();
+        let old_cycles = shared
+            .store()
+            .get_block_ext(&block_hash)
+            .unwrap()
+            .cycles
+            .unwrap();
+        eprintln!("hash: {} old cycles: {:?}", block_hash, old_cycles);
         if let Err(e) = chain.process_block(Arc::new(block), switch) {
             eprintln!(
                 "Replay sanity-check error: {:?} at block({}-{})",
@@ -145,6 +155,25 @@ fn sanity_check(shared: Shared, mut chain: ChainService, full_verification: bool
             pb.inc(1);
             cursor = header;
         }
+        let new_cycles = shared
+            .store()
+            .get_block_ext(&block_hash)
+            .unwrap()
+            .cycles
+            .unwrap();
+
+        eprintln!("hash: {} new cycles: {:?}", block_hash, new_cycles);
+        if old_cycles != new_cycles {
+            eprintln!(
+                "Sanity-check break at block({}-{}); expect cycles({:?}), actual cycles({:?})",
+                block_number, block_hash, old_cycles, new_cycles,
+            );
+            break;
+        }
+        eprintln!(
+            "block_number: {}, block_hash: {}, cycles: {:?}",
+            block_number, block_hash, new_cycles
+        );
     }
     pb.finish_with_message("finish");
 
