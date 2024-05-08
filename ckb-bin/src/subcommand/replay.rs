@@ -155,12 +155,7 @@ fn sanity_check(shared: Shared, mut chain: ChainService, _full_verification: boo
             pb.inc(1);
             cursor = header;
         }
-        let new_cycles = shared
-            .store()
-            .get_block_ext(&block_hash)
-            .unwrap()
-            .cycles
-            .unwrap();
+        let new_cycles = chain.shared.store().get_block_ext(&block_hash).unwrap().cycles.unwrap();
 
         eprintln!("hash: {} new cycles: {:?}", block_hash, new_cycles);
         if old_cycles != new_cycles {

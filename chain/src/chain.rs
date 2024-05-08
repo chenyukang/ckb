@@ -206,7 +206,7 @@ impl GlobalIndex {
 ///
 /// The ChainService provides a single-threaded background executor.
 pub struct ChainService {
-    shared: Shared,
+    pub shared: Shared,
     proposal_table: ProposalTable,
 }
 
