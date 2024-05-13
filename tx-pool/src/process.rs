@@ -341,8 +341,9 @@ impl TxPoolService {
             return Err(Reject::Duplicated(tx.hash()));
         }
 
+        let mut command_rx = self.command_rx.clone();
         if let Some((ret, snapshot)) = self
-            ._process_tx(tx.clone(), remote.map(|r| r.0), None)
+            ._process_tx(tx.clone(), remote.map(|r| r.0), Some(&mut command_rx))
             .await
         {
             self.after_process(tx, remote, &snapshot, &ret).await;

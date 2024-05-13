@@ -116,6 +116,7 @@ pub(crate) enum Message {
     #[cfg(feature = "internal")]
     PackageTxs(Request<Option<u64>, Vec<TxEntry>>),
     SubmitLocalTestTx(Request<TransactionView, SubmitTxResult>),
+    SubmitVerifyTx(Request<TransactionView, Cycle>),
 }
 
 #[derive(Debug, Hash, Eq, PartialEq)]
@@ -383,6 +384,10 @@ impl TxPoolController {
     pub fn submit_local_test_tx(&self, tx: TransactionView) -> Result<SubmitTxResult, AnyError> {
         send_message!(self, SubmitLocalTestTx, tx)
     }
+
+    pub fn send_test_verify_tx(&self, tx: TransactionView) -> Result<Cycle, AnyError> {
+        send_message!(self, SubmitVerifyTx, tx)
+    }
 }
 
 /// A builder used to create TxPoolService.
@@ -504,6 +509,7 @@ impl TxPoolServiceBuilder {
             consensus,
             delay: Arc::new(RwLock::new(LinkedHashMap::new())),
             after_delay: Arc::new(AtomicBool::new(after_delay_window)),
+            command_rx: self.chunk_rx.clone(),
         };
 
         let mut verify_mgr =
@@ -655,6 +661,7 @@ pub(crate) struct TxPoolService {
     pub(crate) block_assembler_sender: mpsc::Sender<BlockAssemblerMessage>,
     pub(crate) delay: Arc<RwLock<LinkedHashMap<ProposalShortId, TransactionView>>>,
     pub(crate) after_delay: Arc<AtomicBool>,
+    pub(crate) command_rx: watch::Receiver<ChunkCommand>,
 }
 
 /// tx verification result
@@ -920,6 +927,21 @@ async fn process(mut service: TxPoolService, message: Message) {
             if let Err(e) = responder.send(()) {
                 error!("Responder sending plug_entry failed {:?}", e);
             };
+        }
+        Message::SubmitVerifyTx(Request {
+            responder,
+            arguments: tx,
+        }) => {
+            let cycles = service.process_tx(tx, None).await;
+            if let Ok(res) = cycles {
+                if let Err(e) = responder.send(res.cycles) {
+                    error!("Responder sending submit_verify_tx failed {:?}", e);
+                };
+            } else {
+                if let Err(e) = responder.send(u64::max_value()) {
+                    error!("Run submit_verify_tx failed {:?}", e);
+                };
+            }
         }
         #[cfg(feature = "internal")]
         Message::PackageTxs(Request {
