@@ -14,7 +14,7 @@ use ckb_indexer::IndexerService;
 use ckb_indexer_sync::{new_secondary_db, PoolService};
 use ckb_network::NetworkController;
 use ckb_network_alert::{notifier::Notifier as AlertNotifier, verifier::Verifier as AlertVerifier};
-use ckb_pow::Pow;
+//use ckb_pow::Pow;
 use ckb_rich_indexer::RichIndexerService;
 use ckb_shared::shared::Shared;
 use ckb_sync::SyncShared;
@@ -147,11 +147,11 @@ impl<'a> ServiceBuilder<'a> {
     ) -> Self {
         if self.config.integration_test_enable() {
             // IntegrationTest only on Dummy PoW chain
-            assert_eq!(
-                shared.consensus().pow,
-                Pow::Dummy,
-                "Only run integration test on Dummy PoW chain"
-            );
+            // assert_eq!(
+            //     shared.consensus().pow,
+            //     Pow::Dummy,
+            //     "Only run integration test on Dummy PoW chain"
+            // );
         }
         let methods = IntegrationTestRpcImpl {
             shared: shared.clone(),

@@ -15,7 +15,7 @@ use ckb_types::{
         cell::{
             resolve_transaction, OverlayCellProvider, ResolvedTransaction, TransactionsProvider,
         },
-        BlockView,
+        BlockView, Cycle,
     },
     packed,
     prelude::*,
@@ -591,6 +591,12 @@ pub trait IntegrationTestRpc {
         tx: Transaction,
         outputs_validator: Option<OutputsValidator>,
     ) -> Result<H256>;
+
+    #[rpc(name = "send_test_verify_action")]
+    fn send_test_verify_action(&self, action: String) -> Result<String>;
+
+    #[rpc(name = "send_test_verify_tx")]
+    fn send_test_verify_tx(&self, tx: Transaction) -> Result<Cycle>;
 }
 
 #[derive(Clone)]
@@ -803,6 +809,43 @@ impl IntegrationTestRpc for IntegrationTestRpcImpl {
         match submit_tx.unwrap() {
             Ok(_) => Ok(tx_hash.unpack()),
             Err(reject) => Err(RPCError::from_submit_transaction_reject(&reject)),
+        }
+    }
+
+    fn send_test_verify_action(&self, action: String) -> Result<String> {
+        let tx_pool = self.shared.tx_pool_controller();
+        if action == "suspend" {
+            let _ = tx_pool.suspend_chunk_process();
+        } else if action == "resume" {
+            let _ = tx_pool.continue_chunk_process();
+        } else {
+            return Err(RPCError::custom(
+                RPCError::Invalid,
+                format!("Invalid action: {}", action),
+            ));
+        }
+        return Ok(action.to_string());
+    }
+
+    fn send_test_verify_tx(&self, tx: Transaction) -> Result<Cycle> {
+        let tx_pool = self.shared.tx_pool_controller();
+        let tx: packed::Transaction = tx.into();
+        let txv: core::TransactionView = tx.into_view();
+        let res = tx_pool.send_test_verify_tx(txv);
+        if let Ok(cycle) = res {
+            if cycle < u64::MAX {
+                return Ok(cycle);
+            } else {
+                return Err(RPCError::custom(
+                    RPCError::CKBInternalError,
+                    "Failed to verify tx".to_string(),
+                ));
+            }
+        } else {
+            Err(RPCError::custom(
+                RPCError::CKBInternalError,
+                format!("Failed receive verify tx: {:?}", res),
+            ))
         }
     }
 }
