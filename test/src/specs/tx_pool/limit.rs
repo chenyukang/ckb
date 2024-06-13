@@ -120,6 +120,7 @@ impl Spec for TxPoolLimitAncestorCount {
             let res = node0
                 .rpc_client()
                 .get_transaction_with_verbosity(tx.hash(), 2);
+            //eprintln!("tx: {}, res: {:?}", i, res);
             if i < 127 {
                 assert!(matches!(res.tx_status.status, Status::Rejected));
             } else {
@@ -156,5 +157,9 @@ impl Spec for TxPoolLimitAncestorCount {
                 assert!(res.is_ok());
             }
         }
+    }
+
+    fn modify_app_config(&self, config: &mut ckb_app_config::CKBAppConfig) {
+        config.tx_pool.max_ancestors_count = 125;
     }
 }

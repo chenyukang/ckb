@@ -136,7 +136,6 @@ fn test_default_outputs_validator() {
 }
 
 #[test]
-#[ignore]
 fn test_send_transaction_exceeded_maximum_ancestors_count() {
     let suite = setup(always_success_consensus());
 
@@ -145,11 +144,18 @@ fn test_send_transaction_exceeded_maximum_ancestors_count() {
     let tip_block = store.get_block(&tip.hash()).unwrap();
     let mut parent_tx_hash = tip_block.transactions().first().unwrap().hash();
 
-    // generate 30 child-spends-parent txs
-    for i in 0..130 {
+    let first_tx = tip_block.transactions().first().unwrap().clone();
+    let outputs = first_tx.outputs().into_iter().collect::<Vec<_>>();
+    let mut capacity: u64 = outputs[0].capacity().unpack();
+    capacity -= 3000;
+    eprintln!("capacity: {:?}", capacity);
+
+    // generate 2050 child-spends-parent txs
+    for i in 0..2050 {
         let input = CellInput::new(OutPoint::new(parent_tx_hash.clone(), 0), 0);
+
         let output = CellOutputBuilder::default()
-            .capacity(Capacity::bytes(1000 - i).unwrap().pack())
+            .capacity(Capacity::shannons(capacity - i * 3000).pack())
             .lock(always_success_cell().2.clone())
             .build();
         let cell_dep = CellDep::new_builder()
@@ -171,10 +177,28 @@ fn test_send_transaction_exceeded_maximum_ancestors_count() {
         parent_tx_hash = tx.hash();
     }
 
-    suite.wait_block_template_array_ge("proposals", 125);
+    // block template size and cycle limit, 1500 txs will be added to proposal list
+    suite.wait_block_template_array_ge("proposals", 1500);
 
-    // 130 txs will be added to proposal list
-    while store.get_tip_header().unwrap().number() != (tip.number() + 2) {
+    // 2048 txs will be added to proposal list
+    eprintln!(
+        "tip number: {:?} tip_number + 2: {:?}",
+        tip.number(),
+        tip.number() + 2
+    );
+    while store.get_tip_header().unwrap().number() != (tip.number() + 3) {
+        let response = suite.rpc(&RpcTestRequest {
+            id: 42,
+            jsonrpc: "2.0".to_string(),
+            method: "get_block_template".to_string(),
+            params: vec![],
+        });
+        eprintln!(
+            "tip: {} proposals: {} transactions: {}\n\n",
+            store.get_tip_header().unwrap().number(),
+            response.result["proposals"].as_array().unwrap().len(),
+            response.result["transactions"].as_array().unwrap().len(),
+        );
         sleep(Duration::from_millis(400));
         suite.rpc(&RpcTestRequest {
             id: 42,
@@ -184,9 +208,10 @@ fn test_send_transaction_exceeded_maximum_ancestors_count() {
         });
     }
 
-    // the default value of pool config `max_ancestors_count` is 125,
-    // only 125 txs will be added to committed list of the block template
-    suite.wait_block_template_array_ge("transactions", 1);
+    // the default value of pool config `max_ancestors_count` is 2048,
+    // 1500 txs will be added to previous block,
+    // now left 548 will be in the committed list of the block template
+    suite.wait_block_template_array_ge("transactions", 548);
 
     let response = suite.rpc(&RpcTestRequest {
         id: 42,
@@ -196,7 +221,7 @@ fn test_send_transaction_exceeded_maximum_ancestors_count() {
     });
 
     assert_eq!(
-        125,
+        548,
         response.result["transactions"].as_array().unwrap().len()
     );
 }

@@ -407,8 +407,14 @@ impl BlockAssembler {
             }
 
             let max_block_cycles = consensus.max_block_cycles();
+            eprintln!(
+                "txs_size_limit: {:?} max_block_cycles: {:?}",
+                txs_size_limit, max_block_cycles
+            );
+
             let (txs, _txs_size, _cycles) = tx_pool_reader
                 .package_txs(max_block_cycles, txs_size_limit.expect("overflow checked"));
+            eprintln!("debug txs: {:?}", txs.len());
             txs
         };
 

@@ -156,8 +156,20 @@ impl RpcTestSuite {
         });
 
         loop {
+            eprintln!(
+                "proposals: {} transactions: {} target: {}",
+                response.result["proposals"].as_array().unwrap().len(),
+                response.result["transactions"].as_array().unwrap().len(),
+                size,
+            );
             if response.result[field].as_array().unwrap().len() < size {
                 sleep(Duration::from_millis(400));
+                eprintln!(
+                    "proposals: {} transactions: {} target: {}",
+                    response.result["proposals"].as_array().unwrap().len(),
+                    response.result["transactions"].as_array().unwrap().len(),
+                    size,
+                );
                 response = self.rpc(&RpcTestRequest {
                     id: 42,
                     jsonrpc: "2.0".to_string(),
