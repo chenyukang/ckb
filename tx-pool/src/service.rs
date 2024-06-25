@@ -687,19 +687,25 @@ async fn process(mut service: TxPoolService, message: Message) {
             responder,
             arguments: tx,
         }) => {
+            let instant = std::time::Instant::now();
             let result = service.process_tx(tx, None).await.map(|_| ());
             if let Err(e) = responder.send(result) {
                 error!("Responder sending submit_tx result failed {:?}", e);
             };
+            let elapsed = instant.elapsed();
+            info!("submit_local_tx elapsed: {:?}", elapsed);
         }
         Message::SubmitLocalTestTx(Request {
             responder,
             arguments: tx,
         }) => {
+            let instant = std::time::Instant::now();
             let result = service.resumeble_process_tx(tx, None).await.map(|_| ());
             if let Err(e) = responder.send(result) {
                 error!("Responder sending submit_tx result failed {:?}", e);
             };
+            let elapsed = instant.elapsed();
+            info!("submit_local_test_tx elapsed: {:?}", elapsed);
         }
         Message::RemoveLocalTx(Request {
             responder,
