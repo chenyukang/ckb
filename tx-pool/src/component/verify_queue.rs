@@ -73,7 +73,8 @@ impl VerifyQueue {
 
     /// Returns true if the queue is full.
     pub fn is_full(&self) -> bool {
-        self.len() >= DEFAULT_MAX_VERIFY_TRANSACTIONS
+        return false;
+        //self.len() >= DEFAULT_MAX_VERIFY_TRANSACTIONS
     }
 
     /// Returns true if the queue contains a tx with the specified id.
