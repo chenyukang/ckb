@@ -17,7 +17,8 @@ pub struct TxPoolConfig {
     /// txs need to pay larger fee rate than this for RBF
     #[serde(with = "FeeRateDef")]
     pub min_rbf_rate: FeeRate,
-    /// tx pool rejects txs that cycles greater than max_tx_verify_cycles
+    /// tx pool will treat txs with cycles larger than this as a LARGE cycle tx
+    /// it will be processed in the background tasks, and will also be in a low priority
     pub max_tx_verify_cycles: Cycle,
     /// max ancestors size limit for a single tx
     pub max_ancestors_count: usize,

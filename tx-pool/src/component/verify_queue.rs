@@ -69,7 +69,10 @@ struct VerifyEntry {
     #[multi_index(ordered_non_unique)]
     sort_key: SortKey,
 
-    /// other sort key
+    #[multi_index(hashed_non_unique)]
+    is_large_tx: bool,
+
+    /// the tx entry
     inner: Entry,
 }
 
@@ -81,15 +84,18 @@ pub(crate) struct VerifyQueue {
     ready_rx: Arc<Notify>,
     /// total tx size in the queue, will reject new transaction if exceed the limit
     total_tx_size: usize,
+    /// size of large cycle txs
+    large_tx_cycle_limit: Cycle,
 }
 
 impl VerifyQueue {
     /// Create a new VerifyQueue
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(large_tx_cycle_limit: Cycle) -> Self {
         VerifyQueue {
             inner: MultiIndexVerifyEntryMap::default(),
             ready_rx: Arc::new(Notify::new()),
             total_tx_size: 0,
+            large_tx_cycle_limit,
         }
     }
 
@@ -164,6 +170,21 @@ impl VerifyQueue {
             .map(|entry| entry.inner.tx.proposal_short_id())
     }
 
+    /// Return the first normal TxEntry in the queue
+    #[allow(dead_code)]
+    pub fn pop_normal_tx(&mut self) -> Option<Entry> {
+        let short_id = self
+            .inner
+            .iter_by_sort_key()
+            .find_map(|entry| (!entry.is_large_tx).then_some(entry.inner.tx.proposal_short_id()));
+
+        if let Some(short_id) = short_id {
+            self.remove_tx(&short_id)
+        } else {
+            None
+        }
+    }
+
     /// If the queue did not have this tx present, true is returned.
     /// If the queue did have this tx present, false is returned.
     pub fn add_tx(
@@ -182,12 +203,17 @@ impl VerifyQueue {
                 tx.hash()
             )));
         }
+        let is_large_tx = remote
+            .map(|(cycle, _)| cycle > self.large_tx_cycle_limit)
+            .unwrap_or(false);
+
         self.inner.insert(VerifyEntry {
             id: tx.proposal_short_id(),
             sort_key: SortKey {
                 added_time: unix_time_as_millis(),
                 fee_rate: FeeRate::calculate(fee, tx_size as u64),
             },
+            is_large_tx,
             inner: Entry { tx, remote },
         });
         self.total_tx_size = self.total_tx_size.checked_add(tx_size).unwrap_or_else(|| {
