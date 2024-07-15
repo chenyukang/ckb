@@ -70,7 +70,7 @@ impl Worker {
                 return;
             }
             // cheap query to check queue is not empty
-            if self.tasks.read().await.peek().is_none() {
+            if self.tasks.read().await.is_empty() {
                 return;
             }
             // pick a entry to run verify

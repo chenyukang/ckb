@@ -502,7 +502,9 @@ impl TxPoolServiceBuilder {
             }
         };
 
-        let verify_queue = Arc::new(RwLock::new(VerifyQueue::new()));
+        let verify_queue = Arc::new(RwLock::new(VerifyQueue::new(
+            tx_pool.config.max_ancestors_count,
+        )));
         let (block_assembler_sender, mut block_assembler_receiver) = self.block_assembler_channel;
         let service = TxPoolService {
             tx_pool_config: Arc::new(tx_pool.config.clone()),

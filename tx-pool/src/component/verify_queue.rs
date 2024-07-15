@@ -81,20 +81,22 @@ pub(crate) struct VerifyQueue {
     ready_rx: Arc<Notify>,
     /// total tx size in the queue, will reject new transaction if exceed the limit
     total_tx_size: usize,
+    /// max ancestor search depth
+    max_ancestor_depth: usize,
 }
 
 impl VerifyQueue {
     /// Create a new VerifyQueue
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(max_ancestor_depth: usize) -> Self {
         VerifyQueue {
             inner: MultiIndexVerifyEntryMap::default(),
             ready_rx: Arc::new(Notify::new()),
             total_tx_size: 0,
+            max_ancestor_depth,
         }
     }
 
     /// Returns true if the queue contains no txs.
-    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
@@ -156,12 +158,36 @@ impl VerifyQueue {
         }
     }
 
+    /// Try to find the oldest ancestor from current entry, it may introduce some duplicated searching
+    /// when the are multiple link transactions, it should not be a performance issue
+    /// this function will be only invoked in the background tasks, and it's holding a reading lock.
+    fn find_ancestor(&self, entry: &Entry, current_depth: usize) -> Option<&Entry> {
+        if current_depth >= self.max_ancestor_depth {
+            return None;
+        }
+        let inputs = entry.tx.inputs().into_iter().map(|x| x.previous_output());
+        let cell_deps = entry.tx.cell_deps().into_iter().map(|x| x.out_point());
+        for outpoint in inputs.chain(cell_deps) {
+            let tx_hash = ProposalShortId::from_tx_hash(&outpoint.tx_hash());
+            if let Some(parent) = self.inner.get_by_id(&tx_hash) {
+                if let Some(ancestor) = self.find_ancestor(&parent.inner, current_depth + 1) {
+                    return Some(ancestor);
+                } else {
+                    return Some(&parent.inner);
+                }
+            }
+        }
+        None
+    }
+
     /// Returns the first entry in the queue
     pub fn peek(&self) -> Option<ProposalShortId> {
-        self.inner
-            .iter_by_sort_key()
-            .next()
-            .map(|entry| entry.inner.tx.proposal_short_id())
+        self.inner.iter_by_sort_key().next().map(|entry| {
+            let parent = self.find_ancestor(&entry.inner, 0);
+            parent.map_or(entry.inner.tx.proposal_short_id(), |parent| {
+                parent.tx.proposal_short_id()
+            })
+        })
     }
 
     /// If the queue did not have this tx present, true is returned.
