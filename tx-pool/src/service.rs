@@ -4,7 +4,7 @@ use crate::block_assembler::{self, BlockAssembler};
 use crate::callback::{Callbacks, PendingCallback, ProposedCallback, RejectCallback};
 use crate::component::orphan::OrphanPool;
 use crate::component::pool_map::{PoolEntry, Status};
-use crate::component::verify_queue::VerifyQueue;
+use crate::component::verify_queue::{self, VerifyQueue};
 use crate::error::{handle_recv_error, handle_send_cmd_error, handle_try_send_error};
 use crate::pool::TxPool;
 use crate::util::after_delay_window;
@@ -968,7 +968,7 @@ impl TxPoolService {
     async fn info(&self) -> TxPoolInfo {
         let tx_pool = self.tx_pool.read().await;
         let orphan = self.orphan.read().await;
-        //let verify_queue = self.verify_queue.read().await;
+        let verify_queue = self.verify_queue.read().await;
 
         let tip_header = tx_pool.snapshot.tip_header();
         TxPoolInfo {
@@ -984,7 +984,7 @@ impl TxPoolService {
             last_txs_updated_at: tx_pool.pool_map.get_max_update_time(),
             tx_size_limit: TRANSACTION_SIZE_LIMIT,
             max_tx_pool_size: self.tx_pool_config.max_tx_pool_size as u64,
-            verify_queue_size: 0 as usize,
+            verify_queue_size: verify_queue.len(),
         }
     }
 

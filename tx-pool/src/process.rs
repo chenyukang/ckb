@@ -887,9 +887,6 @@ impl TxPoolService {
         let (ret, _snapshot) = self.pre_check(&tx).await;
         error!("pre check: {:?}", instant.elapsed().as_secs_f64());
         let (_tip_hash, _rtx, _status, fee, tx_size) = ret?;
-        // use rand::Rng;
-        // let fee: Capacity = Capacity::shannons(rand::thread_rng().gen_range(1000..=3000));
-        // let tx_size = rand::thread_rng().gen_range(300..=500);
 
         let instant = Instant::now();
         let mut queue = self.verify_queue.write().await;
