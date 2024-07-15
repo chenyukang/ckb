@@ -177,3 +177,95 @@ async fn test_verify_order() {
     exit_tx.send(()).unwrap();
     assert_eq!(count.await.unwrap(), 4_usize);
 }
+
+#[tokio::test]
+
+async fn test_verify_parent_child() {
+    let (exit_tx, mut exit_rx) = watch::channel(());
+    let mut queue = VerifyQueue::new();
+    let queue_rx = queue.subscribe();
+    let count = tokio::spawn(async move {
+        let mut count = 0;
+        loop {
+            select! {
+                _ = queue_rx.notified() => {
+                    count += 1;
+                }
+                _ = exit_rx.changed() => {
+                    break;
+                }
+            }
+        }
+        count
+    });
+
+    let tx1 = build_tx(vec![(&H256([1; 32]).pack(), 0)], 1);
+    eprintln!("tx1: {:?}", tx1.proposal_short_id());
+
+    assert!(queue
+        .add_tx(tx1.clone(), Capacity::shannons(10_u64), 20, None)
+        .unwrap());
+    sleep(std::time::Duration::from_millis(100)).await;
+    // tx1 should be the only tx in the queue
+
+    let tx2 = build_tx(vec![(&tx1.hash(), 0)], 1);
+    eprintln!("tx2: {:?}", tx2.proposal_short_id());
+    assert!(queue
+        .add_tx(tx2.clone(), Capacity::shannons(20_u64), 20, None)
+        .unwrap());
+    sleep(std::time::Duration::from_millis(100)).await;
+    // now queue should be sorted by fee_rate (tx2, tx1), tx2 with higher fee, same size
+
+    // tx1 should be the first tx in the queue, since it is the parent
+    let cur = queue.peek();
+    assert_eq!(cur.unwrap(), tx1.proposal_short_id());
+
+    let tx3 = build_tx(vec![(&tx2.hash(), 0)], 1);
+    eprintln!("tx3: {:?}", tx3.proposal_short_id());
+
+    assert!(queue
+        .add_tx(tx3.clone(), Capacity::shannons(10_u64), 20, None)
+        .unwrap());
+    sleep(std::time::Duration::from_millis(100)).await;
+    // now queue should be sorted by fee_rate (tx2, tx1, tx3), tx3 with same fee rate, but comes later
+
+    // tx1 should be the first tx in the queue, since it's the parent of tx2
+    let cur = queue.peek();
+    assert_eq!(cur.unwrap(), tx1.proposal_short_id());
+
+    let tx4 = build_tx(vec![(&H256([4; 32]).pack(), 0)], 1);
+    eprintln!("tx4: {:?}", tx4.proposal_short_id());
+    assert!(queue
+        .add_tx(tx4.clone(), Capacity::shannons(10_u64), 19, None)
+        .unwrap());
+    sleep(std::time::Duration::from_millis(100)).await;
+    // now queue should be sorted by fee_rate (tx2, tx4, tx1, tx3), tx4 is high rate than tx1
+
+    let tx5 = build_tx(vec![(&tx3.hash(), 0)], 1);
+    eprintln!("tx5: {:?}", tx5.proposal_short_id());
+    assert!(queue
+        .add_tx(tx5.clone(), Capacity::shannons(50_u64), 10, None)
+        .unwrap());
+    sleep(std::time::Duration::from_millis(100)).await;
+    // now queue should be sorted by fee_rate (tx5, tx2, tx4, tx1, tx3), tx5 is highest fee rate, but tx3 is his parent
+
+    let expected_order = vec![tx1, tx2, tx3, tx5, tx4];
+    let mut i = 0;
+    for expect in expected_order {
+        let cur = queue.pop_first();
+        eprintln!(
+            "now i: {}, cur: {}  expected: {}",
+            i,
+            cur.clone().unwrap().tx.proposal_short_id(),
+            expect.proposal_short_id()
+        );
+        assert_eq!(cur.unwrap().tx, expect);
+        i += 1;
+    }
+
+    let cur = queue.pop_first();
+    assert_eq!(cur, None);
+
+    exit_tx.send(()).unwrap();
+    assert_eq!(count.await.unwrap(), 5_usize);
+}

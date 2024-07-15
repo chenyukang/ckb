@@ -156,12 +156,30 @@ impl VerifyQueue {
         }
     }
 
+    fn find_earliest_parent(&self, entry: &Entry) -> Option<&Entry> {
+        let inputs = entry.tx.inputs().into_iter().map(|x| x.previous_output());
+        let cell_deps = entry.tx.cell_deps().into_iter().map(|x| x.out_point());
+        for outpoint in inputs.chain(cell_deps) {
+            let tx_hash = ProposalShortId::from_tx_hash(&outpoint.tx_hash());
+            if let Some(parent) = self.inner.get_by_id(&tx_hash) {
+                if let Some(ancestor) = self.find_earliest_parent(&parent.inner) {
+                    return Some(ancestor);
+                } else {
+                    return Some(&parent.inner);
+                }
+            }
+        }
+        None
+    }
+
     /// Returns the first entry in the queue
     pub fn peek(&self) -> Option<ProposalShortId> {
-        self.inner
-            .iter_by_sort_key()
-            .next()
-            .map(|entry| entry.inner.tx.proposal_short_id())
+        self.inner.iter_by_sort_key().next().map(|entry| {
+            let parent = self.find_earliest_parent(&entry.inner);
+            parent.map_or(entry.inner.tx.proposal_short_id(), |parent| {
+                parent.tx.proposal_short_id()
+            })
+        })
     }
 
     /// If the queue did not have this tx present, true is returned.
