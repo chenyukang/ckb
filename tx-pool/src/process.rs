@@ -882,14 +882,20 @@ impl TxPoolService {
         tx: TransactionView,
         remote: Option<(Cycle, PeerIndex)>,
     ) -> Result<bool, Reject> {
-        // let (ret, _snapshot) = self.pre_check(&tx).await;
-        // let (_tip_hash, _rtx, _status, fee, tx_size) = ret?;
-        use rand::Rng;
-        let fee: Capacity = Capacity::shannons(rand::thread_rng().gen_range(1000..=3000));
-        let tx_size = rand::thread_rng().gen_range(300..=500);
+        let instant = Instant::now();
 
+        let (ret, _snapshot) = self.pre_check(&tx).await;
+        error!("pre check: {:?}", instant.elapsed().as_secs_f64());
+        let (_tip_hash, _rtx, _status, fee, tx_size) = ret?;
+        // use rand::Rng;
+        // let fee: Capacity = Capacity::shannons(rand::thread_rng().gen_range(1000..=3000));
+        // let tx_size = rand::thread_rng().gen_range(300..=500);
+
+        let instant = Instant::now();
         let mut queue = self.verify_queue.write().await;
-        queue.add_tx(tx, fee, tx_size, remote)
+        let res = queue.add_tx(tx, fee, tx_size, remote);
+        error!("queue add: {:?}", instant.elapsed().as_secs_f64());
+        res
     }
 
     async fn remove_orphan_txs_by_attach<'a>(&self, txs: &LinkedHashSet<TransactionView>) {

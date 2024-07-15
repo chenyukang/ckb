@@ -177,6 +177,7 @@ impl VerifyQueue {
             return Ok(false);
         }
         if self.is_full(tx_size) {
+            error!("is full now: {:?}", tx_size);
             return Err(Reject::Full(format!(
                 "verify_queue total_tx_size exceeded, failed to add tx: {:#x}",
                 tx.hash()
