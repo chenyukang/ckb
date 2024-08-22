@@ -13,7 +13,7 @@ use multi_index_map::MultiIndexMap;
 use std::sync::Arc;
 use tokio::sync::Notify;
 
-const DEFAULT_MAX_VERIFY_TRANSACTIONS: usize = 100;
+//const DEFAULT_MAX_VERIFY_TRANSACTIONS: usize = 100;
 const SHRINK_THRESHOLD: usize = 100;
 
 /// The verify queue Entry to verify.
@@ -61,9 +61,9 @@ impl VerifyQueue {
     }
 
     /// Returns the number of txs in the queue.
-    pub fn len(&self) -> usize {
-        self.inner.len()
-    }
+    // pub fn len(&self) -> usize {
+    //     self.inner.len()
+    // }
 
     /// Returns true if the queue contains no txs.
     #[allow(dead_code)]
