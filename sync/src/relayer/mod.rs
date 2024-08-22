@@ -115,6 +115,7 @@ impl Relayer {
         peer: PeerIndex,
         message: packed::RelayMessageUnionReader<'_>,
     ) -> Status {
+        eprintln!("got message: {:?}", message);
         // CompactBlock will be verified by POW, it's OK to skip rate limit checking.
         let should_check_rate =
             !matches!(message, packed::RelayMessageUnionReader::CompactBlock(_));
@@ -134,6 +135,7 @@ impl Relayer {
                 CompactBlockProcess::new(reader, self, nc, peer).execute()
             }
             packed::RelayMessageUnionReader::RelayTransactions(reader) => {
+                eprintln!("RelayTransactions .........");
                 // after ckb2023, v2 doesn't work with relay tx
                 // before ckb2023, v3 doesn't work with relay tx
                 match RelaySwitch::new(&nc, self.v3) {
@@ -659,8 +661,14 @@ impl Relayer {
 
         let connected_peers = nc.connected_peers();
         if connected_peers.is_empty() {
+            eprintln!("No connected peers");
             return;
         }
+        // else {
+        //     for peer in &connected_peers {
+        //         eprintln!("Connected peer: {}", peer);
+        //     }
+        // }
 
         let ckb2023 = nc.ckb2023();
         let tx_verify_results = self
@@ -720,12 +728,17 @@ impl Relayer {
             }
         }
         for (peer, hashes) in selected {
+            eprintln!(
+                "Send bulk of tx hashes to peer: {} hash: {:?}",
+                peer, hashes
+            );
             let content = packed::RelayTransactionHashes::new_builder()
                 .tx_hashes(hashes.pack())
                 .build();
             let message = packed::RelayMessage::new_builder().set(content).build();
-
+            eprintln!("send message: {:?}", message);
             if let Err(err) = nc.filter_broadcast(TargetSession::Single(peer), message.as_bytes()) {
+                eprintln!("relayer send TransactionHashes error: {:?}", err);
                 debug_target!(
                     crate::LOG_TARGET_RELAY,
                     "relayer send TransactionHashes error: {:?}",
@@ -842,18 +855,20 @@ impl CKBProtocolHandler for Relayer {
         peer_index: PeerIndex,
         data: Bytes,
     ) {
+        eprintln!("received data: {:?}", data);
         // If self is in the IBD state, don't process any relayer message.
         if self.shared.active_chain().is_initial_block_download() {
+            eprintln!("here is in IBD state");
             return;
         }
 
+        eprintln!("here received data: {:?}", data);
         let msg = match packed::RelayMessageReader::from_compatible_slice(&data) {
             Ok(msg) => {
                 let item = msg.to_enum();
                 if let packed::RelayMessageUnionReader::CompactBlock(ref reader) = item {
                     if reader.count_extra_fields() > 1 {
-                        info_target!(
-                            crate::LOG_TARGET_RELAY,
+                        eprintln!(
                             "Peer {} sends us a malformed message: \
                              too many fields in CompactBlock",
                             peer_index
@@ -874,8 +889,7 @@ impl CKBProtocolHandler for Relayer {
                     match packed::RelayMessageReader::from_slice(&data) {
                         Ok(msg) => msg.to_enum(),
                         _ => {
-                            info_target!(
-                                crate::LOG_TARGET_RELAY,
+                            eprintln!(
                                 "Peer {} sends us a malformed message: \
                                  too many fields",
                                 peer_index
@@ -894,11 +908,7 @@ impl CKBProtocolHandler for Relayer {
                 }
             }
             _ => {
-                info_target!(
-                    crate::LOG_TARGET_RELAY,
-                    "Peer {} sends us a malformed message",
-                    peer_index
-                );
+                eprintln!("Peer {} sends us a malformed message", peer_index);
                 nc.ban_peer(
                     peer_index,
                     BAD_MESSAGE_BAN_TIME,
@@ -908,12 +918,7 @@ impl CKBProtocolHandler for Relayer {
             }
         };
 
-        debug_target!(
-            crate::LOG_TARGET_RELAY,
-            "received msg {} from {}",
-            msg.item_name(),
-            peer_index
-        );
+        eprintln!("received msg {} from {}", msg.item_name(), peer_index);
         #[cfg(feature = "with_sentry")]
         {
             let sentry_hub = sentry::Hub::current();

@@ -732,7 +732,9 @@ async fn process(mut service: TxPoolService, message: Message) {
             responder,
             arguments: tx,
         }) => {
+            eprintln!("submit_local_tx: {:?}", tx);
             let result = service.process_tx(tx, None).await.map(|_| ());
+            eprintln!("submit_local_tx result: {:?}", result);
             if let Err(e) = responder.send(result) {
                 error!("Responder sending submit_tx result failed {:?}", e);
             };
@@ -768,6 +770,10 @@ async fn process(mut service: TxPoolService, message: Message) {
             responder,
             arguments: (tx, declared_cycles, peer),
         }) => {
+            eprintln!(
+                "submit_remote_tx: {:?}, {:?}, {:?}",
+                tx, declared_cycles, peer
+            );
             let _result = service
                 .resumeble_process_tx(tx, Some((declared_cycles, peer)))
                 .await;

@@ -227,6 +227,7 @@ impl PeerStore {
     }
 
     pub(crate) fn ban_network(&mut self, network: IpNetwork, timeout_ms: u64, ban_reason: String) {
+        eprintln!("ban network: {:?} for {:?}", network, ban_reason);
         let now_ms = ckb_systemtime::unix_time_as_millis();
         let ban_addr = BannedAddr {
             address: network,

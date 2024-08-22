@@ -377,6 +377,18 @@ impl Shared {
 
     /// Return whether chain is in initial block download
     pub fn is_initial_block_download(&self) -> bool {
+        // eprintln!(
+        //     "is_initial_block_download: {:?}",
+        //     self.ibd_finished.load(Ordering::Relaxed)
+        // );
+        // eprintln!("tip_header: {:?}", self.snapshot().tip_header().timestamp());
+        // eprintln!("unix_time_as_millis: {:?}", unix_time_as_millis());
+        // eprintln!("MAX_TIP_AGE: {:?}", MAX_TIP_AGE);
+        // eprintln!(
+        //     "saturating_sub: {:?}",
+        //     unix_time_as_millis().saturating_sub(self.snapshot().tip_header().timestamp())
+        //         > MAX_TIP_AGE
+        // );
         // Once this function has returned false, it must remain false.
         if self.ibd_finished.load(Ordering::Relaxed) {
             false
@@ -385,6 +397,7 @@ impl Shared {
         {
             true
         } else {
+            eprintln!("ibd_finished.store(true, Ordering::Relaxed);");
             self.ibd_finished.store(true, Ordering::Relaxed);
             false
         }

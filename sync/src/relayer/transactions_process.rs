@@ -36,6 +36,7 @@ impl<'a> TransactionsProcess<'a> {
 
     pub fn execute(self) -> Status {
         let shared_state = self.relayer.shared().state();
+        eprintln!("beginto execute txs");
         let txs: Vec<(TransactionView, Cycle)> = {
             // ignore the tx if it's already known or it has never been requested before
             let mut tx_filter = shared_state.tx_filter();
@@ -52,6 +53,7 @@ impl<'a> TransactionsProcess<'a> {
                     )
                 })
                 .filter(|(tx, _)| {
+                    eprintln!("execute filter tx: {:?}", tx);
                     !tx_filter.contains(&tx.hash())
                         && unknown_tx_hashes
                             .get_priority(&tx.hash())
@@ -60,11 +62,13 @@ impl<'a> TransactionsProcess<'a> {
                 })
                 .collect()
         };
+        eprintln!("got txs: {:?}", txs);
 
         if txs.is_empty() {
             return Status::ok();
         }
 
+        eprintln!("replay txs: {:?}", txs);
         let max_block_cycles = self.relayer.shared().consensus().max_block_cycles();
         if txs
             .iter()

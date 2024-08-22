@@ -156,6 +156,7 @@ impl VerifyQueue {
         tx: TransactionView,
         remote: Option<(Cycle, PeerIndex)>,
     ) -> Result<bool, Reject> {
+        eprintln!("Adding tx to verify queue: {:?}", tx);
         if self.contains_key(&tx.proposal_short_id()) {
             return Ok(false);
         }
@@ -172,7 +173,10 @@ impl VerifyQueue {
         self.inner.insert(VerifyEntry {
             id: tx.proposal_short_id(),
             added_time: unix_time_as_millis(),
-            inner: Entry { tx, remote },
+            inner: Entry {
+                tx: tx.clone(),
+                remote,
+            },
             is_large_cycle,
         });
         self.total_tx_size = self.total_tx_size.checked_add(tx_size).unwrap_or_else(|| {
@@ -183,6 +187,7 @@ impl VerifyQueue {
             self.total_tx_size
         });
         self.ready_rx.notify_one();
+        eprintln!("Finished adding tx to verify queue: {:?}", tx);
         Ok(true)
     }
 

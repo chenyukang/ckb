@@ -76,18 +76,20 @@ impl Worker {
 
     async fn process_inner(&mut self) {
         loop {
+            //eprintln!("Worker process_inner begin ....");
             if self.status != ChunkCommand::Resume {
-                info!(
-                    "Worker is not in resume status, current status: {:?}",
-                    self.status
-                );
+                // eprintln!(
+                //     "Worker is not in resume status, current status: {:?}",
+                //     self.status
+                // );
                 // sleep a while to avoid busy loop
-                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                self.tasks.write().await.re_notify();
+                //tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                //self.tasks.write().await.re_notify();
                 return;
             }
             // cheap query to check queue is not empty
             if self.tasks.read().await.is_empty() {
+                //eprintln!("Worker queue is empty");
                 return;
             }
 
@@ -109,6 +111,7 @@ impl Worker {
                 }
             };
 
+            eprintln!("Worker got entry: {:?}", entry);
             if let Some((res, snapshot)) = self
                 .service
                 ._process_tx(
@@ -118,11 +121,15 @@ impl Worker {
                 )
                 .await
             {
+                eprintln!(
+                    "Worker process_inner got res: {:?} entry.remote: {:?}",
+                    res, entry.remote
+                );
                 self.service
                     .after_process(entry.tx, entry.remote, &snapshot, &res)
                     .await;
             } else {
-                info!("_process_tx for tx: {} returned none", entry.tx.hash());
+                eprintln!("_process_tx for tx: {} returned none", entry.tx.hash());
             }
         }
     }
@@ -143,7 +150,8 @@ impl VerifyMgr {
     ) -> Self {
         // `num_cpus::get()` will always return at least 1,
         // don't use too many cpu cores to avoid high workload on the system
-        let worker_num = std::cmp::max(num_cpus::get() * 3 / 4, 1);
+        //let worker_num = std::cmp::max(num_cpus::get() * 3 / 4, 1);
+        let worker_num = 1;
         eprintln!("verify worker_num: {}", worker_num);
         let workers: Vec<_> = (0..worker_num)
             .map({

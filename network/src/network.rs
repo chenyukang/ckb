@@ -1103,14 +1103,14 @@ impl NetworkService {
                 for addr in &config.listen_addresses {
                     match p2p_service.listen(addr.to_owned()).await {
                         Ok(listen_address) => {
-                            info!("Listen on address: {}", listen_address);
+                            eprintln!("Listen on address: {}", listen_address);
                             network_state
                                 .listened_addrs
                                 .write()
                                 .push(listen_address.clone());
                         }
                         Err(err) => {
-                            warn!(
+                            eprintln!(
                                 "Listen on address {} failed, due to error: {}",
                                 addr.clone(),
                                 err

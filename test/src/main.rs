@@ -597,7 +597,11 @@ fn all_specs() -> Vec<Box<dyn Spec>> {
         Box::new(RandomlyKill),
         Box::new(SyncChurn),
     ];
-    let mut specs: Vec<Box<dyn Spec>> = vec![Box::new(SendLargeCyclesTxToRelay::new())];
+    let mut specs: Vec<Box<dyn Spec>> = vec![
+        //Box::new(RbfCellDepsCheck),
+        //Box::new(SendConflictTxToRelay),
+        Box::new(SendLargeCyclesTxToRelay::new()),
+    ];
     specs.shuffle(&mut thread_rng());
     specs
 }

@@ -347,6 +347,7 @@ impl TxPoolService {
             ._process_tx(tx.clone(), remote.map(|r| r.0), None)
             .await
         {
+            eprintln!("after_process process_tx got res: {:?}", ret);
             self.after_process(tx, remote, &snapshot, &ret).await;
             ret
         } else {
@@ -476,7 +477,7 @@ impl TxPoolService {
             None => {
                 match ret {
                     Ok(_) => {
-                        debug!("after_process local send_result_to_relayer {}", tx_hash);
+                        eprintln!("after_process local send_result_to_relayer {}", tx_hash);
                         self.send_result_to_relayer(TxVerificationResult::Ok {
                             original_peer: None,
                             with_vm_2023,
@@ -662,8 +663,9 @@ impl TxPoolService {
         if self.is_in_delay_window(&snapshot) {
             let mut delay = self.delay.write().await;
             if delay.len() < DELAY_LIMIT {
-                delay.insert(tx.proposal_short_id(), tx);
+                delay.insert(tx.proposal_short_id(), tx.clone());
             }
+            eprintln!("return none in delay window: {}", tx.hash());
             return None;
         }
 
@@ -672,6 +674,7 @@ impl TxPoolService {
         let tip_header = snapshot.tip_header();
         let tx_env = Arc::new(status.with_env(tip_header));
 
+        eprintln!("begin to verify ....");
         let verified_ret = verify_rtx(
             Arc::clone(&snapshot),
             Arc::clone(&rtx),
@@ -681,6 +684,7 @@ impl TxPoolService {
             command_rx,
         )
         .await;
+        eprintln!("verified_ret: {:?}", verified_ret);
 
         let verified = try_or_return_with_snapshot!(verified_ret, snapshot);
 

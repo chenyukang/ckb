@@ -1,5 +1,6 @@
 use super::{new_block_assembler_config, type_lock_script_code_hash};
-use crate::util::transaction::relay_tx;
+use crate::util::cell::gen_spendable;
+use crate::util::transaction::{always_success_transaction, relay_tx};
 use crate::utils::wait_until;
 use crate::{Net, Node, Spec};
 use ckb_crypto::secp::{Generator, Privkey};
@@ -81,14 +82,14 @@ impl Spec for SendLargeCyclesTxInBlock {
 }
 
 pub struct SendLargeCyclesTxToRelay {
-    random_key: RandomKey,
+    _random_key: RandomKey,
 }
 
 impl SendLargeCyclesTxToRelay {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         SendLargeCyclesTxToRelay {
-            random_key: RandomKey::new(),
+            _random_key: RandomKey::new(),
         }
     }
 }
@@ -97,26 +98,62 @@ impl Spec for SendLargeCyclesTxToRelay {
     crate::setup!(num_nodes: 2, retry_failed: 5);
 
     fn run(&self, nodes: &mut Vec<Node>) {
+        // let node0 = &nodes[0];
+
+        // let initial_inputs = gen_spendable(node0, 2);
+        // let input_a = &initial_inputs[0];
+        // let input_c = &initial_inputs[1];
+
+        // // Commit transaction root
+        // let tx_a = {
+        //     let tx_a = always_success_transaction(node0, input_a);
+        //     node0.submit_transaction(&tx_a);
+        //     tx_a
+        // };
+
         let node0 = &nodes[0];
         let node1 = &nodes[1];
 
+        node0.mine_until_out_bootstrap_period();
         node1.mine_until_out_bootstrap_period();
+
         node0.connect(node1);
         info!("Generate large cycles tx");
 
-        let tx = build_tx(node1, &self.random_key.privkey, self.random_key.lock_arg());
-        // send tx
-        let ret = node1.rpc_client().send_transaction_result(tx.data().into());
-        assert!(ret.is_ok());
+        let initial_inputs = gen_spendable(node1, 2);
+        // let _result = wait_until(60, || {
+        //     node1.get_tip_block_number() == node0.get_tip_block_number()
+        // });
 
-        info!("Node1 submit large cycles tx");
+        let input = &initial_inputs[0];
+
+        // Commit transaction root
+        let tx = {
+            let tx_a = always_success_transaction(node1, input);
+            let ret = node1.submit_transaction(&tx_a);
+            //assert!(ret.is_ok());
+            eprintln!("tx_a hash: {:?} ret: {:?}", tx_a.hash(), ret);
+            tx_a
+        };
+
+        //let tx = build_tx(node1, &self.random_key.privkey, self.random_key.lock_arg());
+
+        // send tx to node1
+        //let ret = node1.rpc_client().send_transaction_result(tx.data().into());
+        //assert!(ret.is_ok());
+
+        eprintln!("Node1 submit large cycles tx");
 
         let result = wait_until(60, || {
             node1.get_tip_block_number() == node0.get_tip_block_number()
         });
         assert!(result, "node0 can't sync with node1");
 
-        let result = wait_until(60, || {
+        eprintln!(
+            "node0.get_tip_block_number(): {}",
+            node0.get_tip_block_number()
+        );
+        let result = wait_until(120, || {
             node0
                 .rpc_client()
                 .get_transaction(tx.hash())
@@ -131,12 +168,12 @@ impl Spec for SendLargeCyclesTxToRelay {
         assert!(result, "Node0 should accept tx");
     }
 
-    fn modify_app_config(&self, config: &mut ckb_app_config::CKBAppConfig) {
-        let lock_arg = self.random_key.lock_arg();
-        config.network.connect_outbound_interval_secs = 0;
-        config.tx_pool.max_tx_verify_cycles = 5000u64;
-        let block_assembler = new_block_assembler_config(lock_arg, ScriptHashType::Type);
-        config.block_assembler = Some(block_assembler);
+    fn modify_app_config(&self, _config: &mut ckb_app_config::CKBAppConfig) {
+        //let lock_arg = self.random_key.lock_arg();
+        //config.network.connect_outbound_interval_secs = 0;
+        //config.tx_pool.max_tx_verify_cycles = 5000u64;
+        //let block_assembler = new_block_assembler_config(lock_arg, ScriptHashType::Type);
+        //config.block_assembler = Some(block_assembler);
     }
 }
 
