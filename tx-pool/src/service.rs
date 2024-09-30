@@ -738,7 +738,11 @@ async fn process(mut service: TxPoolService, message: Message) {
             responder,
             arguments: tx,
         }) => {
+            let begin_time = std::time::Instant::now();
             let result = service.process_tx(tx, None).await.map(|_| ());
+            let elapsed = begin_time.elapsed();
+            eprintln!("submit_local_tx elapsed: {:?}", elapsed);
+
             if let Err(e) = responder.send(result) {
                 error!("Responder sending submit_tx result failed {:?}", e);
             };
