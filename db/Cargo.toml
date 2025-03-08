@@ -10,7 +10,7 @@ repository = "https://github.com/nervosnetwork/ckb"
 
 [dependencies]
 ckb-app-config = { path = "../util/app-config", version = "= 0.201.0-pre" }
-ckb-logger = { path = "../util/logger", version = "= 0.201.0-pre" }
+ckb-logger = { workspace = true }
 ckb-error = { path = "../error", version = "= 0.201.0-pre" }
 libc = "0.2"
 rocksdb = { package = "ckb-rocksdb", version = "=0.21.1", features = [

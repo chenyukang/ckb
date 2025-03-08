@@ -9,7 +9,7 @@ homepage = "https://github.com/nervosnetwork/ckb"
 repository = "https://github.com/nervosnetwork/ckb"
 
 [dependencies]
-ckb-logger = { path = "../util/logger", version = "= 0.201.0-pre" }
+ckb-logger = { workspace = true }
 ckb-metrics = { path = "../util/metrics", version = "= 0.201.0-pre" }
 ckb-types = { path = "../util/types", version = "= 0.201.0-pre" }
 ckb-shared = { path = "../shared", version = "= 0.201.0-pre" }

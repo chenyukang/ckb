@@ -15,7 +15,7 @@ ckb-store = { path = "../store", version = "= 0.201.0-pre" }
 ckb-app-config = { path = "../util/app-config", version = "= 0.201.0-pre" }
 ckb-types = { path = "../util/types", version = "= 0.201.0-pre" }
 ckb-network = { path = "../network", version = "= 0.201.0-pre" }
-ckb-logger = { path = "../util/logger", version = "= 0.201.0-pre" }
+ckb-logger = { workspace = true }
 ckb-metrics = { path = "../util/metrics", version = "= 0.201.0-pre" }
 ckb-util = { path = "../util", version = "= 0.201.0-pre" }
 ckb-verification = { path = "../verification", version = "= 0.201.0-pre" }

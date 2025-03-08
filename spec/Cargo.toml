@@ -22,7 +22,7 @@ ckb-crypto = { path = "../util/crypto", version = "= 0.201.0-pre" }
 ckb-hash = { path = "../util/hash", version = "= 0.201.0-pre" }
 ckb-error = { path = "../error", version = "= 0.201.0-pre" }
 ckb-traits = { path = "../traits", version = "= 0.201.0-pre" }
-ckb-logger = { path = "../util/logger", version = "= 0.201.0-pre" }
+ckb-logger = { workspace = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 cacache = { version = "13.0.0", default-features = false, features = [

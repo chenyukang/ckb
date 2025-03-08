@@ -15,7 +15,7 @@ serde_json = { version = "1.0" }
 serde_plain = "0.3.0"
 toml = "0.5"
 ckb-app-config = { path = "../util/app-config", version = "= 0.201.0-pre" }
-ckb-logger = { path = "../util/logger", version = "= 0.201.0-pre" }
+ckb-logger = { workspace = true }
 ckb-logger-service = { path = "../util/logger-service", version = "= 0.201.0-pre" }
 ckb-metrics-service = { path = "../util/metrics-service", version = "= 0.201.0-pre" }
 ckb-util = { path = "../util", version = "= 0.201.0-pre" }

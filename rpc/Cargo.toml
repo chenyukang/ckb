@@ -17,7 +17,7 @@ ckb-shared = { path = "../shared", version = "= 0.201.0-pre" }
 ckb-store = { path = "../store", version = "= 0.201.0-pre" }
 ckb-sync = { path = "../sync", version = "= 0.201.0-pre" }
 ckb-chain = { path = "../chain", version = "= 0.201.0-pre" }
-ckb-logger = { path = "../util/logger", version = "= 0.201.0-pre" }
+ckb-logger = { workspace = true }
 ckb-logger-service = { path = "../util/logger-service", version = "= 0.201.0-pre" }
 ckb-network-alert = { path = "../util/network-alert", version = "= 0.201.0-pre" }
 ckb-app-config = { path = "../util/app-config", version = "= 0.201.0-pre" }

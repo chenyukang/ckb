@@ -98,6 +98,7 @@ members = [
 ]
 
 [workspace.dependencies]
+ckb-logger = { path = "util/logger" }
 tempfile = "3"
 itertools = "0.11.0"
 # issue tracking: https://github.com/GREsau/schemars/pull/251
