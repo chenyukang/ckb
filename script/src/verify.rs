@@ -661,7 +661,7 @@ where
                     }
                     ChunkCommand::Resume => {
                         //info!("[verify-test] run_vms_child: resume");
-                        let res = scheduler.run(RunMode::Pause(pause_cloned));
+                        let res = scheduler.run(RunMode::Pause(pause_cloned, Some(max_cycles)));
                         match res {
                             Ok(_) => {
                                 let _ = finish_tx.send(res);

@@ -260,7 +260,7 @@ where
 
         let (pause, mut limit_cycles) = match mode {
             RunMode::LimitCycles(limit_cycles) => (Pause::new(), limit_cycles),
-            RunMode::Pause(pause) => (pause, u64::MAX),
+            RunMode::Pause(pause, limit_cycles) => (pause, limit_cycles.unwrap_or(u64::MAX)),
         };
 
         while self.states[&ROOT_VM_ID] != VmState::Terminated {
