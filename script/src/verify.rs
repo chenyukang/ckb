@@ -669,6 +669,12 @@ where
                             }
                             Err(VMInternalError::Pause) => {
                                 // continue to wait for
+                                debug_assert!(
+                                    scheduler.consumed_cycles() <= max_cycles,
+                                    "Consumed cycles ({}) exceeded max_cycles ({})",
+                                    scheduler.consumed_cycles(),
+                                    max_cycles
+                                );
                             }
                             _ => {
                                 let _ = finish_tx.send(res);
