@@ -510,6 +510,7 @@ impl TxPoolService {
                     } else {
                         if reject.is_malformed_tx() {
                             self.ban_malformed(peer, format!("reject {reject}"));
+                            self.verify_queue.write().await.remove_txs_by_peer(&peer);
                         }
                         if reject.is_allowed_relay() {
                             self.send_result_to_relayer(TxVerificationResult::Reject {
