@@ -661,7 +661,7 @@ where
                     }
                     ChunkCommand::Resume => {
                         //info!("[verify-test] run_vms_child: resume");
-                        let res = scheduler.run(RunMode::Pause(pause_cloned, Some(max_cycles)));
+                        let res = scheduler.run(RunMode::Pause(pause_cloned, max_cycles));
                         match res {
                             Ok(_) => {
                                 let _ = finish_tx.send(res);
@@ -669,6 +669,12 @@ where
                             }
                             Err(VMInternalError::Pause) => {
                                 // continue to wait for
+                                debug_assert!(
+                                    scheduler.consumed_cycles() <= max_cycles,
+                                    "Consumed cycles ({}) exceeded max_cycles ({})",
+                                    scheduler.consumed_cycles(),
+                                    max_cycles
+                                );
                             }
                             _ => {
                                 let _ = finish_tx.send(res);

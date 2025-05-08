@@ -1135,5 +1135,5 @@ pub enum RunMode {
     /// Continues running until cycles are exhausted.
     LimitCycles(Cycle),
     /// Continues running until a Pause signal is received or cycles are exhausted.
-    Pause(Pause, Option<Cycle>),
+    Pause(Pause, Cycle),
 }
