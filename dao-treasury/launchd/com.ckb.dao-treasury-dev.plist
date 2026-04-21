@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ckb.dao-treasury-dev</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/yukang/code/bin/ckb</string>
+    <string>-C</string>
+    <string>/Users/yukang/code/ckb/dao-treasury</string>
+    <string>run</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/yukang/code/ckb/dao-treasury</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/yukang/code/ckb/dao-treasury/logs/launchd.stdout.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/yukang/code/ckb/dao-treasury/logs/launchd.stderr.log</string>
+</dict>
+</plist>

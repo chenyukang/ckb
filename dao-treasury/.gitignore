@@ -1,0 +1,19 @@
+# Local CKB runtime state for this experiment.
+/data/
+/logs/
+*.log
+
+# Local process state.
+/ckb-node.pid
+
+# Local private keys / keystores. Keep only documentation in git.
+/accounts/*
+!/accounts/README.md
+
+# Generated proposal, snapshot, vote, and tally artifacts.
+/artifacts/*
+!/artifacts/README.md
+
+# Temporary files.
+*.tmp
+*.bak
