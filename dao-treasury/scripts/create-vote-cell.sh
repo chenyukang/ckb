@@ -9,9 +9,9 @@ VOTER="${1:?usage: create-vote-cell.sh <alice|bob|carol> <deposit-outpoint> <yes
 DEPOSIT_OUTPOINT="${2:?usage: create-vote-cell.sh <alice|bob|carol> <deposit-outpoint> <yes|no|abstain>}"
 CHOICE="${3:?usage: create-vote-cell.sh <alice|bob|carol> <deposit-outpoint> <yes|no|abstain>}"
 
-PROPOSAL_FILE="${PROPOSAL_FILE:-$DAO_TREASURY_DIR/artifacts/proposal-2fc483c8e4ff.json}"
-SNAPSHOT_FILE="${SNAPSHOT_FILE:-$DAO_TREASURY_DIR/artifacts/snapshot-block-59.json}"
-VOTE_CAPACITY="${VOTE_CELL_CAPACITY:-1000}"
+PROPOSAL_FILE="${PROPOSAL_FILE:-$DAO_TREASURY_DIR/artifacts/proposal-fca04aaecee4.json}"
+SNAPSHOT_FILE="${SNAPSHOT_FILE:-$DAO_TREASURY_DIR/artifacts/snapshot-block-139.json}"
+VOTE_CAPACITY="${VOTE_CELL_CAPACITY:-5000}"
 
 case "$VOTER" in
   alice)

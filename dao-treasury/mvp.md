@@ -90,7 +90,9 @@ manifest 文件放入 `artifacts/`，可以进一步发布到 IPFS/Arweave/GitHu
 
 ## Snapshot 规则
 
-第一版 snapshot 是投票周期级别的数据，不属于单个 proposal。它只统计 snapshot block 时仍处于 deposit phase 的 Nervos DAO cells。同一轮 snapshot 可以被多个 proposal 引用。
+第一版主线 snapshot 是投票周期级别的数据，不属于单个 proposal。它只统计 snapshot block 时仍处于 deposit phase 的 Nervos DAO cells。同一轮 snapshot 可以被多个 proposal 引用。
+
+当前 MVP 已切到 proof-first snapshot v3：主 snapshot 文件不再携带完整 `records` 数组，只携带 metadata 和 roots。完整 records、owner index、membership proofs 是 provider-side artifacts，钱包和 tally 通过 proof 验证，不再下载和线性扫描巨大 snapshot。
 
 每条 eligible record 至少包含：
 
@@ -104,7 +106,7 @@ weight
 
 暂定第一版 `weight = deposit_capacity`。是否使用按 DAO 时间加权或 normalized capacity，留到下一轮讨论。
 
-snapshot 由独立程序生成，不放进 CKB node consensus。任何人都可以运行同一个程序，基于本地 full node / indexer 重算 snapshot root。
+snapshot 由独立程序生成，不放进 CKB node consensus。任何人都可以运行同一个程序，基于本地 full node / indexer 重算 `record_map_root`、`owner_index_root` 和 `snapshot_root`。
 
 snapshot 文件不包含 `proposal_id`。proposal manifest 后续通过 `snapshot_id` / `snapshot_root` 引用某一份 snapshot。
 
@@ -116,8 +118,9 @@ snapshot 文件不包含 `proposal_id`。proposal manifest 后续通过 `snapsho
 
 1. vote cell 中引用 `proposal_id`、`deposit_out_point`、choice。
 2. vote tx 至少花费一个 input，其 lock script 等于 snapshot record 中的 DAO deposit lock script。
-3. tally 只接受 snapshot 中存在的 `deposit_out_point`。
-4. 同一个 `deposit_out_point` 多次投票时，默认以后出现的有效 vote 为准，顺序按 `(block_number, tx_index, output_index)`。
+3. vote cell 携带该 `deposit_out_point` 的 record membership proof，证明它属于 proposal 引用的 `snapshot_root`。
+4. tally 只接受 proof 有效、proposal id 匹配、ownership proof 有效的 vote。
+5. 同一个 `deposit_out_point` 多次投票时，默认以后出现的有效 vote 为准，顺序按 `(block_number, tx_index, output_index)`。
 
 如果用户在 snapshot 后取出 DAO deposit，已经投出的 vote 对该 proposal 仍然有效。因为权重固定在 snapshot block，而不是投票结束时重新计算。
 
@@ -200,8 +203,8 @@ verification_report
 - [x] 编写 snapshot generator。
 - [x] 输入 snapshot block。
 - [x] 扫描 eligible DAO deposit cells。
-- [x] 输出 `snapshot.json` 和 `snapshot_root`。
-- [x] 编写 snapshot verifier，重算 root，并可从链上重放验证。
+- [x] 输出轻量 `snapshot.json`、provider-side `source.json`、`index.json` 和 proofs。
+- [x] 编写 snapshot verifier，重算 roots，并可从链上重放验证。
 
 ### 6. Vote MVP
 
@@ -237,7 +240,7 @@ verification_report
 | genesis hash | `0x7749e4c3e8f80d3897ba52fea27c8a0bc019b3c87895a86f42b75ca7d7eced86` |
 | node status | 已通过 macOS `launchd` 启动，RPC `127.0.0.1:8114` |
 | miner status | 未启动，当前使用 `generate_block` 快速出块 |
-| current tip | block `139` |
+| current tip | block `219` |
 
 ## 当前本地数据集
 
@@ -263,22 +266,26 @@ verification_report
 
 ### Snapshot Artifact
 
-当前 MVP snapshot 使用：
+当前主线 MVP snapshot 使用 v3 proof-first 格式：
 
 ```text
-snapshot_id = 0x7f60c215219d4177abede8b92818dd7302a0abbe24343d78f1203b9eb8794aeb
-snapshot_block = 59
-snapshot_block_hash = 0xfbb48c778461cfb3b96f4230ea4fd36579973109213742b4f37d5ba0f87b3b39
+snapshot_id = 0xbffa7023fa105796b47694b28be35a205fb8993cc14780d21a316fc4c5f8a176
+snapshot_block = 139
+snapshot_block_hash = 0xd23a448f5f41c306dc5747484cb97d2a3b10e48b2f63da9a07e810ccc38429d6
 eligible_records = 4
+owners = 3
 total_capacity = 115,000 CKB
-records_root = 0x46b8bb8fb094b7364b3d58d7b41cfc94f4d86d1aaa6c93807eddc59f4f51ff50
-snapshot_root = 0x7f60c215219d4177abede8b92818dd7302a0abbe24343d78f1203b9eb8794aeb
+record_map_root = 0x155c4a4ceb9736c0e1f1267754bda558fa3384b16684c982ed89ec384d11ce6b
+owner_index_root = 0x0f374fa4b4ed1b1ca8484eb0861220404611caf8904a23d71682f3c3d348a063
+snapshot_root = 0xbffa7023fa105796b47694b28be35a205fb8993cc14780d21a316fc4c5f8a176
 ```
 
-snapshot 文件：
+snapshot artifacts：
 
 ```text
-artifacts/snapshot-block-59.json
+artifacts/snapshot-block-139.json          # 轻量 metadata + roots，无 records 数组
+artifacts/snapshot-block-139.source.json   # provider-side 完整 records / owner entries
+artifacts/snapshot-block-139.index.json    # provider-side proof index
 ```
 
 当前 snapshot generator 的验证方式：
@@ -287,10 +294,12 @@ artifacts/snapshot-block-59.json
 2. 从本地 CKB RPC 重放 block `0..snapshot_block`。
 3. 维护 DAO live cell set：遇到 input 花掉已知 DAO cell 就删除，遇到 DAO type output 就加入。
 4. 在 snapshot block 处筛选 deposit phase DAO cells：`output_data = 0x0000000000000000`。
-5. 重新计算 records root 和 snapshot root。
-6. 和 snapshot 文件中的 root / records 对比。
+5. 生成两棵 authenticated maps：
+   `deposit_out_point_key -> SnapshotRecord` 和 `owner_key -> OwnerEntry`。
+6. 重新计算 `record_map_root`、`owner_index_root` 和 `snapshot_root`。
+7. 和 snapshot 文件中的 roots 对比。
 
-这个版本为了 MVP 简单，验证时仍从 genesis 扫到 snapshot block。后续主网方向应该把同一套状态更新逻辑改成长期运行的增量 indexer，并定期生成 checkpoint。
+这个版本验证时仍从 genesis 扫到 snapshot block。后续主网方向应该把同一套状态更新逻辑改成长期运行的增量 indexer，并定期生成 checkpoint。
 
 注意：`snapshot_root` 现在只承诺 snapshot 本身，不承诺任何 proposal。后续多个 proposal 可以共享这个 `snapshot_id` / `snapshot_root`。
 
@@ -300,27 +309,27 @@ artifacts/snapshot-block-59.json
 
 ```text
 title = DAO Treasury Activation MVP
-proposal_id = 0x2fc483c8e4ff62635678704e80beb347318af899e17a0e60d4c310cd0c878a85
-manifest_hash = 0x20df02c4b5ff53fd688d0cca184226cd50273c682aa9030957f96d3789719d41
-snapshot_id = 0x7f60c215219d4177abede8b92818dd7302a0abbe24343d78f1203b9eb8794aeb
+proposal_id = 0xfca04aaecee406ef101f019cc9dbbc50e9bea747097e5dd3b9d705b585078fbc
+manifest_hash = 0x19ef804809117b0af1773c09fbbd8b59f4a5a5f901def0abb5dc0493a61bdb82
+snapshot_id = 0xbffa7023fa105796b47694b28be35a205fb8993cc14780d21a316fc4c5f8a176
 choices = yes / no / abstain
-vote_start_block = 79
-vote_end_block = 139
-proposal_cell_tx = 0x28997008fed4614f6189c0edb784efc83dc7ebe80bbe3048a31fcf2692c43bc6
-proposal_cell_out_point = 0x28997008fed4614f6189c0edb784efc83dc7ebe80bbe3048a31fcf2692c43bc6:0
-proposal_cell_block = 62
+vote_start_block = 159
+vote_end_block = 219
+proposal_cell_tx = 0xc55490fc8cf82839076cd0229c73db03e1d0b95f55c0f2c72c94633a78ab475b
+proposal_cell_out_point = 0xc55490fc8cf82839076cd0229c73db03e1d0b95f55c0f2c72c94633a78ab475b:0
+proposal_cell_block = 142
 ```
 
 proposal manifest 文件：
 
 ```text
-artifacts/proposal-2fc483c8e4ff.json
+artifacts/proposal-fca04aaecee4.json
 ```
 
 proposal cell data 文件：
 
 ```text
-artifacts/proposal-2fc483c8e4ff.cell-data.bin
+artifacts/proposal-fca04aaecee4.cell-data.bin
 ```
 
 当前链上 proposal cell 的数据格式是：
@@ -338,6 +347,8 @@ manifest_hash
 manifest_uri
 snapshot_id
 snapshot_root
+record_map_root
+owner_index_root
 snapshot_block_number
 snapshot_block_hash
 choices
@@ -345,14 +356,14 @@ vote_start_block
 vote_end_block
 ```
 
-MVP 里的 proposal discovery 先按 proposer lock + proposal data prefix 查询。这个做法方便本地实验，但不是最终协议形态。后续如果要让任意 proposal 都能被钱包全局发现，应该改成统一 type script、registry cell，或明确的 indexer convention。
+MVP 里的 proposal discovery 先按 proposer lock + proposal data prefix 查询。这个做法方便本地实验，但不是最终协议形态。钱包视图默认只展示本地可验证的 proposal：manifest 必须存在且 hash 匹配，snapshot / index 也必须存在；调试链上残留或不完整 artifact 时，可以给 `voter-options.py` 加 `--include-incomplete`。后续如果要让任意 proposal 都能被钱包全局发现，应该改成统一 type script、registry cell，或明确的 indexer convention。
 
 ### Vote Artifacts
 
 当前 MVP vote cell 的数据格式是：
 
 ```text
-ASCII prefix: "CKB_GOV_VOTE_V1\n"
+ASCII prefix: "CKB_GOV_VOTE_V2\n"
 payload: canonical JSON commitment
 ```
 
@@ -366,7 +377,10 @@ deposit_out_point
 deposit_out_point_key
 choice
 voter_lock
+owner_key
 weight_shannons
+record_hash
+record_proof
 vote_id
 ```
 
@@ -374,20 +388,20 @@ vote_id
 
 | Voter | Deposit | Choice | Weight | Vote Tx | Block |
 | --- | --- | --- | ---: | --- | ---: |
-| Alice | `0x60e6d520dbdc083d44bc015c1fbc75c8301e52a12ffb10c0b7f26183d01629c3:0` | `yes` | `30,000` CKB | `0x7dfd0c51dbfd8208040e6da4fa043b78298c50d6455cbb71eebdd8d0166f683b` | `82` |
-| Bob | `0xb7dea6a1c11c4e8e7c0777f985dff5feadc5b3ac0f5068b5dfcad88b707450f3:0` | `yes` | `40,000` CKB | `0x2e2855f2f538e51991a7b5d9f08eb9c3c182995d4ce092b5af5b51568356440d` | `85` |
-| Bob | `0x5faaf9043d0e2ba3bba0ee47bd62ef8107e4b1870a176cfbade037c4b3a2cc08:0` | `no` | `25,000` CKB | `0x00d817afbdc46e7fb5062fd8c9e989cc34132f029f3ffe87537cc234f127342a` | `88` |
-| Carol | `0xb4a14e0846fd7853b1ca67bb5e0f15c9c2ab13b643632a2457c6bf00a8e507a4:0` | `no` | `20,000` CKB | `0xd3a845a061efba4e9337a2dddf33314d988956ca58c669f6ddc74ebc6220c82f` | `91` |
+| Alice | `0x60e6d520dbdc083d44bc015c1fbc75c8301e52a12ffb10c0b7f26183d01629c3:0` | `yes` | `30,000` CKB | `0x2db6f321f47d6be99b59021c559f136abc9ba97959f644bd07d05de9b4013375` | `162` |
+| Bob | `0xb7dea6a1c11c4e8e7c0777f985dff5feadc5b3ac0f5068b5dfcad88b707450f3:0` | `yes` | `40,000` CKB | `0xa88a6043d4d65ca9c2ce8ea80cb49dc4bf51afbe5492e9f8a5136b0ad9f2a12b` | `165` |
+| Bob | `0x5faaf9043d0e2ba3bba0ee47bd62ef8107e4b1870a176cfbade037c4b3a2cc08:0` | `no` | `25,000` CKB | `0x4258d4041e4cddf56d642e2404dd752782f868d60ab708f3f39a4871a54b45a8` | `168` |
+| Carol | `0xb4a14e0846fd7853b1ca67bb5e0f15c9c2ab13b643632a2457c6bf00a8e507a4:0` | `no` | `20,000` CKB | `0xd54930eb8a86c56a66bd47e2e1aeb834b131e458ef50dff765d7a10f6deb1d52` | `171` |
 
 `discover-votes.sh` 当前用于快速发现 still-live vote cells，方便本地调试。正式 tally 不依赖 live cell 状态，而是扫 vote window 内的历史区块输出，避免 vote cell 被花掉后投票记录从 tally 视角消失。
 
 ### Tally Artifact
 
-当前 final tally 使用 historical block scan，扫描范围为完整投票窗口 `79..139`。
+当前 final tally 使用 historical block scan，扫描范围为完整投票窗口 `159..219`。每个 vote 都通过其内含的 `record_proof` 验证 snapshot membership。
 
 ```text
-tally_root = 0x6b30ea6318a486cd37232851afed4c648085fa307f815a42790d097f6d18fdcc
-tally_file = artifacts/tally-2fc483c8e4ff-block-139.json
+tally_root = 0x2d397281cf959a1baaf869fb5d60f4c2fbb5ff10498b9ae498087dcf937dbe72
+tally_file = artifacts/tally-fca04aaecee4-block-219.json
 is_final = true
 valid_votes = 4
 counted_votes = 4
@@ -435,16 +449,22 @@ valid / counted / superseded / invalid vote counts
 | `scripts/list-accounts.sh` | 列出本地 dev 账户地址和 lock arg |
 | `scripts/query-balances.sh` | 查看本地账户余额和 DAO deposits |
 | `scripts/query-dao-live-cells.sh` | 用 Indexer 全局查询 DAO live cells；默认只查 deposit phase |
-| `scripts/create-snapshot.sh` | 生成 DAO deposit snapshot；参数是 snapshot block，默认当前 tip |
-| `scripts/verify-snapshot.sh` | 从链上重放验证 snapshot 文件 |
-| `scripts/snapshot-dao-deposits.py` | snapshot 生成和验证的 Python 实现 |
+| `scripts/create-snapshot.sh` | 生成 v3 DAO deposit snapshot、source、index；参数是 snapshot block，默认当前 tip |
+| `scripts/verify-snapshot.sh` | 从链上重放验证 snapshot roots |
+| `scripts/snapshot-record-proof.sh` | 为某个 DAO deposit outpoint 生成 record membership proof |
+| `scripts/snapshot-owner-proof.sh` | 为某个 owner lock arg / owner key 生成 owner proof bundle |
+| `scripts/verify-record-proof.sh` | 验证单条 record membership proof |
+| `scripts/verify-owner-proof.sh` | 验证 owner proof bundle 和其中的 record proofs |
+| `scripts/snapshot-dao-deposits.py` | v3 snapshot、index、proof 生成和验证的 Python 实现 |
 | `scripts/create-proposal-cell.sh` | 生成 proposal manifest，并创建链上 proposal commitment cell |
 | `scripts/discover-proposals.sh` | 从链上发现 proposer 发布的 proposal cells |
 | `scripts/verify-proposal-manifest.sh` | 校验 proposal manifest hash / proposal id / commitment |
 | `scripts/proposal.py` | proposal 创建、验证、发现的 Python 实现 |
 | `scripts/create-vote-cell.sh` | 生成 vote artifact，并创建链上 vote commitment cell |
 | `scripts/discover-votes.sh` | 从当前 live vote cells 中发现并验证投票，适合本地调试 |
+| `scripts/voter-options.sh` | 按 voter/account 聚合 DAO live cells、proposal eligibility、latest vote |
 | `scripts/vote.py` | vote 创建、发现和校验的 Python 实现 |
+| `scripts/voter-options.py` | voter options 查询的 Python 实现 |
 | `scripts/tally-proposal.sh` | 按 vote window 历史区块输出生成 tally report |
 | `scripts/verify-tally.sh` | 重扫链并验证已有 tally report |
 | `scripts/tally.py` | tally 生成和验证的 Python 实现 |
@@ -456,21 +476,32 @@ valid / counted / superseded / invalid vote counts
 生成投票周期 snapshot：
 
 ```bash
-dao-treasury/scripts/create-snapshot.sh 59
+dao-treasury/scripts/create-snapshot.sh 139
 ```
 
 验证 snapshot：
 
 ```bash
 dao-treasury/scripts/verify-snapshot.sh \
-  dao-treasury/artifacts/snapshot-block-59.json
+  dao-treasury/artifacts/snapshot-block-139.json
+```
+
+生成并验证 owner proof：
+
+```bash
+dao-treasury/scripts/snapshot-owner-proof.sh \
+  dao-treasury/artifacts/snapshot-block-139.index.json \
+  0x7dec345bc7c2e18dbe47e07b362e6ff0d9b00f82
+
+dao-treasury/scripts/verify-owner-proof.sh \
+  dao-treasury/artifacts/snapshot-block-139.owner-proof-2e86b22e33ef.json
 ```
 
 创建 proposal cell：
 
 ```bash
 dao-treasury/scripts/create-proposal-cell.sh \
-  dao-treasury/artifacts/snapshot-block-59.json
+  dao-treasury/artifacts/snapshot-block-139.json
 ```
 
 发现链上 proposal：
@@ -483,7 +514,7 @@ dao-treasury/scripts/discover-proposals.sh
 
 ```bash
 dao-treasury/scripts/verify-proposal-manifest.sh \
-  dao-treasury/artifacts/proposal-2fc483c8e4ff.json
+  dao-treasury/artifacts/proposal-fca04aaecee4.json
 ```
 
 推进到投票窗口：
@@ -495,6 +526,9 @@ dao-treasury/scripts/generate-blocks.sh 17
 创建 vote cell：
 
 ```bash
+PROPOSAL_FILE=dao-treasury/artifacts/proposal-fca04aaecee4.json \
+SNAPSHOT_FILE=dao-treasury/artifacts/snapshot-block-139.json \
+VOTE_CELL_CAPACITY=5000 \
 dao-treasury/scripts/create-vote-cell.sh \
   alice \
   0x60e6d520dbdc083d44bc015c1fbc75c8301e52a12ffb10c0b7f26183d01629c3:0 \
@@ -507,6 +541,12 @@ dao-treasury/scripts/create-vote-cell.sh \
 dao-treasury/scripts/discover-votes.sh
 ```
 
+查看某个 voter 的 DAO live cells 和可投 proposal：
+
+```bash
+dao-treasury/scripts/voter-options.sh alice
+```
+
 推进到投票结束块：
 
 ```bash
@@ -516,12 +556,16 @@ dao-treasury/scripts/generate-blocks.sh 48
 生成 tally report：
 
 ```bash
+PROPOSAL_FILE=dao-treasury/artifacts/proposal-fca04aaecee4.json \
+SNAPSHOT_FILE=dao-treasury/artifacts/snapshot-block-139.json \
 dao-treasury/scripts/tally-proposal.sh
 ```
 
 验证 tally report：
 
 ```bash
+PROPOSAL_FILE=dao-treasury/artifacts/proposal-fca04aaecee4.json \
+SNAPSHOT_FILE=dao-treasury/artifacts/snapshot-block-139.json \
 dao-treasury/scripts/verify-tally.sh \
-  dao-treasury/artifacts/tally-2fc483c8e4ff-block-139.json
+  dao-treasury/artifacts/tally-fca04aaecee4-block-219.json
 ```

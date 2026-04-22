@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import importlib.util
 import json
 import sys
 import time
@@ -10,10 +11,21 @@ from pathlib import Path
 
 
 CKB_HASH_PERSON = b"ckb-default-hash"
-VOTE_MAGIC = "CKB_GOV_VOTE_V1"
-VOTE_CELL_PREFIX = b"CKB_GOV_VOTE_V1\n"
+VOTE_MAGIC = "CKB_GOV_VOTE_V2"
+VOTE_CELL_PREFIX = b"CKB_GOV_VOTE_V2\n"
 
 SIGHASH_TYPE_HASH = "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8"
+
+
+def load_snapshot_lib():
+    path = Path(__file__).with_name("snapshot-dao-deposits.py")
+    spec = importlib.util.spec_from_file_location("snapshot_dao_deposits", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+snapshot_lib = load_snapshot_lib()
 
 
 def ckb_hash(data: bytes) -> str:
@@ -34,14 +46,7 @@ def write_json(path: Path, value):
 
 
 def normalize_outpoint_key(value: str) -> str:
-    tx_hash, index = value.split(":", 1)
-    if not tx_hash.startswith("0x"):
-        raise ValueError(f"invalid tx hash in outpoint: {value}")
-    if index.startswith("0x"):
-        index_int = int(index, 16)
-    else:
-        index_int = int(index)
-    return f"{tx_hash}:{hex(index_int)}"
+    return snapshot_lib.normalize_outpoint_key(value)
 
 
 def outpoint_from_key(value: str):
@@ -52,7 +57,7 @@ def outpoint_from_key(value: str):
 def parse_cell_data(data_hex: str):
     data = bytes.fromhex(data_hex.removeprefix("0x"))
     if not data.startswith(VOTE_CELL_PREFIX):
-        raise ValueError("not a vote cell")
+        raise ValueError("not a v2 vote cell")
     return json.loads(data[len(VOTE_CELL_PREFIX) :])
 
 
@@ -64,21 +69,25 @@ def choice_ids(proposal):
     return [choice["id"] for choice in proposal["manifest"]["choices"]]
 
 
-def snapshot_record(snapshot, deposit_out_point_key: str):
-    normalized = normalize_outpoint_key(deposit_out_point_key)
-    for record in snapshot["records"]:
-        if normalize_outpoint_key(record["deposit_out_point_key"]) == normalized:
-            return record
-    raise ValueError(f"deposit outpoint not found in snapshot: {deposit_out_point_key}")
+def snapshot_index_path(snapshot_path: Path) -> Path:
+    return snapshot_path.with_name(f"{snapshot_path.stem}.index.json")
 
 
-def build_commitment(proposal, snapshot, record, choice: str):
+def load_record_proof(snapshot_path: Path, snapshot_index_path_value: Path, deposit_out_point_key: str):
+    index_path = snapshot_index_path_value or snapshot_index_path(snapshot_path)
+    index = read_json(index_path)
+    proof = snapshot_lib.record_proof_from_index(index, deposit_out_point_key)
+    verified = snapshot_lib.verify_record_proof(proof)
+    return proof, verified["record"], index_path
+
+
+def build_commitment(proposal, snapshot, record, record_proof, choice: str):
     proposal_id = proposal["proposal_id"]
     snapshot_id = snapshot["snapshot_id"]
     deposit_key = normalize_outpoint_key(record["deposit_out_point_key"])
     commitment = {
         "magic": VOTE_MAGIC,
-        "version": 1,
+        "version": 2,
         "proposal_id": proposal_id,
         "snapshot_id": snapshot_id,
         "snapshot_root": snapshot["roots"]["snapshot_root"],
@@ -86,7 +95,10 @@ def build_commitment(proposal, snapshot, record, choice: str):
         "deposit_out_point_key": deposit_key,
         "choice": choice,
         "voter_lock": record["lock"],
+        "owner_key": record["owner_key"],
         "weight_shannons": record["weight_shannons"],
+        "record_hash": record_proof["record_hash"],
+        "record_proof": record_proof,
     }
     commitment["vote_id"] = ckb_hash(canonical_json(commitment))
     return commitment
@@ -95,14 +107,19 @@ def build_commitment(proposal, snapshot, record, choice: str):
 def create_vote(args):
     proposal = read_json(args.proposal)
     snapshot = read_json(args.snapshot)
-    record = snapshot_record(snapshot, args.deposit_out_point)
     choices = choice_ids(proposal)
     if args.choice not in choices:
         raise ValueError(f"choice {args.choice!r} is not one of {choices}")
     if proposal["manifest"]["snapshot"]["snapshot_id"] != snapshot["snapshot_id"]:
         raise ValueError("proposal snapshot_id does not match snapshot file")
 
-    commitment = build_commitment(proposal, snapshot, record, args.choice)
+    record_proof, record, index_path = load_record_proof(args.snapshot, args.snapshot_index, args.deposit_out_point)
+    if record_proof["snapshot_id"] != snapshot["snapshot_id"]:
+        raise ValueError("record proof snapshot_id does not match snapshot file")
+    if record_proof["snapshot_root"] != snapshot["roots"]["snapshot_root"]:
+        raise ValueError("record proof snapshot_root does not match snapshot file")
+
+    commitment = build_commitment(proposal, snapshot, record, record_proof, args.choice)
     short_id = commitment["vote_id"][2:14]
     output_dir = args.output_dir
     vote_path = output_dir / f"vote-{short_id}.json"
@@ -110,11 +127,12 @@ def create_vote(args):
 
     envelope = {
         "magic": VOTE_MAGIC,
-        "version": 1,
+        "version": 2,
         "vote_id": commitment["vote_id"],
         "proposal_id": commitment["proposal_id"],
         "snapshot_id": commitment["snapshot_id"],
         "choice": args.choice,
+        "snapshot_index_path": str(index_path),
         "commitment": commitment,
     }
     write_json(vote_path, envelope)
@@ -130,6 +148,7 @@ def create_vote(args):
                 "choice": commitment["choice"],
                 "voter_lock_arg": commitment["voter_lock"]["args"],
                 "weight_shannons": commitment["weight_shannons"],
+                "record_hash": commitment["record_hash"],
                 "vote_path": str(vote_path),
                 "cell_data_path": str(cell_data_path),
             },
@@ -181,6 +200,9 @@ class RpcClient:
     def get_tip_block_number(self):
         return int(self.call("get_tip_block_number"), 16)
 
+    def get_block_by_number(self, block_number: int):
+        return self.call("get_block_by_number", [hex(block_number)])
+
 
 def get_previous_output_lock(rpc: RpcClient, out_point):
     tx_hash = out_point["tx_hash"]
@@ -206,24 +228,35 @@ def verify_vote_cell(rpc: RpcClient, proposal, snapshot, cell):
     commitment["vote_id"] = vote_id
 
     errors = []
+    record = None
     if vote_id != recomputed_vote_id:
         errors.append("vote_id mismatch")
     if commitment["proposal_id"] != proposal["proposal_id"]:
         errors.append("proposal_id mismatch")
     if commitment["snapshot_id"] != snapshot["snapshot_id"]:
         errors.append("snapshot_id mismatch")
+    if commitment["snapshot_root"] != snapshot["roots"]["snapshot_root"]:
+        errors.append("snapshot_root mismatch")
     if commitment["choice"] not in choice_ids(proposal):
         errors.append("invalid choice")
 
     try:
-        record = snapshot_record(snapshot, commitment["deposit_out_point_key"])
+        verified = snapshot_lib.verify_record_proof(commitment["record_proof"])
+        record = verified["record"]
+        if verified["snapshot_id"] != snapshot["snapshot_id"]:
+            errors.append("record proof snapshot_id mismatch")
+        if normalize_outpoint_key(commitment["deposit_out_point_key"]) != verified["deposit_out_point_key"]:
+            errors.append("deposit_out_point_key mismatch")
+        if commitment["record_hash"] != verified["record_hash"]:
+            errors.append("record_hash mismatch")
         if not script_equal(commitment["voter_lock"], record["lock"]):
-            errors.append("voter_lock does not match snapshot record")
+            errors.append("voter_lock does not match proven snapshot record")
+        if commitment["owner_key"] != record["owner_key"]:
+            errors.append("owner_key does not match proven snapshot record")
         if commitment["weight_shannons"] != record["weight_shannons"]:
-            errors.append("weight does not match snapshot record")
+            errors.append("weight does not match proven snapshot record")
     except Exception as err:
-        record = None
-        errors.append(str(err))
+        errors.append(f"record proof invalid: {err}")
 
     block_number = int(cell["block_number"], 16)
     vote_window = proposal["manifest"]["vote_window"]
@@ -245,7 +278,7 @@ def verify_vote_cell(rpc: RpcClient, proposal, snapshot, cell):
                 has_owner_input = True
                 break
         if not has_owner_input:
-            errors.append("vote tx does not spend an input with the snapshot record lock")
+            errors.append("vote tx does not spend an input with the proven snapshot record lock")
 
     return {
         "valid": not errors,
@@ -257,6 +290,8 @@ def verify_vote_cell(rpc: RpcClient, proposal, snapshot, cell):
         "choice": commitment["choice"],
         "weight_shannons": commitment["weight_shannons"],
         "voter_lock_arg": commitment["voter_lock"]["args"],
+        "owner_key": commitment["owner_key"],
+        "record_hash": commitment["record_hash"],
         "out_point": cell["out_point"],
         "block_number": block_number,
         "tx_index": int(cell["tx_index"], 16),
@@ -265,33 +300,33 @@ def verify_vote_cell(rpc: RpcClient, proposal, snapshot, cell):
 
 
 def discover_votes(rpc: RpcClient, proposal, snapshot, limit: int = 100):
-    prefix_hex = "0x" + VOTE_CELL_PREFIX.hex()
-    locks = []
-    seen = set()
-    for record in snapshot["records"]:
-        lock = record["lock"]
-        key = canonical_json(lock).decode()
-        if key not in seen:
-            seen.add(key)
-            locks.append(lock)
-
+    del limit
     votes = []
-    for lock in locks:
-        search_key = {
-            "script": lock,
-            "script_type": "lock",
-            "script_search_mode": "exact",
-            "filter": {
-                "output_data": prefix_hex,
-                "output_data_filter_mode": "prefix",
-            },
-            "with_data": True,
-        }
-        cursor = None
-        while True:
-            page = rpc.get_cells(search_key, limit=limit, after=cursor)
-            objects = page["objects"]
-            for cell in objects:
+    prefix_hex = "0x" + VOTE_CELL_PREFIX.hex()
+    tip = rpc.get_tip_block_number()
+    vote_window = proposal["manifest"]["vote_window"]
+    end_block = min(tip, vote_window["end_block"])
+    if end_block < vote_window["start_block"]:
+        return votes
+
+    for block_number in range(vote_window["start_block"], end_block + 1):
+        block = rpc.get_block_by_number(block_number)
+        if block is None:
+            continue
+        for tx_index, tx in enumerate(block["transactions"]):
+            for output_index, output_data in enumerate(tx["outputs_data"]):
+                if not output_data.startswith(prefix_hex):
+                    continue
+                cell = {
+                    "output": tx["outputs"][output_index],
+                    "output_data": output_data,
+                    "out_point": {
+                        "tx_hash": tx["hash"],
+                        "index": hex(output_index),
+                    },
+                    "block_number": hex(block_number),
+                    "tx_index": hex(tx_index),
+                }
                 try:
                     result = verify_vote_cell(rpc, proposal, snapshot, cell)
                 except Exception as err:
@@ -299,12 +334,11 @@ def discover_votes(rpc: RpcClient, proposal, snapshot, limit: int = 100):
                         "valid": False,
                         "errors": [str(err)],
                         "out_point": cell.get("out_point"),
-                        "block_number": int(cell["block_number"], 16),
+                        "block_number": block_number,
+                        "tx_index": tx_index,
+                        "output_index": output_index,
                     }
                 votes.append(result)
-            if len(objects) < limit:
-                break
-            cursor = page["last_cursor"]
 
     votes.sort(key=lambda vote: (vote.get("block_number", 0), vote.get("tx_index", 0), vote.get("output_index", 0)))
     return votes
@@ -330,12 +364,13 @@ def record_chain(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Create, discover, and verify DAO treasury vote MVP artifacts.")
+    parser = argparse.ArgumentParser(description="Create, discover, and verify DAO treasury v2 vote artifacts.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     create = subparsers.add_parser("create")
     create.add_argument("--proposal", type=Path, required=True)
     create.add_argument("--snapshot", type=Path, required=True)
+    create.add_argument("--snapshot-index", type=Path)
     create.add_argument("--deposit-out-point", required=True)
     create.add_argument("--choice", required=True)
     create.add_argument("--output-dir", type=Path, required=True)

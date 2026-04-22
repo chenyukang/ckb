@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=env.sh
 source "$SCRIPT_DIR/env.sh"
 
-SNAPSHOT_FILE="${1:-$DAO_TREASURY_DIR/artifacts/snapshot-block-59.json}"
+SNAPSHOT_FILE="${1:-$DAO_TREASURY_DIR/artifacts/snapshot-block-139.json}"
 PROPOSER_PRIVKEY="$DAO_TREASURY_DIR/accounts/proposer.privkey"
 PROPOSER_ADDRESS="ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqgzca6d8x2rej8xf4kzc3e238llngchq4q20s5wz"
 
@@ -22,7 +22,7 @@ tx_hash="$("$CKB_CLI" --url "$CKB_RPC_URL" wallet transfer \
   --privkey-path "$PROPOSER_PRIVKEY" \
   --to-address "$PROPOSER_ADDRESS" \
   --to-data-path "$cell_data_path" \
-  --capacity "${PROPOSAL_CELL_CAPACITY:-1000}" \
+  --capacity "${PROPOSAL_CELL_CAPACITY:-2000}" \
   --local-only)"
 
 echo "proposal_tx_hash: $tx_hash"
