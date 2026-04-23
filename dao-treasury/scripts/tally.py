@@ -5,6 +5,7 @@ import sys
 import time
 from pathlib import Path
 
+import proposal as proposal_lib
 import vote as vote_lib
 
 
@@ -97,7 +98,7 @@ def scan_range(proposal, tip_block_number: int, scan_end_block):
 
 def discover_historical_votes(rpc, proposal, snapshot, scan):
     votes = []
-    prefix_hex = "0x" + vote_lib.VOTE_CELL_PREFIX.hex()
+    vote_type_args_prefix = proposal_lib.vote_type_args_prefix(proposal["proposal_id"])
     blocks_scanned = 0
     transactions_scanned = 0
     vote_outputs_seen = 0
@@ -117,13 +118,13 @@ def discover_historical_votes(rpc, proposal, snapshot, scan):
 
         for tx_index, tx in enumerate(block["transactions"]):
             transactions_scanned += 1
-            outputs_data = tx["outputs_data"]
-            for output_index, output_data in enumerate(outputs_data):
-                if not output_data.startswith(prefix_hex):
+            for output_index, output in enumerate(tx["outputs"]):
+                if not proposal_lib.script_has_args_prefix(output.get("type"), vote_type_args_prefix):
                     continue
                 vote_outputs_seen += 1
+                output_data = tx["outputs_data"][output_index]
                 cell = {
-                    "output": tx["outputs"][output_index],
+                    "output": output,
                     "output_data": output_data,
                     "out_point": {
                         "tx_hash": tx["hash"],

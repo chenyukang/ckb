@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import argparse
-import binascii
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -13,7 +13,11 @@ from pathlib import Path
 CKB_HASH_PERSON = b"ckb-default-hash"
 PROPOSAL_MAGIC = "CKB_GOV_PROPOSAL_V1"
 PROPOSAL_COMMITMENT_MAGIC = "CKB_GOV_PROPOSAL_COMMITMENT_V1"
-PROPOSAL_CELL_PREFIX = b"CKB_GOV_PROPOSAL_V1\n"
+DEFAULT_GOVERNANCE_TYPE_CODE_HASH = "0x28e83a1277d48add8e72fadaa9248559e1b632bab2bd60b27955ebc4c03800a5"
+GOVERNANCE_TYPE_CODE_HASH = os.environ.get("DAO_TREASURY_GOV_TYPE_CODE_HASH", DEFAULT_GOVERNANCE_TYPE_CODE_HASH)
+GOVERNANCE_TYPE_HASH_TYPE = os.environ.get("DAO_TREASURY_GOV_TYPE_HASH_TYPE", "data")
+PROPOSAL_TYPE_ARGS_NAMESPACE = "00"
+VOTE_TYPE_ARGS_NAMESPACE = "01"
 
 SIGHASH_TYPE_HASH = "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8"
 DEFAULT_PROPOSER_LOCK_ARG = "0x02c774d39943cc8e64d6c2c472a89fff9a317054"
@@ -38,14 +42,68 @@ def write_json(path: Path, value):
 
 def parse_cell_data(data_hex: str):
     data = bytes.fromhex(data_hex.removeprefix("0x"))
-    if not data.startswith(PROPOSAL_CELL_PREFIX):
-        raise ValueError("not a proposal cell")
-    return json.loads(data[len(PROPOSAL_CELL_PREFIX) :])
+    return json.loads(data)
 
 
 def cell_data_hex(commitment) -> str:
-    data = PROPOSAL_CELL_PREFIX + canonical_json(commitment)
+    data = canonical_json(commitment)
     return "0x" + data.hex()
+
+
+def governance_type_script(args_hex: str):
+    return {
+        "code_hash": GOVERNANCE_TYPE_CODE_HASH,
+        "hash_type": GOVERNANCE_TYPE_HASH_TYPE,
+        "args": args_hex,
+    }
+
+
+def proposal_type_args_prefix() -> str:
+    return "0x" + PROPOSAL_TYPE_ARGS_NAMESPACE
+
+
+def proposal_type_args(proposal_id: str) -> str:
+    return proposal_type_args_prefix() + proposal_id.removeprefix("0x")
+
+
+def proposal_type_script(proposal_id: str):
+    return governance_type_script(proposal_type_args(proposal_id))
+
+
+def vote_type_args_prefix(proposal_id: str) -> str:
+    return "0x" + VOTE_TYPE_ARGS_NAMESPACE + proposal_id.removeprefix("0x")
+
+
+def deposit_key_hash(deposit_out_point_key: str) -> str:
+    return ckb_hash(deposit_out_point_key.encode())
+
+
+def vote_type_args(proposal_id: str, deposit_out_point_key: str) -> str:
+    return vote_type_args_prefix(proposal_id) + deposit_key_hash(deposit_out_point_key).removeprefix("0x")
+
+
+def vote_type_script(proposal_id: str, deposit_out_point_key: str):
+    return governance_type_script(vote_type_args(proposal_id, deposit_out_point_key))
+
+
+def script_equal(left, right) -> bool:
+    if left is None or right is None:
+        return False
+    return (
+        left.get("code_hash") == right.get("code_hash")
+        and left.get("hash_type") == right.get("hash_type")
+        and left.get("args") == right.get("args")
+    )
+
+
+def script_has_args_prefix(script, args_prefix: str) -> bool:
+    if script is None:
+        return False
+    return (
+        script.get("code_hash") == GOVERNANCE_TYPE_CODE_HASH
+        and script.get("hash_type") == GOVERNANCE_TYPE_HASH_TYPE
+        and script.get("args", "").startswith(args_prefix)
+    )
 
 
 def default_manifest(snapshot, args):
@@ -138,11 +196,12 @@ def create_sample(args):
         "version": 1,
         "proposal_id": proposal_id,
         "manifest_hash": m_hash,
+        "proposal_type_script": proposal_type_script(proposal_id),
         "commitment": commitment,
         "manifest": manifest,
     }
     write_json(manifest_path, envelope)
-    cell_data_path.write_bytes(PROPOSAL_CELL_PREFIX + canonical_json(commitment))
+    cell_data_path.write_bytes(canonical_json(commitment))
 
     summary = {
         "proposal_id": proposal_id,
@@ -153,6 +212,7 @@ def create_sample(args):
         "cell_data_hex": cell_data_hex(commitment),
         "snapshot_id": snapshot["snapshot_id"],
         "snapshot_root": snapshot["roots"]["snapshot_root"],
+        "proposal_type_script": proposal_type_script(proposal_id),
         "vote_start_block": manifest["vote_window"]["start_block"],
         "vote_end_block": manifest["vote_window"]["end_block"],
     }
@@ -223,19 +283,10 @@ class RpcClient:
 
 def discover(args):
     rpc = RpcClient(args.rpc)
-    prefix_hex = "0x" + PROPOSAL_CELL_PREFIX.hex()
     search_key = {
-        "script": {
-            "code_hash": SIGHASH_TYPE_HASH,
-            "hash_type": "type",
-            "args": args.proposer_lock_arg,
-        },
-        "script_type": "lock",
-        "script_search_mode": "exact",
-        "filter": {
-            "output_data": prefix_hex,
-            "output_data_filter_mode": "prefix",
-        },
+        "script": governance_type_script(proposal_type_args_prefix()),
+        "script_type": "type",
+        "script_search_mode": "prefix",
         "with_data": True,
     }
 
@@ -246,6 +297,7 @@ def discover(args):
         objects = page["objects"]
         for cell in objects:
             commitment = parse_cell_data(cell["output_data"])
+            expected_type_script = proposal_type_script(commitment["proposal_id"])
             item = {
                 "proposal_id": commitment["proposal_id"],
                 "manifest_hash": commitment["manifest_hash"],
@@ -253,6 +305,9 @@ def discover(args):
                 "snapshot_id": commitment["snapshot_id"],
                 "vote_start_block": commitment["vote_start_block"],
                 "vote_end_block": commitment["vote_end_block"],
+                "expected_type_script": expected_type_script,
+                "type_script": cell["output"].get("type"),
+                "type_script_verified": script_equal(cell["output"].get("type"), expected_type_script),
                 "out_point": cell["out_point"],
                 "block_number": int(cell["block_number"], 16),
                 "tx_index": int(cell["tx_index"], 16),
@@ -318,7 +373,6 @@ def main():
 
     discover_parser = subparsers.add_parser("discover")
     discover_parser.add_argument("--rpc", default="http://127.0.0.1:8114")
-    discover_parser.add_argument("--proposer-lock-arg", default=DEFAULT_PROPOSER_LOCK_ARG)
     discover_parser.add_argument("--limit", type=int, default=100)
 
     record = subparsers.add_parser("record-chain")

@@ -5,8 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=env.sh
 source "$SCRIPT_DIR/env.sh"
 
-PROPOSAL_FILE="${PROPOSAL_FILE:-$DAO_TREASURY_DIR/artifacts/proposal-fca04aaecee4.json}"
-SNAPSHOT_FILE="${SNAPSHOT_FILE:-$DAO_TREASURY_DIR/artifacts/snapshot-block-139.json}"
+: "${PROPOSAL_FILE:?set PROPOSAL_FILE to the proposal manifest json}"
+: "${SNAPSHOT_FILE:?set SNAPSHOT_FILE to the snapshot json}"
 
 "$SCRIPT_DIR/tally.py" create \
   --rpc "$CKB_RPC_URL" \

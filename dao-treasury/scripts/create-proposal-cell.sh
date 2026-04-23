@@ -5,9 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=env.sh
 source "$SCRIPT_DIR/env.sh"
 
-SNAPSHOT_FILE="${1:-$DAO_TREASURY_DIR/artifacts/snapshot-block-139.json}"
-PROPOSER_PRIVKEY="$DAO_TREASURY_DIR/accounts/proposer.privkey"
-PROPOSER_ADDRESS="ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqgzca6d8x2rej8xf4kzc3e238llngchq4q20s5wz"
+SNAPSHOT_FILE="${1:?usage: create-proposal-cell.sh <snapshot-json>}"
 
 summary="$("$SCRIPT_DIR/proposal.py" create-sample \
   --snapshot "$SNAPSHOT_FILE" \
@@ -16,15 +14,6 @@ summary="$("$SCRIPT_DIR/proposal.py" create-sample \
 echo "$summary"
 
 manifest_path="$(printf '%s' "$summary" | jq -r '.manifest_path')"
-cell_data_path="$(printf '%s' "$summary" | jq -r '.cell_data_path')"
 
-tx_hash="$("$CKB_CLI" --url "$CKB_RPC_URL" wallet transfer \
-  --privkey-path "$PROPOSER_PRIVKEY" \
-  --to-address "$PROPOSER_ADDRESS" \
-  --to-data-path "$cell_data_path" \
-  --capacity "${PROPOSAL_CELL_CAPACITY:-2000}" \
-  --local-only)"
-
-echo "proposal_tx_hash: $tx_hash"
-"$SCRIPT_DIR/mine-until-committed.sh" "$tx_hash"
-"$SCRIPT_DIR/proposal.py" record-chain --manifest "$manifest_path" --tx-hash "$tx_hash"
+echo "proposal artifact generated: $manifest_path"
+echo "typed proposal submission requires the governance type transaction builder"

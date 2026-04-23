@@ -9,10 +9,11 @@ import urllib.request
 from hashlib import blake2b
 from pathlib import Path
 
+import proposal as proposal_lib
+
 
 CKB_HASH_PERSON = b"ckb-default-hash"
 VOTE_MAGIC = "CKB_GOV_VOTE_V2"
-VOTE_CELL_PREFIX = b"CKB_GOV_VOTE_V2\n"
 
 SIGHASH_TYPE_HASH = "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8"
 
@@ -56,13 +57,11 @@ def outpoint_from_key(value: str):
 
 def parse_cell_data(data_hex: str):
     data = bytes.fromhex(data_hex.removeprefix("0x"))
-    if not data.startswith(VOTE_CELL_PREFIX):
-        raise ValueError("not a v2 vote cell")
-    return json.loads(data[len(VOTE_CELL_PREFIX) :])
+    return json.loads(data)
 
 
 def cell_data(commitment) -> bytes:
-    return VOTE_CELL_PREFIX + canonical_json(commitment)
+    return canonical_json(commitment)
 
 
 def choice_ids(proposal):
@@ -120,6 +119,10 @@ def create_vote(args):
         raise ValueError("record proof snapshot_root does not match snapshot file")
 
     commitment = build_commitment(proposal, snapshot, record, record_proof, args.choice)
+    vote_type_script = proposal_lib.vote_type_script(
+        commitment["proposal_id"],
+        commitment["deposit_out_point_key"],
+    )
     short_id = commitment["vote_id"][2:14]
     output_dir = args.output_dir
     vote_path = output_dir / f"vote-{short_id}.json"
@@ -133,6 +136,7 @@ def create_vote(args):
         "snapshot_id": commitment["snapshot_id"],
         "choice": args.choice,
         "snapshot_index_path": str(index_path),
+        "vote_type_script": vote_type_script,
         "commitment": commitment,
     }
     write_json(vote_path, envelope)
@@ -149,6 +153,7 @@ def create_vote(args):
                 "voter_lock_arg": commitment["voter_lock"]["args"],
                 "weight_shannons": commitment["weight_shannons"],
                 "record_hash": commitment["record_hash"],
+                "vote_type_script": vote_type_script,
                 "vote_path": str(vote_path),
                 "cell_data_path": str(cell_data_path),
             },
@@ -240,6 +245,13 @@ def verify_vote_cell(rpc: RpcClient, proposal, snapshot, cell):
     if commitment["choice"] not in choice_ids(proposal):
         errors.append("invalid choice")
 
+    expected_type_script = proposal_lib.vote_type_script(
+        commitment["proposal_id"],
+        commitment["deposit_out_point_key"],
+    )
+    if not proposal_lib.script_equal(cell["output"].get("type"), expected_type_script):
+        errors.append("vote cell type script mismatch")
+
     try:
         verified = snapshot_lib.verify_record_proof(commitment["record_proof"])
         record = verified["record"]
@@ -302,7 +314,7 @@ def verify_vote_cell(rpc: RpcClient, proposal, snapshot, cell):
 def discover_votes(rpc: RpcClient, proposal, snapshot, limit: int = 100):
     del limit
     votes = []
-    prefix_hex = "0x" + VOTE_CELL_PREFIX.hex()
+    vote_type_args_prefix = proposal_lib.vote_type_args_prefix(proposal["proposal_id"])
     tip = rpc.get_tip_block_number()
     vote_window = proposal["manifest"]["vote_window"]
     end_block = min(tip, vote_window["end_block"])
@@ -314,11 +326,12 @@ def discover_votes(rpc: RpcClient, proposal, snapshot, limit: int = 100):
         if block is None:
             continue
         for tx_index, tx in enumerate(block["transactions"]):
-            for output_index, output_data in enumerate(tx["outputs_data"]):
-                if not output_data.startswith(prefix_hex):
+            for output_index, output in enumerate(tx["outputs"]):
+                if not proposal_lib.script_has_args_prefix(output.get("type"), vote_type_args_prefix):
                     continue
+                output_data = tx["outputs_data"][output_index]
                 cell = {
-                    "output": tx["outputs"][output_index],
+                    "output": output,
                     "output_data": output_data,
                     "out_point": {
                         "tx_hash": tx["hash"],

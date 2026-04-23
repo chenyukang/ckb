@@ -14,6 +14,7 @@ dao-treasury/
   accounts/              # 本地 dev 私钥 / keystore，git ignored
   artifacts/             # proposal / snapshot / vote / tally 产物，git ignored
   scripts/               # 本实验的辅助脚本
+  tally-service/          # Rust Tally JSON-RPC service MVP
 ```
 
 ## MVP 目标
@@ -27,7 +28,7 @@ dao-treasury/
 5. 在某个 snapshot block 固定 eligible DAO deposits。
 6. 生成 snapshot 文件和 Merkle root，并把 root 作为链上 commitment 的候选格式。
 7. 让 Alice/Bob/Carol 对 proposal 投票。
-8. tally 程序根据 snapshot 和链上 vote cells 计算结果。
+8. Rust Tally service 根据 snapshot 和链上 vote cells 提供 proposal、voter options、proof、tally 查询。
 9. 独立 verifier 可以重新扫描链、重新生成 snapshot、重新计算 tally，确认结果一致。
 
 ## 本阶段不做
@@ -67,10 +68,10 @@ http://127.0.0.1:8114
 
 proposal 分两层，并引用某一次投票周期 snapshot：
 
-1. 链上 proposal cell 存最小元数据和 commitment。
+1. 链上 Proposal Session Cell 存最小元数据和 commitment。
 2. 链下 manifest 存完整正文、参数、讨论链接、版本等内容。
 
-链上 proposal cell 至少包含：
+Proposal Session Cell 由 governance type script 识别。链上 data 至少包含：
 
 ```text
 magic: "CKB_GOV_PROPOSAL_V1"
@@ -87,6 +88,36 @@ choices
 ```
 
 manifest 文件放入 `artifacts/`，可以进一步发布到 IPFS/Arweave/GitHub release。投票者和 verifier 用 `manifest_hash` 确认内容没有被修改。
+
+## Governance Type Script
+
+当前 MVP 使用标准 type script 模型。链上 governance objects 由同一个 governance type script 识别，`args` 的第一个 byte 表示对象类型：
+
+```text
+0x00 || proposal_id
+  Proposal Session Cell
+
+0x01 || proposal_id || deposit_out_point_key_hash
+  Vote Cell
+```
+
+这样钱包和 indexer 不需要靠 `output_data` 前缀猜 cell 类型：
+
+1. 发现 proposal：按 `script_type = type`、governance type code hash、args prefix `0x00` 查询。
+2. 发现某个 proposal 的 votes：按 governance type code hash、args prefix `0x01 || proposal_id` 查询。
+3. 做 final tally 时仍扫描完整 vote window 的历史区块输出，过滤条件是 output type script。
+4. data 只承载 canonical commitment，不再作为 discovery key。
+
+本地 MVP 可以先用 always-success 作为 governance type script 占位合约；后续替换成真实合约时，type script 应该验证 data commitment、proposal/vote args、时间窗口、proof witness 等约束。
+
+脚本里 governance type code hash 通过环境变量配置：
+
+```text
+DAO_TREASURY_GOV_TYPE_CODE_HASH
+DAO_TREASURY_GOV_TYPE_HASH_TYPE
+```
+
+未配置时，脚本会使用一个本地 placeholder code hash，只用于生成 artifact 和说明 args 结构；真正上链时必须换成已部署 governance type script 的 code hash，并把该 code cell 放进 transaction cell deps。
 
 ## Snapshot 规则
 
@@ -126,7 +157,9 @@ snapshot 文件不包含 `proposal_id`。proposal manifest 后续通过 `snapsho
 
 ## Tally 和验证
 
-tally 程序输入：
+MVP 主线切到 Rust Tally service。它是独立进程，不参与 CKB consensus，也不向其他节点同步本地 DB 或 artifact。它只从本地 CKB RPC 和 `artifacts/` 读取可验证数据，并暴露 voting 相关 JSON-RPC。
+
+服务输入：
 
 ```text
 proposal cell
@@ -138,7 +171,7 @@ vote_end_block
 chain/indexer data
 ```
 
-tally 输出：
+服务输出：
 
 ```text
 proposal_id
@@ -148,6 +181,20 @@ invalid_votes
 choice_weights
 tally_root
 verification_report
+```
+
+当前服务方法：
+
+```text
+tally.get_tip
+tally.get_proposals
+tally.get_proposal
+tally.get_snapshot
+tally.get_owner_proof
+tally.get_record_proof
+tally.get_votes
+tally.get_tally
+tally.get_voter_options
 ```
 
 独立 verifier 应该能做到：
@@ -221,7 +268,16 @@ verification_report
 - [x] 输出 tally report。
 - [x] 编写独立 verifier 重算 tally。
 
-### 8. Treasury Bucket 后续实验
+### 8. Rust Tally Service MVP
+
+- [x] 建立 `tally-service/` Rust service crate。
+- [x] 提供 JSON-RPC 查询入口。
+- [x] 从 CKB RPC 发现 typed proposal / vote cells。
+- [x] 从 snapshot index 提供 owner proof / record proof。
+- [x] 提供 voter options 查询。
+- [x] 通过 service 重算 final tally root。
+
+### 9. Treasury Bucket 后续实验
 
 - [ ] 在文档层明确 treasury bucket 公式。
 - [ ] 设计 cellbase bucket 或 claim tx bucket 两种方案的 PoC。
@@ -230,65 +286,54 @@ verification_report
 
 ## 当前环境记录
 
+本地 DB 已按最新 type-script session 设计从空 dev chain 重跑。当前链已经完成 funding、DAO deposits、snapshot、typed Proposal Session Cell、typed Vote Cells 和 final tally。
+
 | 项目 | 状态 |
 | --- | --- |
-| CKB version | `ckb 0.202.0 (d0a6c95 2025-06-11)` |
-| ckb-cli version | `ckb-cli 1.15.0 (8c892a5 2025-06-06)` |
 | RPC URL | `http://127.0.0.1:8114` |
 | dev chain dir | `dao-treasury/` |
 | DB dir | `dao-treasury/data/` |
-| genesis hash | `0x7749e4c3e8f80d3897ba52fea27c8a0bc019b3c87895a86f42b75ca7d7eced86` |
-| node status | 已通过 macOS `launchd` 启动，RPC `127.0.0.1:8114` |
-| miner status | 未启动，当前使用 `generate_block` 快速出块 |
-| current tip | block `219` |
+| artifacts dir | `dao-treasury/artifacts/` |
+| Tally service | Rust JSON-RPC service，默认 `http://127.0.0.1:8124` |
+| governance type code | `script/testdata/always_success`，占位合约 |
+| governance type code hash | `0x28e83a1277d48add8e72fadaa9248559e1b632bab2bd60b27955ebc4c03800a5` |
+| governance type code outpoint | `0xdb82ac45478e61a1e673bc8057b52756ee0c1630d2b4e17e03ebb73935e69da5:0` |
+| current tip | block `110` |
 
 ## 当前本地数据集
 
-### 账户余额
-
-| 账户 | Lock Arg | 当前状态 |
-| --- | --- | --- |
-| faucet/miner | `0xc8328aabcd9b9e8e64fbc566c4385c3bdeb219d7` | 约 `20,025,419,947.09481432` CKB，包含本地挖矿奖励 |
-| Alice | `0x7dec345bc7c2e18dbe47e07b362e6ff0d9b00f82` | DAO `30,000` CKB，free `69,999.99998161` CKB |
-| Bob | `0x977120455b83c232da8520c7db7da7aa29ef0125` | DAO `65,000` CKB，free `54,999.99996323` CKB |
-| Carol | `0x9a0e7b573eb5aba438d3853c7a3749bcf7820d04` | DAO `20,000` CKB，free `59,999.99998162` CKB |
-| Proposer | `0x02c774d39943cc8e64d6c2c472a89fff9a317054` | total `4,999.99998758` CKB，包含 proposal data cell |
-| Treasury Recipient | `0x7a5ab692c338254b7cc5b16a4817c53b77407172` | free `1,000` CKB |
-
-### DAO Deposit Cells
+当前数据集：
 
 | Owner | Capacity | Deposit Out Point | Deposit Block |
 | --- | ---: | --- | ---: |
-| Alice | `30,000` CKB | `0x60e6d520dbdc083d44bc015c1fbc75c8301e52a12ffb10c0b7f26183d01629c3:0` | `38` |
-| Bob | `40,000` CKB | `0xb7dea6a1c11c4e8e7c0777f985dff5feadc5b3ac0f5068b5dfcad88b707450f3:0` | `44` |
-| Bob | `25,000` CKB | `0x5faaf9043d0e2ba3bba0ee47bd62ef8107e4b1870a176cfbade037c4b3a2cc08:0` | `50` |
-| Carol | `20,000` CKB | `0xb4a14e0846fd7853b1ca67bb5e0f15c9c2ab13b643632a2457c6bf00a8e507a4:0` | `56` |
+| Alice | `30,000` CKB | `0x60e6d520dbdc083d44bc015c1fbc75c8301e52a12ffb10c0b7f26183d01629c3:0` | `21` |
+| Bob | `40,000` CKB | `0xb7dea6a1c11c4e8e7c0777f985dff5feadc5b3ac0f5068b5dfcad88b707450f3:0` | `24` |
+| Bob | `25,000` CKB | `0x5faaf9043d0e2ba3bba0ee47bd62ef8107e4b1870a176cfbade037c4b3a2cc08:0` | `27` |
+| Carol | `20,000` CKB | `0x473e32b1f26d7230ee090dfd013ea7974eb007f1eaa78a7204c254dd2787f4f1:0` | `30` |
 
 ### Snapshot Artifact
 
-当前主线 MVP snapshot 使用 v3 proof-first 格式：
+主线 MVP snapshot 使用 v3 proof-first 格式。snapshot artifacts 由 `create-snapshot.sh` 生成：
 
 ```text
-snapshot_id = 0xbffa7023fa105796b47694b28be35a205fb8993cc14780d21a316fc4c5f8a176
-snapshot_block = 139
-snapshot_block_hash = 0xd23a448f5f41c306dc5747484cb97d2a3b10e48b2f63da9a07e810ccc38429d6
+snapshot_id = 0xb1918214bf0cab654989ee4c1db74653900c7b06cbdeefb6dad1b68a9e246b7f
+snapshot_block = 30
+snapshot_block_hash = 0x25ea0907284e4bcb39175abe0109459fec02e2266c1e9488b1cb9282b24c7679
 eligible_records = 4
 owners = 3
 total_capacity = 115,000 CKB
-record_map_root = 0x155c4a4ceb9736c0e1f1267754bda558fa3384b16684c982ed89ec384d11ce6b
-owner_index_root = 0x0f374fa4b4ed1b1ca8484eb0861220404611caf8904a23d71682f3c3d348a063
-snapshot_root = 0xbffa7023fa105796b47694b28be35a205fb8993cc14780d21a316fc4c5f8a176
+record_map_root = 0xe3e0a750b23386bcad4ca6c4040098da0b579a1800484121f0b949c789bf4d0b
+owner_index_root = 0xb43fd4aa12b0eca5275e5ddbaf1989cbecc473ac89f3f4e1dc36a7ea1809b97a
+snapshot_root = 0xb1918214bf0cab654989ee4c1db74653900c7b06cbdeefb6dad1b68a9e246b7f
 ```
-
-snapshot artifacts：
 
 ```text
-artifacts/snapshot-block-139.json          # 轻量 metadata + roots，无 records 数组
-artifacts/snapshot-block-139.source.json   # provider-side 完整 records / owner entries
-artifacts/snapshot-block-139.index.json    # provider-side proof index
+artifacts/snapshot-block-30.json          # 轻量 metadata + roots，无 records 数组
+artifacts/snapshot-block-30.source.json   # provider-side 完整 records / owner entries
+artifacts/snapshot-block-30.index.json    # provider-side proof index
 ```
 
-当前 snapshot generator 的验证方式：
+snapshot generator 的验证方式：
 
 1. 读取 `snapshot_block` 和 `snapshot_block_hash`。
 2. 从本地 CKB RPC 重放 block `0..snapshot_block`。
@@ -301,45 +346,30 @@ artifacts/snapshot-block-139.index.json    # provider-side proof index
 
 这个版本验证时仍从 genesis 扫到 snapshot block。后续主网方向应该把同一套状态更新逻辑改成长期运行的增量 indexer，并定期生成 checkpoint。
 
-注意：`snapshot_root` 现在只承诺 snapshot 本身，不承诺任何 proposal。后续多个 proposal 可以共享这个 `snapshot_id` / `snapshot_root`。
+注意：`snapshot_root` 只承诺 snapshot 本身，不承诺任何 proposal。多个 proposal 可以共享这个 `snapshot_id` / `snapshot_root`。
 
 ### Proposal Artifact
 
-当前 MVP proposal 使用：
+当前 typed Proposal Session Cell：
 
 ```text
-title = DAO Treasury Activation MVP
-proposal_id = 0xfca04aaecee406ef101f019cc9dbbc50e9bea747097e5dd3b9d705b585078fbc
-manifest_hash = 0x19ef804809117b0af1773c09fbbd8b59f4a5a5f901def0abb5dc0493a61bdb82
-snapshot_id = 0xbffa7023fa105796b47694b28be35a205fb8993cc14780d21a316fc4c5f8a176
-choices = yes / no / abstain
-vote_start_block = 159
-vote_end_block = 219
-proposal_cell_tx = 0xc55490fc8cf82839076cd0229c73db03e1d0b95f55c0f2c72c94633a78ab475b
-proposal_cell_out_point = 0xc55490fc8cf82839076cd0229c73db03e1d0b95f55c0f2c72c94633a78ab475b:0
-proposal_cell_block = 142
+proposal_id = 0x02260888afda53dad09dce0503cf2e39ed0f43655739fe1c1a2ad6ab684e0a62
+manifest_hash = 0x11ffd5ba8fc493ddece55eb1617d2c681aaa35c4d5541d6b68dbb1be120c1498
+proposal_tx = 0x4f05185c52a47e7413e3e9b84dae7e9e8ee0aa8f0eabf0684366e5147f0cef00
+proposal_out_point = 0x4f05185c52a47e7413e3e9b84dae7e9e8ee0aa8f0eabf0684366e5147f0cef00:0
+proposal_block = 33
+vote_start_block = 50
+vote_end_block = 110
 ```
 
-proposal manifest 文件：
+当前 Proposal Session Cell 的链上形态是：
 
 ```text
-artifacts/proposal-fca04aaecee4.json
+type script args: 0x00 || proposal_id
+data: canonical JSON commitment
 ```
 
-proposal cell data 文件：
-
-```text
-artifacts/proposal-fca04aaecee4.cell-data.bin
-```
-
-当前链上 proposal cell 的数据格式是：
-
-```text
-ASCII prefix: "CKB_GOV_PROPOSAL_V1\n"
-payload: canonical JSON commitment
-```
-
-commitment 只包含最小链上字段：
+Proposal Session Cell data 只包含最小链上字段：
 
 ```text
 proposal_id
@@ -356,15 +386,15 @@ vote_start_block
 vote_end_block
 ```
 
-MVP 里的 proposal discovery 先按 proposer lock + proposal data prefix 查询。这个做法方便本地实验，但不是最终协议形态。钱包视图默认只展示本地可验证的 proposal：manifest 必须存在且 hash 匹配，snapshot / index 也必须存在；调试链上残留或不完整 artifact 时，可以给 `voter-options.py` 加 `--include-incomplete`。后续如果要让任意 proposal 都能被钱包全局发现，应该改成统一 type script、registry cell，或明确的 indexer convention。
+MVP 里的 proposal discovery 只按 Proposal Session Type Script 查询。钱包视图只展示本地可验证的 proposal：type script 必须匹配 `0x00 || proposal_id`，manifest 必须存在且 hash 匹配，snapshot / index 也必须存在。
 
 ### Vote Artifacts
 
-当前 MVP vote cell 的数据格式是：
+当前 MVP vote cell 的链上形态是：
 
 ```text
-ASCII prefix: "CKB_GOV_VOTE_V2\n"
-payload: canonical JSON commitment
+type script args: 0x01 || proposal_id || deposit_out_point_key_hash
+data: canonical JSON commitment
 ```
 
 vote commitment 包含：
@@ -384,24 +414,24 @@ record_proof
 vote_id
 ```
 
-当前已经创建并上链 4 笔样例投票：
+`discover-votes.sh` 当前用于快速发现 typed vote cells，方便本地调试。正式 tally 不依赖 live cell 状态，而是扫 vote window 内的历史区块输出，并按 vote type script prefix 过滤，避免 vote cell 被花掉后投票记录从 tally 视角消失。
+
+当前 typed votes：
 
 | Voter | Deposit | Choice | Weight | Vote Tx | Block |
 | --- | --- | --- | ---: | --- | ---: |
-| Alice | `0x60e6d520dbdc083d44bc015c1fbc75c8301e52a12ffb10c0b7f26183d01629c3:0` | `yes` | `30,000` CKB | `0x2db6f321f47d6be99b59021c559f136abc9ba97959f644bd07d05de9b4013375` | `162` |
-| Bob | `0xb7dea6a1c11c4e8e7c0777f985dff5feadc5b3ac0f5068b5dfcad88b707450f3:0` | `yes` | `40,000` CKB | `0xa88a6043d4d65ca9c2ce8ea80cb49dc4bf51afbe5492e9f8a5136b0ad9f2a12b` | `165` |
-| Bob | `0x5faaf9043d0e2ba3bba0ee47bd62ef8107e4b1870a176cfbade037c4b3a2cc08:0` | `no` | `25,000` CKB | `0x4258d4041e4cddf56d642e2404dd752782f868d60ab708f3f39a4871a54b45a8` | `168` |
-| Carol | `0xb4a14e0846fd7853b1ca67bb5e0f15c9c2ab13b643632a2457c6bf00a8e507a4:0` | `no` | `20,000` CKB | `0xd54930eb8a86c56a66bd47e2e1aeb834b131e458ef50dff765d7a10f6deb1d52` | `171` |
-
-`discover-votes.sh` 当前用于快速发现 still-live vote cells，方便本地调试。正式 tally 不依赖 live cell 状态，而是扫 vote window 内的历史区块输出，避免 vote cell 被花掉后投票记录从 tally 视角消失。
+| Alice | `0x60e6d520dbdc083d44bc015c1fbc75c8301e52a12ffb10c0b7f26183d01629c3:0` | `yes` | `30,000` CKB | `0x1eb384b9c70b0984fad4cb9bfe19704b6931075714269ef96d768676a47301c8` | `52` |
+| Bob | `0xb7dea6a1c11c4e8e7c0777f985dff5feadc5b3ac0f5068b5dfcad88b707450f3:0` | `yes` | `40,000` CKB | `0x74c0e065dcc1c79777b409c8d65ae7d8d6b76f4f30bf07fe9975d3cded08cf74` | `55` |
+| Bob | `0x5faaf9043d0e2ba3bba0ee47bd62ef8107e4b1870a176cfbade037c4b3a2cc08:0` | `no` | `25,000` CKB | `0x9e541b626229df9562dedc77e93725f77356db17d7bb5ee7c766c08605e05fc8` | `58` |
+| Carol | `0x473e32b1f26d7230ee090dfd013ea7974eb007f1eaa78a7204c254dd2787f4f1:0` | `no` | `20,000` CKB | `0x627a9a2e26ccd8b73113e7fffa94a042ed79bddfc734762a9e29c5576c634899` | `61` |
 
 ### Tally Artifact
 
-当前 final tally 使用 historical block scan，扫描范围为完整投票窗口 `159..219`。每个 vote 都通过其内含的 `record_proof` 验证 snapshot membership。
+当前 final tally 使用 historical block scan，扫描完整投票窗口，并按 vote type script prefix 过滤；每个 vote 都通过其内含的 `record_proof` 验证 snapshot membership。
 
 ```text
-tally_root = 0x2d397281cf959a1baaf869fb5d60f4c2fbb5ff10498b9ae498087dcf937dbe72
-tally_file = artifacts/tally-fca04aaecee4-block-219.json
+tally_root = 0xdb23a672d79ce10df91377dc6f60f23a0752a71c2392f9072210a2500262a821
+tally_file = artifacts/tally-02260888afda-block-110.json
 is_final = true
 valid_votes = 4
 counted_votes = 4
@@ -430,6 +460,23 @@ valid / counted / superseded / invalid vote counts
 
 重复投票规则在 tally 中实现：同一个 `deposit_out_point_key` 如果出现多笔有效 vote，按 `(block_number, tx_index, output_index)` 取最后一票计入 `counted_votes`，之前的有效票进入 `superseded_votes`。
 
+### Rust Tally Service Smoke Test
+
+Rust Tally service 已基于当前 dev chain 通过 smoke test：
+
+```text
+service_tip = 110
+proposal_count = 1
+alice_eligible_weight = 30,000 CKB
+tally_root = 0xdb23a672d79ce10df91377dc6f60f23a0752a71c2392f9072210a2500262a821
+yes = 70,000 CKB
+no = 45,000 CKB
+abstain = 0 CKB
+is_final = true
+```
+
+这个 `tally_root` 和 Python verifier 生成的 `artifacts/tally-02260888afda-block-110.json` 一致。后续 demo 优先通过 Tally service 查询；Python 脚本保留为低层 artifact generator 和独立 verifier。
+
 ## 本地辅助脚本
 
 | 脚本 | 用途 |
@@ -437,6 +484,7 @@ valid / counted / superseded / invalid vote counts
 | `scripts/start-node.sh` | 启动本地 CKB node |
 | `scripts/start-node-bg.sh` | 后台启动本地 CKB node，写入 `ckb-node.pid` 和 `logs/ckb-node.stdout.log` |
 | `scripts/stop-node.sh` | 停止由 `start-node-bg.sh` 启动的 node |
+| `scripts/run-demo.sh` | 重置本地 demo 数据，并从空链完整跑通 funding、DAO deposits、snapshot、proposal、votes、tally service |
 | `scripts/install-launch-agent.sh` | 用 macOS `launchd` 常驻启动本地 CKB node |
 | `scripts/uninstall-launch-agent.sh` | 停止并卸载本地 CKB LaunchAgent |
 | `scripts/launch-agent-status.sh` | 查看本地 CKB LaunchAgent 状态 |
@@ -456,52 +504,72 @@ valid / counted / superseded / invalid vote counts
 | `scripts/verify-record-proof.sh` | 验证单条 record membership proof |
 | `scripts/verify-owner-proof.sh` | 验证 owner proof bundle 和其中的 record proofs |
 | `scripts/snapshot-dao-deposits.py` | v3 snapshot、index、proof 生成和验证的 Python 实现 |
-| `scripts/create-proposal-cell.sh` | 生成 proposal manifest，并创建链上 proposal commitment cell |
-| `scripts/discover-proposals.sh` | 从链上发现 proposer 发布的 proposal cells |
+| `scripts/create-proposal-cell.sh` | 生成 proposal manifest / commitment artifact |
+| `scripts/submit-typed-cell.py` | 构造、签名并提交带 custom type script 的单 output tx |
+| `scripts/submit-proposal-cell.sh` | 提交 typed Proposal Session Cell |
+| `scripts/discover-proposals.sh` | 按 Proposal Session Type Script 从链上发现 proposal cells |
 | `scripts/verify-proposal-manifest.sh` | 校验 proposal manifest hash / proposal id / commitment |
 | `scripts/proposal.py` | proposal 创建、验证、发现的 Python 实现 |
-| `scripts/create-vote-cell.sh` | 生成 vote artifact，并创建链上 vote commitment cell |
-| `scripts/discover-votes.sh` | 从当前 live vote cells 中发现并验证投票，适合本地调试 |
+| `scripts/create-vote-cell.sh` | 生成 vote artifact |
+| `scripts/submit-vote-cell.sh` | 提交 typed Vote Cell |
+| `scripts/discover-votes.sh` | 按 Vote Type Script 从链上发现并验证投票，适合本地调试 |
 | `scripts/voter-options.sh` | 按 voter/account 聚合 DAO live cells、proposal eligibility、latest vote |
 | `scripts/vote.py` | vote 创建、发现和校验的 Python 实现 |
 | `scripts/voter-options.py` | voter options 查询的 Python 实现 |
 | `scripts/tally-proposal.sh` | 按 vote window 历史区块输出生成 tally report |
 | `scripts/verify-tally.sh` | 重扫链并验证已有 tally report |
 | `scripts/tally.py` | tally 生成和验证的 Python 实现 |
+| `scripts/start-tally-service.sh` | 启动 Rust Tally JSON-RPC service |
+| `scripts/tally-rpc.sh` | 调用 Rust Tally service 的通用 JSON-RPC 客户端 |
+| `tally-service/` | Rust Tally service MVP crate |
 | `scripts/fund-accounts.sh` | 从空链复现账户 funding，需 `CONFIRM=1` |
 | `scripts/create-dao-deposits.sh` | 从已 funding 链复现 DAO deposits，需 `CONFIRM=1` |
 
 ## 常用命令
 
+注意：当前命令使用 type script session 设计。`create-*` 脚本生成 artifact，`submit-*` 脚本把 artifact 作为 typed cell 提交上链。
+
+从空链完整重跑 demo：
+
+```bash
+dao-treasury/scripts/run-demo.sh
+```
+
+脚本会清理 `dao-treasury/data/`、`logs/` 和旧 artifacts，保留本地 demo accounts，并在最后写出 `artifacts/demo-summary.json`。
+
 生成投票周期 snapshot：
 
 ```bash
-dao-treasury/scripts/create-snapshot.sh 139
+dao-treasury/scripts/create-snapshot.sh <snapshot-block>
 ```
 
 验证 snapshot：
 
 ```bash
 dao-treasury/scripts/verify-snapshot.sh \
-  dao-treasury/artifacts/snapshot-block-139.json
+  dao-treasury/artifacts/snapshot-block-<N>.json
 ```
 
 生成并验证 owner proof：
 
 ```bash
 dao-treasury/scripts/snapshot-owner-proof.sh \
-  dao-treasury/artifacts/snapshot-block-139.index.json \
+  dao-treasury/artifacts/snapshot-block-<N>.index.json \
   0x7dec345bc7c2e18dbe47e07b362e6ff0d9b00f82
 
 dao-treasury/scripts/verify-owner-proof.sh \
-  dao-treasury/artifacts/snapshot-block-139.owner-proof-2e86b22e33ef.json
+  dao-treasury/artifacts/snapshot-block-<N>.owner-proof-<owner>.json
 ```
 
-创建 proposal cell：
+创建并提交 Proposal Session Cell：
 
 ```bash
 dao-treasury/scripts/create-proposal-cell.sh \
-  dao-treasury/artifacts/snapshot-block-139.json
+  dao-treasury/artifacts/snapshot-block-<N>.json
+
+dao-treasury/scripts/submit-proposal-cell.sh \
+  dao-treasury/artifacts/proposal-<short-id>.json \
+  <governance-type-code-tx>:0
 ```
 
 发现链上 proposal：
@@ -514,7 +582,7 @@ dao-treasury/scripts/discover-proposals.sh
 
 ```bash
 dao-treasury/scripts/verify-proposal-manifest.sh \
-  dao-treasury/artifacts/proposal-fca04aaecee4.json
+  dao-treasury/artifacts/proposal-<short-id>.json
 ```
 
 推进到投票窗口：
@@ -523,21 +591,26 @@ dao-treasury/scripts/verify-proposal-manifest.sh \
 dao-treasury/scripts/generate-blocks.sh 17
 ```
 
-创建 vote cell：
+创建并提交 Vote Cell：
 
 ```bash
-PROPOSAL_FILE=dao-treasury/artifacts/proposal-fca04aaecee4.json \
-SNAPSHOT_FILE=dao-treasury/artifacts/snapshot-block-139.json \
-VOTE_CELL_CAPACITY=5000 \
+PROPOSAL_FILE=dao-treasury/artifacts/proposal-<short-id>.json \
+SNAPSHOT_FILE=dao-treasury/artifacts/snapshot-block-<N>.json \
 dao-treasury/scripts/create-vote-cell.sh \
-  alice \
   0x60e6d520dbdc083d44bc015c1fbc75c8301e52a12ffb10c0b7f26183d01629c3:0 \
   yes
+
+dao-treasury/scripts/submit-vote-cell.sh \
+  alice \
+  dao-treasury/artifacts/vote-<short-id>.json \
+  <governance-type-code-tx>:0
 ```
 
 发现当前 live vote cells：
 
 ```bash
+PROPOSAL_FILE=dao-treasury/artifacts/proposal-<short-id>.json \
+SNAPSHOT_FILE=dao-treasury/artifacts/snapshot-block-<N>.json \
 dao-treasury/scripts/discover-votes.sh
 ```
 
@@ -545,6 +618,36 @@ dao-treasury/scripts/discover-votes.sh
 
 ```bash
 dao-treasury/scripts/voter-options.sh alice
+```
+
+启动 Rust Tally service：
+
+```bash
+dao-treasury/scripts/start-tally-service.sh
+```
+
+通过 Tally service 查询 proposal：
+
+```bash
+dao-treasury/scripts/tally-rpc.sh \
+  tally.get_proposals \
+  '{"include_manifest":false}'
+```
+
+通过 Tally service 查询 voter options：
+
+```bash
+dao-treasury/scripts/tally-rpc.sh \
+  tally.get_voter_options \
+  '{"voter":"alice"}'
+```
+
+通过 Tally service 查询 tally：
+
+```bash
+dao-treasury/scripts/tally-rpc.sh \
+  tally.get_tally \
+  '{"proposal_id":"0x02260888afda53dad09dce0503cf2e39ed0f43655739fe1c1a2ad6ab684e0a62"}'
 ```
 
 推进到投票结束块：
@@ -556,16 +659,16 @@ dao-treasury/scripts/generate-blocks.sh 48
 生成 tally report：
 
 ```bash
-PROPOSAL_FILE=dao-treasury/artifacts/proposal-fca04aaecee4.json \
-SNAPSHOT_FILE=dao-treasury/artifacts/snapshot-block-139.json \
+PROPOSAL_FILE=dao-treasury/artifacts/proposal-<short-id>.json \
+SNAPSHOT_FILE=dao-treasury/artifacts/snapshot-block-<N>.json \
 dao-treasury/scripts/tally-proposal.sh
 ```
 
 验证 tally report：
 
 ```bash
-PROPOSAL_FILE=dao-treasury/artifacts/proposal-fca04aaecee4.json \
-SNAPSHOT_FILE=dao-treasury/artifacts/snapshot-block-139.json \
+PROPOSAL_FILE=dao-treasury/artifacts/proposal-<short-id>.json \
+SNAPSHOT_FILE=dao-treasury/artifacts/snapshot-block-<N>.json \
 dao-treasury/scripts/verify-tally.sh \
-  dao-treasury/artifacts/tally-fca04aaecee4-block-219.json
+  dao-treasury/artifacts/tally-<short-id>-block-<N>.json
 ```

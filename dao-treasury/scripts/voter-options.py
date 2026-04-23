@@ -93,20 +93,11 @@ def query_live_dao_deposits(rpc: vote_lib.RpcClient, lock_arg: str, limit: int):
     return cells
 
 
-def discover_proposals(rpc: vote_lib.RpcClient, proposer_lock_arg: str, limit: int):
-    prefix_hex = "0x" + proposal_lib.PROPOSAL_CELL_PREFIX.hex()
+def discover_proposals(rpc: vote_lib.RpcClient, limit: int):
     search_key = {
-        "script": {
-            "code_hash": proposal_lib.SIGHASH_TYPE_HASH,
-            "hash_type": "type",
-            "args": proposer_lock_arg,
-        },
-        "script_type": "lock",
-        "script_search_mode": "exact",
-        "filter": {
-            "output_data": prefix_hex,
-            "output_data_filter_mode": "prefix",
-        },
+        "script": proposal_lib.governance_type_script(proposal_lib.proposal_type_args_prefix()),
+        "script_type": "type",
+        "script_search_mode": "prefix",
         "with_data": True,
     }
 
@@ -116,6 +107,7 @@ def discover_proposals(rpc: vote_lib.RpcClient, proposer_lock_arg: str, limit: i
         page = rpc.get_cells(search_key, limit=limit, after=cursor)
         for cell in page["objects"]:
             commitment = proposal_lib.parse_cell_data(cell["output_data"])
+            expected_type_script = proposal_lib.proposal_type_script(commitment["proposal_id"])
             manifest_path = Path(commitment["manifest_uri"])
             envelope = proposal_lib.read_json(manifest_path) if manifest_path.exists() else None
             proposals.append(
@@ -127,6 +119,9 @@ def discover_proposals(rpc: vote_lib.RpcClient, proposer_lock_arg: str, limit: i
                     "manifest_path": str(manifest_path),
                     "manifest_found": envelope is not None,
                     "manifest_hash_verified": bool(envelope and envelope.get("manifest_hash") == commitment["manifest_hash"]),
+                    "type_script": cell["output"].get("type"),
+                    "expected_type_script": expected_type_script,
+                    "type_script_verified": proposal_lib.script_equal(cell["output"].get("type"), expected_type_script),
                     "title": envelope["manifest"].get("title") if envelope else None,
                     "summary": envelope["manifest"].get("summary") if envelope else None,
                     "envelope": envelope,
@@ -182,69 +177,21 @@ def build_report(args):
     live_keys = {vote_lib.normalize_outpoint_key(cell["out_point_key"]) for cell in live_cells}
 
     proposals = []
-    for discovered in discover_proposals(rpc, args.proposer_lock_arg, args.limit):
-        if not discovered["envelope"]:
-            if not args.include_incomplete:
-                continue
-            proposals.append(
-                {
-                    "proposal_id": discovered["proposal_id"],
-                    "title": discovered["title"],
-                    "status": "manifest_missing",
-                    "can_vote_next_block": False,
-                    "eligible_records": [],
-                }
-            )
-            continue
-
-        if not discovered["manifest_hash_verified"]:
-            if not args.include_incomplete:
-                continue
-            proposals.append(
-                {
-                    "proposal_id": discovered["proposal_id"],
-                    "title": discovered["title"],
-                    "status": "manifest_hash_mismatch",
-                    "can_vote_next_block": False,
-                    "manifest_path": discovered["manifest_path"],
-                    "eligible_records": [],
-                }
-            )
+    for discovered in discover_proposals(rpc, args.limit):
+        if (
+            not discovered["envelope"]
+            or not discovered["type_script_verified"]
+            or not discovered["manifest_hash_verified"]
+        ):
             continue
 
         snapshot_path, snapshot = find_snapshot(args.snapshot_dir, discovered["snapshot_id"])
         status, can_vote = proposal_status(tip, discovered["vote_start_block"], discovered["vote_end_block"])
         if snapshot is None:
-            if not args.include_incomplete:
-                continue
-            proposals.append(
-                {
-                    "proposal_id": discovered["proposal_id"],
-                    "title": discovered["title"],
-                    "status": status,
-                    "can_vote_next_block": False,
-                    "snapshot_found": False,
-                    "eligible_records": [],
-                }
-            )
             continue
 
         index_path = snapshot_index_path(snapshot_path)
         if not index_path.exists():
-            if not args.include_incomplete:
-                continue
-            proposals.append(
-                {
-                    "proposal_id": discovered["proposal_id"],
-                    "title": discovered["title"],
-                    "status": status,
-                    "can_vote_next_block": False,
-                    "snapshot_found": True,
-                    "snapshot_index_found": False,
-                    "snapshot_index_path": str(index_path),
-                    "eligible_records": [],
-                }
-            )
             continue
 
         proposal = discovered["envelope"]
@@ -318,13 +265,7 @@ def main():
     parser.add_argument("voter", help="alice, bob, carol, or a 20-byte lock arg hex")
     parser.add_argument("--rpc", default="http://127.0.0.1:8114")
     parser.add_argument("--snapshot-dir", type=Path, default=Path("dao-treasury/artifacts"))
-    parser.add_argument("--proposer-lock-arg", default=proposal_lib.DEFAULT_PROPOSER_LOCK_ARG)
     parser.add_argument("--limit", type=int, default=100)
-    parser.add_argument(
-        "--include-incomplete",
-        action="store_true",
-        help="include on-chain proposal cells whose local manifest, snapshot, or index is missing or unverifiable",
-    )
     args = parser.parse_args()
     print(json.dumps(build_report(args), indent=2, sort_keys=True))
 

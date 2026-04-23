@@ -5,6 +5,7 @@
 
 # Local process state.
 /ckb-node.pid
+/tally-service.pid
 
 # Local private keys / keystores. Keep only documentation in git.
 /accounts/*
