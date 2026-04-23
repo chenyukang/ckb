@@ -2,11 +2,14 @@
 
 这个目录是 DAO treasury / governance MVP 的本地实验区。原则是先把投票、snapshot、tally、钱包交互这些流程跑通，再进入 CKB consensus 层的 treasury bucket 改造。
 
+相关架构图和时序图见 [diagrams.md](diagrams.md)。
+
 ## 目录约定
 
 ```text
 dao-treasury/
   mvp.md                 # 当前 MVP 计划和环境记录
+  diagrams.md            # 当前 MVP 架构图和时序图
   ckb.toml               # 本地 dev chain 节点配置，由 ckb init 生成
   ckb-miner.toml         # 本地 miner 配置，由 ckb init 生成
   specs/                 # 本地 dev chain spec
