@@ -333,8 +333,49 @@ flowchart LR
   SnapshotMatch --> Proof
   Proof --> Owner
   Owner --> Window
-  Window --> Valid
+Window --> Valid
 ```
+
+## zkVM Settlement PoC
+
+```mermaid
+flowchart LR
+  subgraph Witness["链下 witness"]
+    Proposal["proposal artifact"]
+    SnapshotSource["snapshot source records"]
+    VoteWitnesses["vote witnesses"]
+  end
+
+  subgraph Guest["Rust guest-shaped verifier"]
+    SnapshotCheck["重算 snapshot_root"]
+    VoteCheck["验证 vote proofs"]
+    TallyCheck["重算 tally_root"]
+    Settlement["生成 settlement_root"]
+  end
+
+  subgraph Public["public inputs"]
+    SnapshotRoot["snapshot_root"]
+    TallyRoot["tally_root"]
+    Window["vote window"]
+    Weights["choice weights"]
+  end
+
+  Proposal --> VoteCheck
+  SnapshotSource --> SnapshotCheck
+  VoteWitnesses --> VoteCheck
+  SnapshotCheck --> VoteCheck
+  VoteCheck --> TallyCheck
+  TallyCheck --> Settlement
+
+  SnapshotRoot --> SnapshotCheck
+  TallyRoot --> TallyCheck
+  Window --> VoteCheck
+  Weights --> TallyCheck
+```
+
+当前 PoC 已经验证 transcript 内部一致性，并且会重算 witnessed blocks / transactions 的 CKB 原生 commitments。下一步要把 transaction inclusion proof、可信 header anchoring、checkpoint transition 加进 witness，让 settlement proof 能证明这些输入来自 canonical CKB chain。
+
+当前这版相对前一步已经多验证了两层关键约束：除了 vote transaction、`containing_block`、`owner_input_cells` 和带首尾 anchors 的 `header_chain_witness` 之外，guest-shaped verifier 还会用 CKB 原生规则重算 header hash、`transactions_root`、`proposals_hash`、`extra_hash` 和 tx hash。也就是说，它现在不只是验证这些 JSON witness 互相能对上，而是验证它们满足 CKB block / tx 的结构承诺。
 
 ## 长期韧性目标和当前 MVP 的差距
 

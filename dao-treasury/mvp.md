@@ -280,7 +280,23 @@ tally.get_voter_options
 - [x] 提供 voter options 查询。
 - [x] 通过 service 重算 final tally root。
 
-### 9. Treasury Bucket 后续实验
+### 9. zkVM Settlement PoC
+
+- [x] 定义 settlement transcript public inputs / witness 格式。
+- [x] 编写 host transcript generator。
+- [x] 编写 Rust "guest-shaped" verifier PoC。
+- [x] 验证 snapshot source records 能重算 `snapshot_root`。
+- [x] 验证 vote commitment / record proof 能连到 `snapshot_root`。
+- [x] 重算 final `tally_root`，并生成 `settlement_root`。
+- [x] 把 anchored header chain 加入 transcript，并校验 block number / parent hash / declared hash。
+- [x] 选定 SP1，并把 voting settlement verifier core 放进 guest。
+- [x] 在 SP1 guest 中验证 compact CKB tx inclusion witness。
+- [x] 在 guest 中重算 CKB raw transaction Molecule bytes 的 tx hash，去掉对 provided tx hash 的信任。
+- [x] 定义 CKB settlement script PoC 的 proof fixture / public values / vk pinning envelope。
+- [x] settlement script PoC 严格区分 core proof 和 Plonk/Groth16 on-chain proof，避免误收 core fixture。
+- [ ] 接入真实 CKB-VM SP1 Plonk/Groth16 verifier port，完成 zk proof cryptographic verification。
+
+### 10. Treasury Bucket 后续实验
 
 - [ ] 在文档层明确 treasury bucket 公式。
 - [ ] 设计 cellbase bucket 或 claim tx bucket 两种方案的 PoC。
@@ -480,6 +496,129 @@ is_final = true
 
 这个 `tally_root` 和 Python verifier 生成的 `artifacts/tally-02260888afda-block-110.json` 一致。后续 demo 优先通过 Tally service 查询；Python 脚本保留为低层 artifact generator 和独立 verifier。
 
+### zkVM Settlement PoC
+
+当前已加入第一版 zkVM settlement PoC：
+
+```text
+transcript = proposal + snapshot + snapshot_source + vote witnesses + public inputs
+Rust verifier = guest-shaped deterministic program
+```
+
+它验证：
+
+1. `snapshot_source.records` 能重算 `record_map_root`、`owner_index_root` 和 `snapshot_root`。
+2. 每个 vote witness 的 commitment / `record_proof` 能连到该 `snapshot_root`。
+3. vote witness 内含的 transaction 必须和 `vote_id`、`out_point`、`output_index`、output data 一致。
+4. vote witness 内含的 `containing_block` 必须在 `tx_index` 位置包含这笔 transaction。
+5. vote witness 内含的 `owner_input_cells` 里，至少一条 previous output lock 必须和 snapshot record lock 一致。
+6. 每条 `owner_input_cell` 还必须和 `previous_transaction.outputs[index]` / `outputs_data[index]` 对得上。
+7. transcript 还携带一段 `header_chain_witness`，覆盖 snapshot block、vote blocks、以及 owner input previous tx 所在 blocks；guest-shaped verifier 会检查 block number 连续、`parent_hash` 连续。
+8. public inputs 现在还包含 `anchor_start_block_number/hash` 和 `anchor_end_block_number/hash`，header chain 的首尾必须和这些 anchor 一致。
+9. `snapshot_block_witness`、vote `containing_block`、以及 `previous_containing_block` 都必须属于这段 header chain。
+10. 对 `snapshot_block_witness`、vote `containing_block`、以及 `previous_containing_block`，都会用 CKB 原生 block 规则重算 `header hash`、`transactions_root`、`proposals_hash`、`extra_hash`。
+11. 对 vote tx 和 previous tx，都会用 CKB 原生 transaction 规则重算 `tx hash`。
+12. vote choice、vote window、type args、weight、owner lock record 一致。
+13. 按重复投票规则重算 `tally_root`。
+14. 基于 public inputs 生成 `settlement_root`。
+
+当前 demo 生成的 settlement output：
+
+```text
+transcript_file = artifacts/zkvm-settlement-transcript-02260888afda.json
+settlement_output = artifacts/zkvm-settlement-output-02260888afda.json
+anchor_start_block_number = 21
+anchor_end_block_number = 61
+proof_model = transcript_consistency_with_anchored_ckb_block_commitments
+settlement_root = 0x80abeb2758ba04b2cefca2985324d775a53fbc190abb5620f63426eef986d98d
+tally_root = 0xdb23a672d79ce10df91377dc6f60f23a0752a71c2392f9072210a2500262a821
+chain_inclusion_verified = false
+```
+
+重要边界：这版 PoC 已经验证了 provided anchored header chain / block / tx / previous-tx witness 的内部一致性，并且会重算 witnessed block / tx 的 CKB 原生 commitments，但还没有证明这些 anchor headers 本身来自 canonical CKB chain。下一步需要把 CKB header anchoring 放到真正可信的链上上下文里，或者继续接入 transaction proof / header deps / checkpoint transition。
+
+### SP1 Voting Settlement PoC
+
+当前已经把真实 voting settlement transcript 接进 SP1：
+
+```text
+transcript JSON
+  -> host 补充 compact block inclusion witness
+  -> SP1 guest 验证 snapshot / vote / tally settlement transcript
+  -> SP1 guest 从 raw transaction Molecule bytes 重算 vote tx / owner previous tx hash
+  -> SP1 guest 验证 vote tx hash / owner previous tx hash 被对应 block transactions_root 承诺
+  -> guest commit public values
+  -> host 生成并验证 SP1 core proof
+```
+
+当前成功运行：
+
+```bash
+scripts/run-sp1-voting-settlement.sh execute
+scripts/run-sp1-voting-settlement.sh core
+```
+
+当前 demo 的 SP1 public values：
+
+```text
+proposal_id     = 0xc27689d3b08472f648e59d96e2519174e65127e2264ee1ebd898f84d434bbaf7
+snapshot_id     = 0x0441f2798b6324b284e9d0016d37dc35df34d855bc750f0ce20a542f83c4d830
+snapshot_root   = 0x0441f2798b6324b284e9d0016d37dc35df34d855bc750f0ce20a542f83c4d830
+tally_root      = 0xa42570824d60f590a69afd6b46c6c3d903a6dfc14bb2126959259108f1b732be
+settlement_root = 0x86f66621dcadedde2cd802e0a239b2af969315c4cdff2c468100183635363add
+execute_cycles  = 16,430,991
+```
+
+SP1 core proof fixture：
+
+```text
+sp1-voting-settlement/artifacts/core-voting-settlement-fixture.json
+```
+
+当前 SP1 guest 已经不再依赖完整 CKB JSON/Molecule 类型。host 会从 CKB 原生数据派生 vote tx / owner previous tx 的 raw transaction Molecule bytes，以及 compact block inclusion witness：`transaction_hashes`、`witness_hashes`、`raw_transactions_root`、`witnesses_root`、`transactions_root`。guest 先用 CKB 默认 blake2b personalization 重算 raw transaction bytes 对应的 tx hash，再按 CKB CBMT 规则重算这些 roots，并检查 vote tx hash / owner previous tx hash 在对应 `tx_index` 上被 block header 的 `transactions_root` 承诺。
+
+当前边界：guest 还没有解析 raw transaction Molecule 里的每个字段。也就是说，vote / owner JSON 字段检查现在已经通过 guest 重算 tx hash 绑定到 raw transaction bytes，但 witness 仍可以继续收紧成 compact Molecule field extraction，减少对 JSON 视图的依赖。
+
+### SP1 Settlement Script PoC
+
+当前新增了第一版 settlement script PoC：
+
+```text
+sp1-settlement-script/
+```
+
+它先固定 CKB settlement type script 侧应该验证的外层协议：
+
+1. proof fixture 只能是 `plonk` / `groth16` 这类 SP1 on-chain verifiable proof。
+2. `onchain_proof_hex` 必须存在，长度必须和 fixture 声明一致。
+3. `public_values_hex` 必须正好是 160 bytes。
+4. public values 解码后必须和 `proposal_id`、`snapshot_id`、`snapshot_root`、`tally_root`、`settlement_root` 字段一致。
+5. script args 等价输入可以 pin `vk_hash`。
+6. 真正的 SP1 on-chain verifier 通过一个很小的 trait 边界接入。
+
+当前默认运行会拒绝 core fixture：
+
+```bash
+dao-treasury/scripts/verify-sp1-settlement-script-poc.sh
+```
+
+这是预期结果，因为 SP1 core proof 没有链上 verifier 可消费的 proof bytes。等 `plonk-voting-settlement-fixture.json` 或 `groth16-voting-settlement-fixture.json` 生成后，这个 PoC 可以先用 placeholder verifier 跑通 envelope，再把 trait 实现替换成 CKB-VM verifier port。
+
+Plonk/Groth16 fixture 的 envelope smoke 命令：
+
+```bash
+ALLOW_PLACEHOLDER=1 dao-treasury/scripts/verify-sp1-settlement-script-poc.sh \
+  dao-treasury/sp1-voting-settlement/artifacts/plonk-voting-settlement-fixture.json
+```
+
+不设置 `ALLOW_PLACEHOLDER=1` 时，Plonk/Groth16 fixture 会停在明确的 `real CKB-VM SP1 verifier is not linked yet` 边界。
+
+本机 Plonk fixture 生成状态：当前 SP1 Plonk wrapping 需要 Docker 提供 gnark FFI 环境；`docker info` 不可用时，`scripts/run-sp1-voting-settlement.sh plonk` 会提前失败并提示先启动 Docker。Apple Silicon 上 SP1 gnark image 当前是 amd64-only，wrapper 会默认设置 `DOCKER_DEFAULT_PLATFORM=linux/amd64` 走 Docker 模拟执行。
+
+Groth16 mode 也已经接到 host wrapper，成功时会输出 `groth16-voting-settlement-fixture.json`。
+
+最新本机 Plonk 尝试已经完整安装 `~/.sp1/circuits/plonk/v6.1.0/` artifacts，并跑到 gnark `constraint system solver done`，随后 Docker 进程以 137 类状态退出，没有产出 `plonk-voting-settlement-fixture.json`。当前 blocker 是本地 Docker proof generation 的内存峰值；可以继续提高 Docker 内存，或改用 prover network / 更大机器生成 on-chain fixture。
+
 ## 本地辅助脚本
 
 | 脚本 | 用途 |
@@ -525,6 +664,16 @@ is_final = true
 | `scripts/start-tally-service.sh` | 启动 Rust Tally JSON-RPC service |
 | `scripts/tally-rpc.sh` | 调用 Rust Tally service 的通用 JSON-RPC 客户端 |
 | `tally-service/` | Rust Tally service MVP crate |
+| `scripts/create-zkvm-settlement-transcript.sh` | 生成 zkVM settlement transcript PoC witness |
+| `scripts/verify-zkvm-settlement-transcript.sh` | 用 Rust guest-shaped verifier 验证 transcript 并生成 settlement output |
+| `scripts/run-zkvm-poc.sh` | 串起当前 zkVM PoC 的本地整条流程；`--fresh-demo` 会先从空链重跑 demo，再生成 transcript 和 settlement output |
+| `zkvm-poc/` | zkVM settlement PoC crate |
+| `scripts/run-sp1-settlement-smoke.sh` | 运行最小 SP1 settlement smoke test |
+| `sp1-settlement-smoke/` | 最小 SP1 host / guest 集成 PoC |
+| `scripts/run-sp1-voting-settlement.sh` | 运行真实 voting settlement transcript 的 SP1 execute / core proof |
+| `sp1-voting-settlement/` | 真实 voting settlement transcript 的 SP1 host / guest PoC |
+| `scripts/verify-sp1-settlement-script-poc.sh` | 验证 SP1 settlement script PoC 的 fixture envelope；当前会拒绝 core proof |
+| `sp1-settlement-script/` | CKB settlement script witness / public values / vk pinning envelope PoC |
 | `scripts/fund-accounts.sh` | 从空链复现账户 funding，需 `CONFIRM=1` |
 | `scripts/create-dao-deposits.sh` | 从已 funding 链复现 DAO deposits，需 `CONFIRM=1` |
 
@@ -539,6 +688,18 @@ dao-treasury/scripts/run-demo.sh
 ```
 
 脚本会清理 `dao-treasury/data/`、`logs/` 和旧 artifacts，保留本地 demo accounts，并在最后写出 `artifacts/demo-summary.json`。
+
+从空链完整重跑当前 zkVM PoC：
+
+```bash
+dao-treasury/scripts/run-zkvm-poc.sh --fresh-demo
+```
+
+如果 demo artifacts 已经存在，只想重建 transcript 和 settlement output：
+
+```bash
+dao-treasury/scripts/run-zkvm-poc.sh
+```
 
 生成投票周期 snapshot：
 
@@ -674,4 +835,23 @@ PROPOSAL_FILE=dao-treasury/artifacts/proposal-<short-id>.json \
 SNAPSHOT_FILE=dao-treasury/artifacts/snapshot-block-<N>.json \
 dao-treasury/scripts/verify-tally.sh \
   dao-treasury/artifacts/tally-<short-id>-block-<N>.json
+```
+
+生成 zkVM settlement transcript PoC：
+
+```bash
+dao-treasury/scripts/create-zkvm-settlement-transcript.sh \
+  dao-treasury/artifacts/proposal-<short-id>.json \
+  dao-treasury/artifacts/snapshot-block-<N>.json \
+  dao-treasury/artifacts/tally-<short-id>-block-<M>.json
+```
+
+注意：这一步当前会从本地 CKB RPC 读取 vote tx 和 previous output cells，因此需要本地 dev chain 处于可访问状态。
+
+验证 transcript 并输出 settlement result：
+
+```bash
+dao-treasury/scripts/verify-zkvm-settlement-transcript.sh \
+  dao-treasury/artifacts/zkvm-settlement-transcript-<short-id>.json \
+  dao-treasury/artifacts/zkvm-settlement-output-<short-id>.json
 ```
