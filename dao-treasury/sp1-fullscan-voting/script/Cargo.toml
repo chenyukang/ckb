@@ -1,0 +1,24 @@
+[package]
+name = "sp1-fullscan-voting-script"
+version = "0.1.0"
+edition = "2021"
+publish = false
+default-run = "sp1-fullscan-voting"
+
+[[bin]]
+name = "sp1-fullscan-voting"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+ckb-jsonrpc-types = { path = "../../../util/jsonrpc-types" }
+ckb-types = { path = "../../../util/types" }
+clap = { version = "4.5.53", features = ["derive"] }
+hex = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sp1-fullscan-voting-lib = { path = "../lib" }
+sp1-sdk = { version = "6.1.0", features = ["blocking"] }
+
+[build-dependencies]
+sp1-build = { version = "6.1.0" }

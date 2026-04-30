@@ -99,6 +99,12 @@ def main():
     parser.add_argument("--type-hash-type", default="data")
     parser.add_argument("--type-args", required=True)
     parser.add_argument("--type-code-out-point", required=True, help="<tx-hash>:<index>")
+    parser.add_argument(
+        "--extra-cell-dep-out-point",
+        action="append",
+        default=[],
+        help="Additional cell dep out point in <tx-hash>:<index> form. Can be repeated.",
+    )
     parser.add_argument("--tx-file", type=Path)
     args = parser.parse_args()
 
@@ -157,6 +163,8 @@ def main():
 
     tx = read_json(tx_file)
     add_code_dep(tx, parse_out_point(args.type_code_out_point))
+    for extra_dep in args.extra_cell_dep_out_point:
+        add_code_dep(tx, parse_out_point(extra_dep))
     tx["transaction"]["outputs"][0]["type"] = {
         "code_hash": args.type_code_hash,
         "hash_type": args.type_hash_type,

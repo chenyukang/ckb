@@ -303,6 +303,33 @@ tally.get_voter_options
 - [ ] 修改 reward / dao accounting / verifier。
 - [ ] 增加 consensus tests。
 
+### 11. Full-Scan zkVM Voting 备选路线
+
+- [x] 新增独立 `fullscan-zkvm-voting/` PoC 目录，不兼容旧 snapshot/tally MVP。
+- [x] 新增 host-side full-scan utility：创建 proposal/vote artifact，并按 block window 扫描所有 outputs。
+- [x] 新增 article-style proposal / vote cell 提交脚本；vote tx 支持附带 DAO deposit cell_dep。
+- [x] 新增 `sp1-fullscan-voting/`：guest 从完整 block window transcript 自己发现 vote outputs 并重算 report root。
+- [x] 在 SP1 guest 中重算每笔 raw transaction Molecule bytes 的 tx hash，并把 tally 使用到的 JSON 字段与 raw Molecule 字段逐项比对。
+- [x] 在真实本地链 transcript 上跑 SP1 execute / core proof。
+- [ ] 生成 article-compatible treasury cell 并接 release 流程。
+- [ ] 接 proposal type script 的 SP1 public values envelope。
+
+当前 full-scan zkVM 本地链样例：
+
+```text
+window                  = blocks 27..39
+blocks_scanned          = 13
+transactions_scanned    = 17
+vote_outputs_seen       = 3
+valid_vote_count        = 3
+counted_vote_count      = 3
+choice_weights_shannons = yes 7000000000000, no 2000000000000
+passed                  = true
+execute_cycles          = 6,427,243
+sp1_report_root         = 0xc2ae68afae1958e9828643244b118696fe1b763926d375177648f3e1aa9bde28
+core_fixture            = dao-treasury/artifacts/core-fullscan-voting-fixture-rawtx.json
+```
+
 ## 当前环境记录
 
 本地 DB 已按最新 type-script session 设计从空 dev chain 重跑。当前链已经完成 funding、DAO deposits、snapshot、typed Proposal Session Cell、typed Vote Cells 和 final tally。
