@@ -690,7 +690,10 @@ where
                     let copy_length = u64::min(full_length, real_length);
                     for i in 0..copy_length {
                         let fd = inherited_fd[i as usize].0;
-                        let addr = buffer_addr.checked_add(i * 8).ok_or(Error::MemOutOfBound)?;
+                        let offset = i.checked_mul(8).ok_or(Error::MemOutOfBound)?;
+                        let addr = buffer_addr
+                            .checked_add(offset)
+                            .ok_or(Error::MemOutOfBound)?;
                         machine
                             .inner_mut()
                             .memory_mut()
