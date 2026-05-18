@@ -227,7 +227,9 @@ impl BlockAssembler {
         }
 
         let txs_size = checked_txs.iter().map(|tx| tx.size).sum();
-        let total_size = basic_size + txs_size;
+        let total_size = basic_size
+            .checked_add(txs_size)
+            .ok_or(BlockAssemblerError::Overflow)?;
 
         let mut builder = BlockTemplateBuilder::from_template(&current.template);
         builder
@@ -282,7 +284,13 @@ impl BlockAssembler {
             .cellbase(cellbase)
             .uncles(uncles)
             .work_id(self.work_id.fetch_add(1, Ordering::SeqCst))
-            .current_time(cmp::max(unix_time_as_millis(), tip_header.timestamp() + 1))
+            .current_time(cmp::max(
+                unix_time_as_millis(),
+                tip_header
+                    .timestamp()
+                    .checked_add(1)
+                    .ok_or(BlockAssemblerError::Overflow)?,
+            ))
             .dao(dao);
         if let Some(data) = extension {
             builder.extension(data);
@@ -510,7 +518,10 @@ impl BlockAssembler {
         snapshot: &Snapshot,
     ) -> Result<TransactionView, AnyError> {
         let tip = snapshot.tip_header();
-        let candidate_number = tip.number() + 1;
+        let candidate_number = tip
+            .number()
+            .checked_add(1)
+            .ok_or(BlockAssemblerError::Overflow)?;
         let cellbase_witness = Self::build_cellbase_witness(config, snapshot);
 
         let tx = {

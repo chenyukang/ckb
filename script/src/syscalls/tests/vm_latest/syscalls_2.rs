@@ -70,6 +70,29 @@ fn test_current_cycles() {
     assert_eq!(machine.registers()[A0], cycles);
 }
 
+#[test]
+fn test_pipe_fd_address_overflow() {
+    let mut machine = SCRIPT_VERSION.init_core_machine_without_limit();
+
+    machine.set_register(A0, u64::MAX);
+    machine.set_register(A7, PIPE);
+
+    let rtx = Arc::new(ResolvedTransaction {
+        transaction: TransactionBuilder::default().build(),
+        resolved_cell_deps: vec![],
+        resolved_inputs: vec![],
+        resolved_dep_groups: vec![],
+    });
+    let sg_data = build_sg_data(rtx, vec![], vec![]);
+    let vm_context = VmContext::new(&sg_data, &Arc::new(Mutex::new(Vec::new())));
+    let mut pipe = Pipe::new(&0, &vm_context);
+
+    assert!(matches!(
+        pipe.ecall(&mut machine),
+        Err(ckb_vm::Error::MemOutOfBound)
+    ));
+}
+
 fn _test_load_extension(
     data: &[u8],
     index: u64,

@@ -677,8 +677,11 @@ impl<DL: HeaderFieldsProvider> SinceVerifier<DL> {
             match since.extract_metric() {
                 Some(SinceMetric::BlockNumber(block_number)) => {
                     let proposal_window = self.consensus.tx_proposal_window();
-                    if self.tx_env.block_number(proposal_window) < info.block_number + block_number
-                    {
+                    let required_block_number = info
+                        .block_number
+                        .checked_add(block_number)
+                        .ok_or(TransactionError::InvalidSince { index })?;
+                    if self.tx_env.block_number(proposal_window) < required_block_number {
                         return Err((TransactionError::Immature { index }).into());
                     }
                 }
@@ -714,7 +717,10 @@ impl<DL: HeaderFieldsProvider> SinceVerifier<DL> {
                         self.parent_median_time(&info.block_hash)
                     };
                     let current_median_time = self.block_median_time(&parent_hash);
-                    if current_median_time < base_timestamp + timestamp {
+                    let required_timestamp = base_timestamp
+                        .checked_add(timestamp)
+                        .ok_or(TransactionError::InvalidSince { index })?;
+                    if current_median_time < required_timestamp {
                         return Err((TransactionError::Immature { index }).into());
                     }
                 }

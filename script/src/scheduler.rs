@@ -810,10 +810,12 @@ where
                 write_machine
                     .inner_mut()
                     .add_cycles_no_checking(transferred_byte_cycles(copiable))?;
-                let data = write_machine
-                    .inner_mut()
-                    .memory_mut()
-                    .load_bytes(write_buffer_addr.wrapping_add(consumed), copiable)?;
+                let data = write_machine.inner_mut().memory_mut().load_bytes(
+                    write_buffer_addr
+                        .checked_add(consumed)
+                        .ok_or(Error::MemOutOfBound)?,
+                    copiable,
+                )?;
                 let (_, read_machine) = self
                     .instantiated
                     .get_mut(&read_vm_id)
