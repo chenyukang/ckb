@@ -583,7 +583,7 @@ impl Since {
                 EpochNumberWithFraction::from_full_value_unchecked(value),
             )),
             //0b0100_0000
-            0x4000_0000_0000_0000 => Some(SinceMetric::Timestamp(value * 1000)),
+            0x4000_0000_0000_0000 => value.checked_mul(1000).map(SinceMetric::Timestamp),
             _ => None,
         }
     }
