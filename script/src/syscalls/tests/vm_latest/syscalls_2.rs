@@ -93,6 +93,56 @@ fn test_pipe_fd_address_overflow() {
     ));
 }
 
+#[test]
+fn test_pipe_second_fd_address_overflow() {
+    let mut machine = SCRIPT_VERSION.init_core_machine_without_limit();
+
+    machine.set_register(A0, u64::MAX - 7);
+    machine.set_register(A7, PIPE);
+
+    let rtx = Arc::new(ResolvedTransaction {
+        transaction: TransactionBuilder::default().build(),
+        resolved_cell_deps: vec![],
+        resolved_inputs: vec![],
+        resolved_dep_groups: vec![],
+    });
+    let sg_data = build_sg_data(rtx, vec![], vec![]);
+    let vm_context = VmContext::new(&sg_data, &Arc::new(Mutex::new(Vec::new())));
+    let mut pipe = Pipe::new(&0, &vm_context);
+
+    assert!(matches!(
+        pipe.ecall(&mut machine),
+        Err(ckb_vm::Error::MemOutOfBound)
+    ));
+}
+
+#[test]
+fn test_spawn_args_address_overflow() {
+    let mut machine = SCRIPT_VERSION.init_core_machine_without_limit();
+
+    machine.set_register(A0, 0);
+    machine.set_register(A1, u64::from(Source::Transaction(SourceEntry::CellDep)));
+    machine.set_register(A2, 0);
+    machine.set_register(A3, 0);
+    machine.set_register(A4, u64::MAX - 7);
+    machine.set_register(A7, SPAWN);
+
+    let rtx = Arc::new(ResolvedTransaction {
+        transaction: TransactionBuilder::default().build(),
+        resolved_cell_deps: vec![],
+        resolved_inputs: vec![],
+        resolved_dep_groups: vec![],
+    });
+    let sg_data = build_sg_data(rtx, vec![], vec![]);
+    let vm_context = VmContext::new(&sg_data, &Arc::new(Mutex::new(Vec::new())));
+    let mut spawn = Spawn::new(&0, &vm_context);
+
+    assert!(matches!(
+        spawn.ecall(&mut machine),
+        Err(ckb_vm::Error::MemOutOfBound)
+    ));
+}
+
 fn _test_load_extension(
     data: &[u8],
     index: u64,
