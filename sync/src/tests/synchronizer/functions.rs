@@ -8,6 +8,7 @@ use ckb_network::{
     async_trait, bytes::Bytes,
 };
 use ckb_reward_calculator::RewardCalculator;
+use ckb_shared::block_status::BlockStatus;
 use ckb_shared::types::HeaderIndex;
 use ckb_shared::{Shared, SharedBuilder, Snapshot};
 use ckb_store::ChainStore;
@@ -417,6 +418,7 @@ fn test_get_locator_response() {
 struct DummyNetworkContext {
     pub peers: HashMap<PeerIndex, Peer>,
     pub disconnected: Arc<Mutex<HashSet<PeerIndex>>>,
+    pub fail_send_message: bool,
 }
 
 fn mock_peer_info() -> Peer {
@@ -558,6 +560,11 @@ impl CKBProtocolContext for DummyNetworkContext {
         _peer_index: PeerIndex,
         _data: Bytes,
     ) -> Result<(), ckb_network::Error> {
+        if self.fail_send_message {
+            return Err(ckb_network::Error::Dial(
+                "send_message blocked in test".to_string(),
+            ));
+        }
         Ok(())
     }
     fn send_message_to(
@@ -565,6 +572,11 @@ impl CKBProtocolContext for DummyNetworkContext {
         _peer_index: PeerIndex,
         _data: Bytes,
     ) -> Result<(), ckb_network::Error> {
+        if self.fail_send_message {
+            return Err(ckb_network::Error::Dial(
+                "send_message_to blocked in test".to_string(),
+            ));
+        }
         Ok(())
     }
     fn filter_broadcast(
@@ -613,6 +625,7 @@ fn mock_network_context(peer_num: usize) -> DummyNetworkContext {
     DummyNetworkContext {
         peers,
         disconnected: Arc::new(Mutex::new(HashSet::default())),
+        fail_send_message: false,
     }
 }
 
@@ -1257,6 +1270,36 @@ fn get_blocks_process() {
     );
 
     let hash = shared.snapshot().get_block_hash(1).unwrap();
+    shared.insert_block_status(hash.clone(), BlockStatus::BLOCK_VALID);
+    assert!(
+        synchronizer
+            .shared
+            .active_chain()
+            .contains_block_status(&hash, BlockStatus::BLOCK_VALID)
+    );
+    assert!(
+        synchronizer
+            .shared
+            .active_chain()
+            .get_block(&hash)
+            .is_some()
+    );
+    let message_with_block = packed::GetBlocks::new_builder()
+        .block_hashes(vec![hash.clone()])
+        .build();
+
+    let nc = Arc::new(mock_network_context(1)) as Arc<dyn CKBProtocolContext + Sync + 'static>;
+    let peer: PeerIndex = 1.into();
+    let process = GetBlocksProcess::new(message_with_block.as_reader(), &synchronizer, peer, &nc);
+    assert_eq!(process.execute(), Status::ok());
+
+    let mut failing_nc = mock_network_context(1);
+    failing_nc.fail_send_message = true;
+    let nc = Arc::new(failing_nc) as Arc<dyn CKBProtocolContext + Sync + 'static>;
+    let peer: PeerIndex = 1.into();
+    let process = GetBlocksProcess::new(message_with_block.as_reader(), &synchronizer, peer, &nc);
+    assert_eq!(process.execute().code(), StatusCode::Network);
+
     let message_with_dup = packed::GetBlocks::new_builder()
         .block_hashes(vec![hash.clone(), hash])
         .build();
