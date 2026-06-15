@@ -27,7 +27,8 @@ use ckb_verification::cache::{
 };
 use ckb_verification::{
     BlockErrorKind, CellbaseError, CommitError, ContextualTransactionVerifier,
-    DaoScriptSizeVerifier, TimeRelativeTransactionVerifier, UnknownParentError,
+    DaoScriptSizeVerifier, ScriptHashTypeVerifier, TimeRelativeTransactionVerifier,
+    UnknownParentError, crosses_vm_version_2_and_syscalls_3_boundary,
 };
 use ckb_verification::{BlockTransactionsError, EpochError, TxVerifyEnv};
 use ckb_verification_traits::Switch;
@@ -389,9 +390,20 @@ impl<'a, 'b, CS: ChainStore + VersionbitsIndexer + 'static> BlockTxsVerifier<'a,
         resolved: &'a [Arc<ResolvedTransaction>],
         skip_script_verify: bool,
     ) -> Result<(Cycle, Vec<Completed>), Error> {
+        let crosses_vm_v2_boundary = crosses_vm_version_2_and_syscalls_3_boundary(
+            self.context.consensus.as_ref(),
+            self.parent.epoch().number(),
+            self.header.epoch().number(),
+        );
+        if crosses_vm_v2_boundary {
+            self.handle.block_on(async {
+                self.txs_verify_cache.write().await.clear();
+            });
+        }
+
         // We should skip updating tx_verify_cache about the cellbase tx,
         // putting it in cache that will never be used until lru cache expires.
-        let fetched_cache = if resolved.len() > 1 {
+        let fetched_cache = if !crosses_vm_v2_boundary && resolved.len() > 1 {
             self.fetched_cache(resolved)
         } else {
             HashMap::new()
@@ -405,6 +417,14 @@ impl<'a, 'b, CS: ChainStore + VersionbitsIndexer + 'static> BlockTxsVerifier<'a,
             .enumerate()
             .map(|(index, tx)| {
                 let wtx_hash = tx.transaction.witness_hash();
+                ScriptHashTypeVerifier::new(&tx.transaction)
+                    .verify_with_env(self.context.consensus.as_ref(), tx_env.as_ref())
+                    .map_err(|error| {
+                        Error::from(BlockTransactionsError {
+                            index: index as u32,
+                            error,
+                        })
+                    })?;
 
                 if let Some(completed) = fetched_cache.get(&wtx_hash) {
                     TimeRelativeTransactionVerifier::new(

@@ -284,7 +284,15 @@ impl<'a, DL: HeaderFieldsProvider> HeaderAcceptor<'a, DL> {
     }
 
     pub fn version_check(&self, state: &mut ValidationResult) -> Result<(), ()> {
-        if self.header.version() != 0 {
+        let epoch = self.header.epoch().number();
+        let version_rule_removed = self
+            .active_chain
+            .shared()
+            .consensus()
+            .hardfork_switch()
+            .ckb2023
+            .is_remove_header_version_reservation_rule_enabled(epoch);
+        if !version_rule_removed && self.header.version() != 0 {
             state.invalid(Some(ValidationError::Version));
             Err(())
         } else {

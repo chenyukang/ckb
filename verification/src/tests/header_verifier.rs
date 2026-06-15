@@ -1,11 +1,19 @@
-use crate::header_verifier::{EpochVerifier, NumberVerifier, PowVerifier, TimestampVerifier};
-use crate::{ALLOWED_FUTURE_BLOCKTIME, EpochError, NumberError, PowError, TimestampError};
+use crate::header_verifier::{
+    EpochVerifier, HeaderVersionVerifier, NumberVerifier, PowVerifier, TimestampVerifier,
+};
+use crate::{
+    ALLOWED_FUTURE_BLOCKTIME, BlockVersionError, EpochError, NumberError, PowError, TimestampError,
+};
+use ckb_chain_spec::consensus::ConsensusBuilder;
 use ckb_error::assert_error_eq;
 use ckb_pow::PowEngine;
 use ckb_systemtime::unix_time_as_millis;
 use ckb_test_chain_utils::{MOCK_MEDIAN_TIME_COUNT, MockMedianTime};
 use ckb_types::{
-    core::{EpochNumberWithFraction, HeaderBuilder},
+    core::{
+        EpochNumberWithFraction, HeaderBuilder,
+        hardfork::{CKB2021, CKB2023, HardForks},
+    },
     packed::Header,
 };
 
@@ -15,6 +23,41 @@ fn mock_median_time_context() -> MockMedianTime {
     let now = unix_time_as_millis();
     let timestamps = (0..100).map(|_| now).collect();
     MockMedianTime::new(timestamps)
+}
+
+#[test]
+fn test_header_version_before_and_after_rfc0048() {
+    let hardfork_switch = HardForks {
+        ckb2021: CKB2021::new_dev_default(),
+        ckb2023: CKB2023::new_with_specified(10),
+    };
+    let consensus = ConsensusBuilder::default()
+        .hardfork_switch(hardfork_switch)
+        .build();
+    let before = HeaderBuilder::default()
+        .version(1u32)
+        .epoch(EpochNumberWithFraction::new(9, 0, 10))
+        .build();
+
+    assert_error_eq!(
+        HeaderVersionVerifier::new(&consensus, &before)
+            .verify()
+            .unwrap_err(),
+        BlockVersionError {
+            expected: 0,
+            actual: 1,
+        },
+    );
+
+    let after = HeaderBuilder::default()
+        .version(1u32)
+        .epoch(EpochNumberWithFraction::new(10, 0, 10))
+        .build();
+    assert!(
+        HeaderVersionVerifier::new(&consensus, &after)
+            .verify()
+            .is_ok()
+    );
 }
 
 #[test]

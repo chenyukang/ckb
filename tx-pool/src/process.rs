@@ -30,6 +30,7 @@ use ckb_util::LinkedHashSet;
 use ckb_verification::{
     TxVerifyEnv,
     cache::{CacheEntry, Completed},
+    is_vm_version_2_and_syscalls_3_enabled_at_epoch,
 };
 use std::collections::HashSet;
 use std::collections::{HashMap, VecDeque};
@@ -792,12 +793,30 @@ impl TxPoolService {
         }
         let retain: Vec<TransactionView> = detached.difference(&attached).cloned().collect();
 
-        let fetched_cache = self.fetch_txs_verify_cache(retain.iter()).await;
-
         // If there are any transactions requires re-process, return them.
         //
         // At present, there is only one situation:
         // - If the hardfork was happened, then re-process all transactions.
+        let old_tip_epoch = self
+            .tx_pool
+            .read()
+            .await
+            .snapshot
+            .tip_header()
+            .epoch()
+            .number();
+        let new_tip_epoch = snapshot.tip_header().epoch().number();
+        let consensus = snapshot.consensus();
+        let old_vm_v2_enabled =
+            is_vm_version_2_and_syscalls_3_enabled_at_epoch(consensus, old_tip_epoch);
+        let new_vm_v2_enabled =
+            is_vm_version_2_and_syscalls_3_enabled_at_epoch(consensus, new_tip_epoch);
+        let fetched_cache = if old_vm_v2_enabled == new_vm_v2_enabled {
+            self.fetch_txs_verify_cache(retain.iter()).await
+        } else {
+            self.txs_verify_cache.write().await.clear();
+            HashMap::new()
+        };
         {
             // This closure is used to limit the lifetime of mutable tx_pool.
             let mut tx_pool = self.tx_pool.write().await;

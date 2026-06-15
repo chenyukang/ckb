@@ -19,6 +19,7 @@ use ckb_types::core::cell::{
 use ckb_types::core::{BlockExt, BlockNumber, BlockView, Cycle, HeaderView};
 use ckb_types::packed::Byte32;
 use ckb_types::utilities::merkle_mountain_range::ChainRootMMR;
+use ckb_verification::HeaderVersionVerifier;
 use ckb_verification::InvalidParentError;
 use ckb_verification::cache::Completed;
 use ckb_verification_contextual::{ContextualBlockVerifier, VerifyContext};
@@ -314,6 +315,7 @@ impl ConsumeUnverifiedBlockProcessor {
             .expect("epoch should be stored");
         let new_epoch = next_block_epoch.is_head();
         let epoch = next_block_epoch.epoch();
+        HeaderVersionVerifier::new(self.shared.consensus(), &block.header()).verify()?;
 
         let db_txn = Arc::new(self.shared.store().begin_transaction());
         let txn_snapshot = db_txn.get_snapshot();

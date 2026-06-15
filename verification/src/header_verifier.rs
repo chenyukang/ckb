@@ -1,5 +1,6 @@
 use crate::{
-    ALLOWED_FUTURE_BLOCKTIME, EpochError, NumberError, PowError, TimestampError, UnknownParentError,
+    ALLOWED_FUTURE_BLOCKTIME, BlockVersionError, EpochError, NumberError, PowError, TimestampError,
+    UnknownParentError,
 };
 use ckb_chain_spec::consensus::Consensus;
 use ckb_error::Error;
@@ -40,12 +41,41 @@ impl<'a, DL: HeaderFieldsProvider> Verifier for HeaderVerifier<'a, DL> {
             })?;
         NumberVerifier::new(parent_fields.number, header).verify()?;
         EpochVerifier::new(parent_fields.epoch, header).verify()?;
+        HeaderVersionVerifier::new(self.consensus, header).verify()?;
         TimestampVerifier::new(
             self.data_loader,
             header,
             self.consensus.median_time_block_count(),
         )
         .verify()?;
+        Ok(())
+    }
+}
+
+pub struct HeaderVersionVerifier<'a> {
+    consensus: &'a Consensus,
+    header: &'a HeaderView,
+}
+
+impl<'a> HeaderVersionVerifier<'a> {
+    pub fn new(consensus: &'a Consensus, header: &'a HeaderView) -> Self {
+        HeaderVersionVerifier { consensus, header }
+    }
+
+    pub fn verify(&self) -> Result<(), Error> {
+        let epoch = self.header.epoch().number();
+        let version_rule_removed = self
+            .consensus
+            .hardfork_switch()
+            .ckb2023
+            .is_remove_header_version_reservation_rule_enabled(epoch);
+        if !version_rule_removed && self.header.version() != 0 {
+            return Err(BlockVersionError {
+                expected: 0,
+                actual: self.header.version(),
+            }
+            .into());
+        }
         Ok(())
     }
 }

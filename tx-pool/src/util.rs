@@ -11,7 +11,7 @@ use ckb_types::core::{
 };
 use ckb_verification::{
     ContextualTransactionVerifier, DaoScriptSizeVerifier, NonContextualTransactionVerifier,
-    TimeRelativeTransactionVerifier, TxVerifyEnv,
+    ScriptHashTypeVerifier, TimeRelativeTransactionVerifier, TxVerifyEnv,
     cache::{CacheEntry, Completed},
 };
 use std::sync::Arc;
@@ -92,6 +92,9 @@ pub(crate) async fn verify_rtx(
 ) -> Result<Completed, Reject> {
     let consensus = snapshot.cloned_consensus();
     let data_loader = snapshot.as_data_loader();
+    ScriptHashTypeVerifier::new(&rtx.transaction)
+        .verify_with_env(consensus.as_ref(), tx_env.as_ref())
+        .map_err(Reject::Verification)?;
 
     if let Some(completed) = cache_entry {
         TimeRelativeTransactionVerifier::new(rtx, consensus, data_loader, tx_env)

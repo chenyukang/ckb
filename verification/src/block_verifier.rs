@@ -1,8 +1,10 @@
 use crate::{
-    BlockErrorKind, CellbaseError, transaction_verifier::NonContextualTransactionVerifier,
+    BlockErrorKind, CellbaseError,
+    transaction_verifier::{
+        NonContextualTransactionVerifier, is_script_hash_type_enabled_at_epoch,
+    },
 };
 use ckb_chain_spec::consensus::Consensus;
-use ckb_constant::consensus::ENABLED_SCRIPT_HASH_TYPE;
 use ckb_error::Error;
 use ckb_types::{
     core::{BlockView, ScriptHashType},
@@ -41,7 +43,7 @@ impl<'a> Verifier for BlockVerifier<'a> {
         let max_block_bytes = self.consensus.max_block_bytes();
         BlockProposalsLimitVerifier::new(max_block_proposals_limit).verify(target)?;
         BlockBytesVerifier::new(max_block_bytes).verify(target)?;
-        CellbaseVerifier::new().verify(target)?;
+        CellbaseVerifier::new(self.consensus).verify(target)?;
         DuplicateVerifier::new().verify(target)?;
         MerkleRootVerifier::new().verify(target)
     }
@@ -55,12 +57,14 @@ impl<'a> Verifier for BlockVerifier<'a> {
 /// Cellbase output type_ must be empty
 /// Cellbase has only one dummy input. The input's `since` field must be equal to the block number.
 #[derive(Clone)]
-pub struct CellbaseVerifier {}
+pub struct CellbaseVerifier<'a> {
+    consensus: &'a Consensus,
+}
 
-impl CellbaseVerifier {
+impl<'a> CellbaseVerifier<'a> {
     /// Constructs a CellbaseVerifier
-    pub fn new() -> Self {
-        CellbaseVerifier {}
+    pub fn new(consensus: &'a Consensus) -> Self {
+        CellbaseVerifier { consensus }
     }
 
     pub fn verify(&self, block: &BlockView) -> Result<(), Error> {
@@ -103,6 +107,7 @@ impl CellbaseVerifier {
             return Err((CellbaseError::InvalidOutputData).into());
         }
 
+        let epoch_number = block.epoch().number();
         if cellbase_transaction
             .witnesses()
             .get(0)
@@ -113,8 +118,12 @@ impl CellbaseVerifier {
                         ScriptHashType::try_from(cellbase_witness.lock().hash_type())
                             .ok()
                             .and_then(|hash_type| {
-                                let val: u8 = hash_type.into();
-                                ENABLED_SCRIPT_HASH_TYPE.contains(&val).then_some(())
+                                is_script_hash_type_enabled_at_epoch(
+                                    self.consensus,
+                                    epoch_number,
+                                    hash_type,
+                                )
+                                .then_some(())
                             })
                     })
             })
@@ -134,8 +143,7 @@ impl CellbaseVerifier {
 
         for output in cellbase_transaction.outputs() {
             if let Ok(hash_type) = TryInto::<ScriptHashType>::try_into(output.lock().hash_type()) {
-                let val: u8 = hash_type.into();
-                if !ENABLED_SCRIPT_HASH_TYPE.contains(&val) {
+                if !is_script_hash_type_enabled_at_epoch(self.consensus, epoch_number, hash_type) {
                     return Err((CellbaseError::InvalidOutputLock).into());
                 }
             } else {

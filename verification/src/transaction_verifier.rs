@@ -14,7 +14,8 @@ use ckb_traits::{
 };
 use ckb_types::{
     core::{
-        Capacity, Cycle, EpochNumberWithFraction, ScriptHashType, TransactionView, Version,
+        Capacity, Cycle, EpochNumber, EpochNumberWithFraction, ScriptHashType, TransactionView,
+        Version,
         cell::{CellMeta, ResolvedTransaction},
     },
     packed::{Byte32, CellOutput},
@@ -788,6 +789,39 @@ pub struct ScriptHashTypeVerifier<'a> {
     transaction: &'a TransactionView,
 }
 
+pub fn is_script_hash_type_enabled_at_epoch(
+    consensus: &Consensus,
+    epoch_number: EpochNumber,
+    hash_type: ScriptHashType,
+) -> bool {
+    let val: u8 = hash_type.into();
+    if !ENABLED_SCRIPT_HASH_TYPE.contains(&val) {
+        return false;
+    }
+
+    hash_type != ScriptHashType::Data2
+        || is_vm_version_2_and_syscalls_3_enabled_at_epoch(consensus, epoch_number)
+}
+
+pub fn is_vm_version_2_and_syscalls_3_enabled_at_epoch(
+    consensus: &Consensus,
+    epoch_number: EpochNumber,
+) -> bool {
+    consensus
+        .hardfork_switch()
+        .ckb2023
+        .is_vm_version_2_and_syscalls_3_enabled(epoch_number)
+}
+
+pub fn crosses_vm_version_2_and_syscalls_3_boundary(
+    consensus: &Consensus,
+    parent_epoch: EpochNumber,
+    current_epoch: EpochNumber,
+) -> bool {
+    !is_vm_version_2_and_syscalls_3_enabled_at_epoch(consensus, parent_epoch)
+        && is_vm_version_2_and_syscalls_3_enabled_at_epoch(consensus, current_epoch)
+}
+
 impl<'a> ScriptHashTypeVerifier<'a> {
     pub fn new(transaction: &'a TransactionView) -> Self {
         Self { transaction }
@@ -801,6 +835,31 @@ impl<'a> ScriptHashTypeVerifier<'a> {
                     return Err(
                         TransactionError::ScriptHashTypeNotPermitted { hash_type: val }.into(),
                     );
+                }
+            } else {
+                return Err((TransactionError::InvalidScriptHashType {
+                    hash_type: output.lock().hash_type(),
+                })
+                .into());
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn verify_with_env(
+        &self,
+        consensus: &Consensus,
+        tx_env: &TxVerifyEnv,
+    ) -> Result<(), Error> {
+        let epoch_number = tx_env.epoch_number_without_proposal_window();
+        for output in self.transaction.outputs() {
+            if let Ok(hash_type) = TryInto::<ScriptHashType>::try_into(output.lock().hash_type()) {
+                if !is_script_hash_type_enabled_at_epoch(consensus, epoch_number, hash_type) {
+                    return Err(TransactionError::ScriptHashTypeNotPermitted {
+                        hash_type: hash_type.into(),
+                    }
+                    .into());
                 }
             } else {
                 return Err((TransactionError::InvalidScriptHashType {

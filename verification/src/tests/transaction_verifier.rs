@@ -19,7 +19,7 @@ use ckb_types::{
         BlockNumber, Capacity, EpochNumber, EpochNumberWithFraction, HeaderView, ScriptHashType,
         TransactionBuilder, TransactionInfo, TransactionView, capacity_bytes,
         cell::{CellMetaBuilder, ResolvedTransaction},
-        hardfork::HardForks,
+        hardfork::{CKB2021, CKB2023, HardForks},
     },
     h256,
     packed::{Byte32, CellDep, CellInput, CellOutput, OutPoint, Script},
@@ -118,6 +118,55 @@ pub fn test_not_enabled_hash_type_output_lock() {
         TransactionError::ScriptHashTypeNotPermitted {
             hash_type: ScriptHashType::Data3.into(),
         },
+    );
+}
+
+#[test]
+pub fn test_data2_output_lock_requires_ckb2023_activation() {
+    let transaction = TransactionBuilder::default()
+        .output(
+            CellOutput::new_builder()
+                .lock(
+                    Script::default()
+                        .as_builder()
+                        .hash_type(ScriptHashType::Data2)
+                        .build(),
+                )
+                .build(),
+        )
+        .output_data(Bytes::new())
+        .build();
+    let hardfork_switch = HardForks {
+        ckb2021: CKB2021::new_dev_default(),
+        ckb2023: CKB2023::new_with_specified(10),
+    };
+    let consensus = ConsensusBuilder::default()
+        .hardfork_switch(hardfork_switch)
+        .build();
+
+    assert!(ScriptHashTypeVerifier::new(&transaction).verify().is_ok());
+
+    let before = HeaderView::new_advanced_builder()
+        .epoch(EpochNumberWithFraction::new(9, 0, 10))
+        .build();
+    let before_env = TxVerifyEnv::new_commit(&before);
+    assert_error_eq!(
+        ScriptHashTypeVerifier::new(&transaction)
+            .verify_with_env(&consensus, &before_env)
+            .unwrap_err(),
+        TransactionError::ScriptHashTypeNotPermitted {
+            hash_type: ScriptHashType::Data2.into(),
+        },
+    );
+
+    let after = HeaderView::new_advanced_builder()
+        .epoch(EpochNumberWithFraction::new(10, 0, 10))
+        .build();
+    let after_env = TxVerifyEnv::new_commit(&after);
+    assert!(
+        ScriptHashTypeVerifier::new(&transaction)
+            .verify_with_env(&consensus, &after_env)
+            .is_ok()
     );
 }
 

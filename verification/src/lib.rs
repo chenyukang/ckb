@@ -19,11 +19,12 @@ pub use crate::error::{
     PowError, TimestampError, TransactionError, UnclesError, UnknownParentError,
 };
 pub use crate::genesis_verifier::GenesisVerifier;
-pub use crate::header_verifier::HeaderVerifier;
+pub use crate::header_verifier::{HeaderVerifier, HeaderVersionVerifier};
 pub use crate::transaction_verifier::{
     CapacityVerifier, ContextualTransactionVerifier, DaoScriptSizeVerifier,
-    NonContextualTransactionVerifier, ScriptVerifier, Since, SinceMetric,
-    TimeRelativeTransactionVerifier,
+    NonContextualTransactionVerifier, ScriptHashTypeVerifier, ScriptVerifier, Since, SinceMetric,
+    TimeRelativeTransactionVerifier, crosses_vm_version_2_and_syscalls_3_boundary,
+    is_script_hash_type_enabled_at_epoch, is_vm_version_2_and_syscalls_3_enabled_at_epoch,
 };
 pub use ckb_script::{
     ScriptError, ScriptGroupType, TransactionState as ScriptVerifyState, TxVerifyEnv,
