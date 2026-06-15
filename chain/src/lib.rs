@@ -74,6 +74,8 @@ pub struct LonelyBlockHash {
 
     pub epoch_number: EpochNumber,
 
+    pub block_size: usize,
+
     /// The Switch to control the verification process
     pub switch: Option<Switch>,
 
@@ -91,6 +93,7 @@ impl From<LonelyBlock> for LonelyBlockHash {
         let block_hash_h256: H256 = block.hash().into();
         let block_number: BlockNumber = block.number();
         let parent_hash_h256: H256 = block.parent_hash().into();
+        let block_size = block.data().total_size();
         let block_hash = block_hash_h256.into();
         let parent_hash = parent_hash_h256.into();
 
@@ -103,6 +106,7 @@ impl From<LonelyBlock> for LonelyBlockHash {
             },
             parent_hash,
             epoch_number,
+            block_size,
             switch,
             verify_callback,
         }
@@ -122,6 +126,10 @@ impl LonelyBlockHash {
 
     pub fn epoch_number(&self) -> EpochNumber {
         self.epoch_number
+    }
+
+    pub fn block_size(&self) -> usize {
+        self.block_size
     }
 
     pub fn hash(&self) -> Byte32 {

@@ -1,7 +1,9 @@
 use crate::SyncShared;
 use crate::types::{ActiveChain, IBDState};
+use ckb_chain::ChainController;
 use ckb_constant::sync::{
     BLOCK_DOWNLOAD_WINDOW, CHECK_POINT_WINDOW, INIT_BLOCKS_IN_TRANSIT_PER_PEER,
+    MAX_ORPHAN_POOL_SIZE,
 };
 use ckb_logger::{debug, trace};
 use ckb_metrics::HistogramTimer;
@@ -17,6 +19,7 @@ use std::sync::Arc;
 
 pub struct BlockFetcher {
     sync_shared: Arc<SyncShared>,
+    chain: ChainController,
     peer: PeerIndex,
     active_chain: ActiveChain,
     ibd: IBDState,
@@ -34,10 +37,16 @@ fn window_end(start: BlockNumber, window: BlockNumber, best_known: BlockNumber) 
 }
 
 impl BlockFetcher {
-    pub fn new(sync_shared: Arc<SyncShared>, peer: PeerIndex, ibd: IBDState) -> Self {
+    pub fn new(
+        sync_shared: Arc<SyncShared>,
+        chain: ChainController,
+        peer: PeerIndex,
+        ibd: IBDState,
+    ) -> Self {
         let active_chain = sync_shared.active_chain();
         BlockFetcher {
             sync_shared,
+            chain,
             peer,
             active_chain,
             ibd,
@@ -201,6 +210,24 @@ impl BlockFetcher {
         };
 
         let state = self.sync_shared.state();
+        let mut block_download_window = BLOCK_DOWNLOAD_WINDOW;
+        let orphan_pool_size = self.chain.orphan_blocks_total_size();
+        let orphan_pool_len = self.chain.orphan_blocks_len();
+        if matches!(self.ibd, IBDState::In) && orphan_pool_size >= MAX_ORPHAN_POOL_SIZE {
+            let tip = self.active_chain.tip_number();
+            block_download_window = 2;
+            debug!(
+                "[Enter special download mode], orphan pool total size = {}, orphan len = {}, inflight_len = {}, tip = {}",
+                orphan_pool_size,
+                orphan_pool_len,
+                state.read_inflight_blocks().total_inflight_count(),
+                tip
+            );
+
+            if orphan_pool_len > CHECK_POINT_WINDOW as usize {
+                state.write_inflight_blocks().mark_slow_block(tip);
+            }
+        }
 
         let mut start = {
             match self.ibd {
@@ -211,7 +238,7 @@ impl BlockFetcher {
         };
         let mut end = min(
             fetch_end,
-            window_end(start, BLOCK_DOWNLOAD_WINDOW, best_known.number()),
+            window_end(start, block_download_window, best_known.number()),
         );
         if end < start {
             return None;

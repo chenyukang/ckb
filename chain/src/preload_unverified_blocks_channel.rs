@@ -80,6 +80,7 @@ impl PreloadUnverifiedBlocksChannel {
             epoch_number: _epoch_number,
             switch,
             verify_callback,
+            ..
         } = task;
 
         let block_view = self

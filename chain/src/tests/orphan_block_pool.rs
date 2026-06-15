@@ -38,7 +38,7 @@ fn assert_leaders_have_children(pool: &OrphanBlockPool) {
         // `remove_blocks_by_parent` will remove all children from the pool,
         // so we need to put them back here.
         for child in children {
-            pool.insert(child);
+            assert!(pool.insert(child).is_ok());
         }
     }
 }
@@ -85,7 +85,7 @@ fn test_remove_blocks_by_parent() {
         blocks.push(new_block_clone);
 
         parent = new_block.block().header();
-        pool.insert(new_block.into());
+        assert!(pool.insert(new_block.into()).is_ok());
     }
 
     let orphan = pool.remove_blocks_by_parent(&consensus.genesis_block().hash());
@@ -96,6 +96,36 @@ fn test_remove_blocks_by_parent() {
     let orphan_set: HashSet<_> = orphan.into_iter().map(|b| b.hash()).collect();
     let blocks_set: HashSet<_> = blocks.into_iter().map(|b| b.hash()).collect();
     assert_eq!(orphan_set, blocks_set)
+}
+
+#[test]
+fn test_pool_tracks_total_size_and_rejects_when_full() {
+    let consensus = ConsensusBuilder::default().build();
+    let pool = OrphanBlockPool::with_capacity(2);
+    let first = gen_lonely_block(&consensus.genesis_block().header());
+    let second = gen_lonely_block(&first.block().header());
+    let third = gen_lonely_block(&second.block().header());
+    let expected_size = first.block().data().total_size() + second.block().data().total_size();
+
+    assert!(pool.insert(first.into()).is_ok());
+    assert!(pool.insert(second.into()).is_ok());
+    assert_eq!(pool.len(), 2);
+    assert_eq!(pool.total_size(), expected_size);
+    assert!(pool.is_full());
+
+    let rejected: LonelyBlockHash = third.into();
+    let rejected_hash = rejected.hash();
+    let rejected = pool
+        .insert(rejected)
+        .expect_err("orphan pool should reject over capacity");
+    assert_eq!(rejected.hash(), rejected_hash);
+    assert_eq!(pool.len(), 2);
+    assert_eq!(pool.total_size(), expected_size);
+
+    let removed = pool.remove_blocks_by_parent(&consensus.genesis_block().hash());
+    assert_eq!(removed.len(), 2);
+    assert_eq!(pool.len(), 0);
+    assert_eq!(pool.total_size(), 0);
 }
 
 #[test]
@@ -115,7 +145,7 @@ fn test_remove_blocks_by_parent_and_get_block_should_not_deadlock() {
             switch: None,
             verify_callback: None,
         };
-        pool.insert(new_block_clone.into());
+        assert!(pool.insert(new_block_clone.into()).is_ok());
         header = new_block.header();
         hashes.push(header.hash());
     }
@@ -151,32 +181,38 @@ fn test_leaders() {
         blocks.push(lonely_block);
         parent = new_block.block().header();
         if i % 5 != 0 {
-            pool.insert(new_block.into());
+            assert!(pool.insert(new_block.into()).is_ok());
         }
     }
     assert_leaders_have_children(&pool);
     assert_eq!(pool.len(), 15);
     assert_eq!(pool.leaders_len(), 4);
 
-    pool.insert(
-        LonelyBlock {
-            block: Arc::clone(blocks[5].block()),
-            switch: None,
-            verify_callback: None,
-        }
-        .into(),
+    assert!(
+        pool.insert(
+            LonelyBlock {
+                block: Arc::clone(blocks[5].block()),
+                switch: None,
+                verify_callback: None,
+            }
+            .into(),
+        )
+        .is_ok()
     );
     assert_leaders_have_children(&pool);
     assert_eq!(pool.len(), 16);
     assert_eq!(pool.leaders_len(), 3);
 
-    pool.insert(
-        LonelyBlock {
-            block: Arc::clone(blocks[10].block()),
-            switch: None,
-            verify_callback: None,
-        }
-        .into(),
+    assert!(
+        pool.insert(
+            LonelyBlock {
+                block: Arc::clone(blocks[10].block()),
+                switch: None,
+                verify_callback: None,
+            }
+            .into(),
+        )
+        .is_ok()
     );
     assert_leaders_have_children(&pool);
     assert_eq!(pool.len(), 17);
@@ -188,13 +224,16 @@ fn test_leaders() {
     assert_eq!(pool.len(), 17);
     assert_eq!(pool.leaders_len(), 2);
 
-    pool.insert(
-        LonelyBlock {
-            block: Arc::clone(blocks[0].block()),
-            switch: None,
-            verify_callback: None,
-        }
-        .into(),
+    assert!(
+        pool.insert(
+            LonelyBlock {
+                block: Arc::clone(blocks[0].block()),
+                switch: None,
+                verify_callback: None,
+            }
+            .into(),
+        )
+        .is_ok()
     );
     assert_leaders_have_children(&pool);
     assert_eq!(pool.len(), 18);
@@ -204,13 +243,16 @@ fn test_leaders() {
     assert_eq!(pool.len(), 3);
     assert_eq!(pool.leaders_len(), 1);
 
-    pool.insert(
-        LonelyBlock {
-            block: Arc::clone(blocks[15].block()),
-            switch: None,
-            verify_callback: None,
-        }
-        .into(),
+    assert!(
+        pool.insert(
+            LonelyBlock {
+                block: Arc::clone(blocks[15].block()),
+                switch: None,
+                verify_callback: None,
+            }
+            .into(),
+        )
+        .is_ok()
     );
     assert_leaders_have_children(&pool);
     assert_eq!(pool.len(), 4);
@@ -253,7 +295,7 @@ fn test_remove_expired_blocks() {
             switch: None,
             verify_callback: None,
         };
-        pool.insert(lonely_block.into());
+        assert!(pool.insert(lonely_block.into()).is_ok());
     }
     assert_eq!(pool.leaders_len(), 1);
 

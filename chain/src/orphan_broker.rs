@@ -5,7 +5,7 @@ use crate::{LonelyBlockHash, VerifyResult, delete_unverified_block};
 use ckb_channel::Sender;
 use ckb_error::InternalErrorKind;
 use ckb_logger::internal::trace;
-use ckb_logger::{debug, error, info};
+use ckb_logger::{debug, error, info, warn};
 use ckb_shared::Shared;
 use ckb_shared::block_status::BlockStatus;
 use ckb_store::ChainStore;
@@ -104,6 +104,20 @@ impl OrphanBroker {
         lonely_block.execute_callback(err);
     }
 
+    fn process_excess_orphan(&self, lonely_block: LonelyBlockHash) {
+        let block_hash = lonely_block.block_number_and_hash.hash();
+        let block_number = lonely_block.block_number_and_hash.number();
+
+        warn!(
+            "orphan block pool is full, dropping orphan block {}-{}",
+            block_number, block_hash
+        );
+        self.delete_block(&lonely_block);
+        self.shared.remove_header_view(&block_hash);
+        self.shared.remove_block_status(&block_hash);
+        lonely_block.execute_callback(Ok(false));
+    }
+
     pub(crate) fn process_lonely_block(&self, lonely_block: LonelyBlockHash) {
         let block_hash = lonely_block.block_number_and_hash.hash();
         let block_number = lonely_block.block_number_and_hash.number();
@@ -118,8 +132,8 @@ impl OrphanBroker {
             self.process_descendant(lonely_block);
         } else if parent_status.eq(&BlockStatus::BLOCK_INVALID) {
             self.process_invalid_block(lonely_block);
-        } else {
-            self.orphan_blocks_broker.insert(lonely_block);
+        } else if let Err(lonely_block) = self.orphan_blocks_broker.insert(lonely_block) {
+            self.process_excess_orphan(lonely_block);
         }
 
         self.search_orphan_leaders();

@@ -128,4 +128,8 @@ impl ChainController {
     pub fn orphan_blocks_len(&self) -> usize {
         self.orphan_block_broker.len()
     }
+
+    pub fn orphan_blocks_total_size(&self) -> usize {
+        self.orphan_block_broker.total_size()
+    }
 }

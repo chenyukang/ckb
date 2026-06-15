@@ -1149,7 +1149,7 @@ fn test_fix_last_common_header() {
     }
 
     // Local has stored M as main-chain, and memoried the headers of F in `SyncState.header_map`
-    let (_chain, _, synchronizer) = start_chain(Some(Consensus::default()));
+    let (chain, _, synchronizer) = start_chain(Some(Consensus::default()));
     for number in 1..=main_tip_number {
         let key = m_(number);
         let block = graph.get(&key).cloned().unwrap();
@@ -1213,19 +1213,24 @@ fn test_fix_last_common_header() {
         }
 
         let expected = fix_last_common.map(|mark| mark.to_string());
-        let actual = BlockFetcher::new(Arc::clone(&synchronizer.shared), peer, IBDState::In)
-            .update_last_common_header(&best_known_header.number_and_hash())
-            .map(|header| {
-                if graph
-                    .get(&m_(header.number()))
-                    .map(|b| b.hash() != header.hash())
-                    .unwrap_or(false)
-                {
-                    f_(header.number())
-                } else {
-                    m_(header.number())
-                }
-            });
+        let actual = BlockFetcher::new(
+            Arc::clone(&synchronizer.shared),
+            chain.chain_controller().clone(),
+            peer,
+            IBDState::In,
+        )
+        .update_last_common_header(&best_known_header.number_and_hash())
+        .map(|header| {
+            if graph
+                .get(&m_(header.number()))
+                .map(|b| b.hash() != header.hash())
+                .unwrap_or(false)
+            {
+                f_(header.number())
+            } else {
+                m_(header.number())
+            }
+        });
         assert_eq!(
             expected, actual,
             "Case: {case}, last_common: {last_common:?}, best_known: {best_known:?}, expected: {expected:?}, actual: {actual:?}"

@@ -1,5 +1,6 @@
 use crate::LonelyBlockHash;
-use ckb_logger::debug;
+use ckb_constant::sync::MAX_ORPHAN_POOL_SIZE;
+use ckb_logger::{debug, error};
 use ckb_store::{ChainDB, ChainStore};
 use ckb_types::core::{BlockView, EpochNumber};
 use ckb_types::packed;
@@ -22,6 +23,10 @@ struct InnerPool {
     parents: HashMap<packed::Byte32, ParentHash>,
     // Leaders are blocks not in the orphan pool but having at least a child in the pool.
     leaders: HashSet<ParentHash>,
+    // Total serialized size of blocks represented in the pool.
+    block_size: usize,
+    max_blocks: usize,
+    max_block_size: usize,
 }
 
 impl InnerPool {
@@ -30,12 +35,60 @@ impl InnerPool {
             blocks: HashMap::with_capacity(capacity),
             parents: HashMap::new(),
             leaders: HashSet::new(),
+            block_size: 0,
+            max_blocks: capacity,
+            max_block_size: MAX_ORPHAN_POOL_SIZE,
         }
     }
 
-    fn insert(&mut self, lonely_block: LonelyBlockHash) {
+    fn insert(&mut self, lonely_block: LonelyBlockHash) -> Result<(), LonelyBlockHash> {
         let hash = lonely_block.hash();
         let parent_hash = lonely_block.parent_hash();
+        let block_size = lonely_block.block_size();
+        let existing_parent = self.parents.get(&hash).cloned();
+        let existing_size = existing_parent
+            .as_ref()
+            .and_then(|parent_hash| self.blocks.get(parent_hash))
+            .and_then(|blocks| blocks.get(&hash))
+            .map(LonelyBlockHash::block_size);
+        let new_len = if existing_parent.is_some() {
+            self.parents.len()
+        } else {
+            self.parents.len().saturating_add(1)
+        };
+        let new_block_size = self
+            .block_size
+            .saturating_sub(existing_size.unwrap_or(0))
+            .saturating_add(block_size);
+        if new_len > self.max_blocks || new_block_size > self.max_block_size {
+            return Err(lonely_block);
+        }
+
+        if let Some(existing_parent) = existing_parent {
+            self.parents.remove(&hash);
+            let should_remove_parent = if let Some(blocks) = self.blocks.get_mut(&existing_parent) {
+                blocks.remove(&hash);
+                blocks.is_empty()
+            } else {
+                false
+            };
+            if should_remove_parent {
+                self.blocks.remove(&existing_parent);
+                self.leaders.remove(&existing_parent);
+            }
+            self.block_size = self
+                .block_size
+                .checked_sub(existing_size.unwrap_or(0))
+                .unwrap_or_else(|| {
+                    error!("orphan pool block size sub overflow");
+                    0
+                });
+        }
+
+        self.block_size = self.block_size.checked_add(block_size).unwrap_or_else(|| {
+            error!("orphan pool block size add overflow");
+            usize::MAX
+        });
         self.blocks
             .entry(parent_hash.clone())
             .or_default()
@@ -51,6 +104,7 @@ impl InnerPool {
             self.leaders.insert(parent_hash.clone());
         }
         self.parents.insert(hash, parent_hash);
+        Ok(())
     }
 
     pub fn remove_blocks_by_parent(&mut self, parent_hash: &ParentHash) -> Vec<LonelyBlockHash> {
@@ -75,6 +129,18 @@ impl InnerPool {
         }
 
         debug!("orphan pool pop chain len: {}", removed.len());
+        self.block_size = self
+            .block_size
+            .checked_sub(
+                removed
+                    .iter()
+                    .map(LonelyBlockHash::block_size)
+                    .sum::<usize>(),
+            )
+            .unwrap_or_else(|| {
+                error!("orphan pool block size sub overflow");
+                0
+            });
         debug_assert_ne!(
             removed.len(),
             0,
@@ -138,8 +204,8 @@ impl OrphanBlockPool {
     }
 
     /// Insert orphaned block, for which we have already requested its parent block
-    pub fn insert(&self, lonely_block: LonelyBlockHash) {
-        self.inner.write().insert(lonely_block);
+    pub fn insert(&self, lonely_block: LonelyBlockHash) -> Result<(), LonelyBlockHash> {
+        self.inner.write().insert(lonely_block)
     }
 
     pub fn remove_blocks_by_parent(&self, parent_hash: &ParentHash) -> Vec<LonelyBlockHash> {
@@ -158,6 +224,16 @@ impl OrphanBlockPool {
 
     pub fn len(&self) -> usize {
         self.inner.read().parents.len()
+    }
+
+    pub fn total_size(&self) -> usize {
+        self.inner.read().block_size
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_full(&self) -> bool {
+        let inner = self.inner.read();
+        inner.parents.len() >= inner.max_blocks || inner.block_size >= inner.max_block_size
     }
 
     pub fn clone_leaders(&self) -> Vec<ParentHash> {

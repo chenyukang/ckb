@@ -80,6 +80,7 @@ struct FetchCMD {
 
 struct BlockFetchCMD {
     sync_shared: Arc<SyncShared>,
+    chain: ChainController,
     p2p_control: ServiceControl,
     recv: channel::Receiver<FetchCMD>,
     can_start: CanStart,
@@ -102,9 +103,13 @@ impl BlockFetchCMD {
                     fetch_end = assume_target
                 }
 
-                if let Some(fetch) =
-                    BlockFetcher::new(Arc::clone(&cmd.sync_shared), peer, ibd_state)
-                        .fetch(fetch_end)
+                if let Some(fetch) = BlockFetcher::new(
+                    Arc::clone(&cmd.sync_shared),
+                    cmd.chain.clone(),
+                    peer,
+                    ibd_state,
+                )
+                .fetch(fetch_end)
                 {
                     for item in fetch {
                         if ckb_stop_handler::has_received_stop_signal() {
@@ -517,7 +522,8 @@ impl Synchronizer {
         peer: PeerIndex,
         ibd: IBDState,
     ) -> Option<Vec<Vec<packed::Byte32>>> {
-        BlockFetcher::new(Arc::clone(&self.shared), peer, ibd).fetch(BlockNumber::MAX)
+        BlockFetcher::new(Arc::clone(&self.shared), self.chain.clone(), peer, ibd)
+            .fetch(BlockNumber::MAX)
     }
 
     pub(crate) fn on_connected(&self, nc: &dyn CKBProtocolContext, peer: PeerIndex) {
@@ -815,12 +821,14 @@ impl Synchronizer {
                     let number = self.shared.state().shared_best_header_ref().number();
                     const THREAD_NAME: &str = "BlockDownload";
                     let sync_shared: Arc<SyncShared> = Arc::to_owned(self.shared());
+                    let chain = self.chain.clone();
                     let blockdownload_jh = thread
                         .name(THREAD_NAME.into())
                         .spawn(move || {
                             let stop_signal = new_crossbeam_exit_rx();
                             BlockFetchCMD {
                                 sync_shared,
+                                chain,
                                 p2p_control,
                                 recv,
                                 number,
