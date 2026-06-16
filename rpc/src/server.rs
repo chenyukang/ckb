@@ -2,7 +2,6 @@ use crate::IoHandler;
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Extension, Router};
-use axum_streams::StreamBodyAs;
 use ckb_app_config::RpcConfig;
 use ckb_async_runtime::Handle;
 use ckb_error::AnyError;
@@ -281,18 +280,24 @@ async fn handle_jsonrpc<T: Default + Metadata>(
                     )));
                 }
 
-                let stream = stream::iter(calls)
+                let responses = stream::iter(calls)
                     .then(move |call| {
                         let io = Arc::clone(&io);
                         async move { io.handle_call(call, T::default()).await }
                     })
-                    .filter_map(|response| async move { response });
+                    .filter_map(|response| async move { response })
+                    .collect::<Vec<_>>()
+                    .await;
 
-                (
-                    [(axum::http::header::CONTENT_TYPE, "application/json")],
-                    StreamBodyAs::json_array(stream),
-                )
-                    .into_response()
+                serde_json::to_string(&responses)
+                    .map(|json| {
+                        (
+                            [(axum::http::header::CONTENT_TYPE, "application/json")],
+                            json,
+                        )
+                            .into_response()
+                    })
+                    .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
             }
         },
     }
