@@ -140,7 +140,12 @@ impl<T: Callback> IdentifyProtocol<T> {
                 .into_iter()
                 .filter(|addr| match multiaddr_to_socketaddr(addr) {
                     Some(socket_addr) => !global_ip_only || is_reachable(socket_addr.ip()),
-                    None => true,
+                    None => {
+                        !global_ip_only
+                            || addr
+                                .iter()
+                                .any(|protocol| matches!(protocol, Protocol::Onion3(_)))
+                    }
                 })
                 .collect::<Vec<_>>();
             self.callback

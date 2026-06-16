@@ -5,7 +5,7 @@ use ckb_systemtime::{Duration, Instant};
 use p2p::{
     SessionId, async_trait, bytes,
     context::{ProtocolContext, ProtocolContextMutRef, SessionContext},
-    multiaddr::Multiaddr,
+    multiaddr::{Multiaddr, Protocol},
     traits::ServiceProtocol,
     utils::{is_reachable, multiaddr_to_socketaddr},
 };
@@ -333,7 +333,9 @@ impl AddressManager for DiscoveryAddressManager {
         if !self.discovery_local_address {
             match multiaddr_to_socketaddr(addr) {
                 Some(socket_addr) => is_reachable(socket_addr.ip()),
-                None => true,
+                None => addr
+                    .iter()
+                    .any(|protocol| matches!(protocol, Protocol::Onion3(_))),
             }
         } else {
             true

@@ -640,3 +640,28 @@ fn test_support_dns_store() {
     assert_eq!(peer_store.fetch_addrs_to_feeler(2, |_| true).len(), 1);
     assert_eq!(peer_store.fetch_addrs_to_feeler(1, |_| true)[0].addr, addr);
 }
+
+#[test]
+fn test_unconnectable_onion_addr_not_selected() {
+    let mut peer_store = PeerStore::default();
+    let addr: Multiaddr = format!(
+        "/onion3/{}:42/p2p/{}",
+        "a".repeat(56),
+        crate::PeerId::random().to_base58()
+    )
+    .parse()
+    .unwrap();
+
+    peer_store
+        .add_addr(addr.clone(), Flags::COMPATIBILITY)
+        .unwrap();
+    let now_ms = ckb_systemtime::unix_time_as_millis();
+    let tried_ms = now_ms.saturating_sub(60_001);
+    let paddr = peer_store.mut_addr_manager().get_mut(&addr).unwrap();
+    paddr.mark_tried(tried_ms);
+    paddr.mark_tried(tried_ms);
+    paddr.mark_tried(tried_ms);
+    assert!(!paddr.is_connectable(now_ms));
+
+    assert!(peer_store.fetch_addrs_to_feeler(1, |_| true).is_empty());
+}
