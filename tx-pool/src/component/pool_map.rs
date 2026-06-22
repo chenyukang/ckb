@@ -616,8 +616,16 @@ impl PoolMap {
             while ancestors_count > self.max_ancestors_count {
                 if let Some(next_id) = iter.next() {
                     let removed = self.remove_entry_and_descendants(next_id);
-                    ancestors_count = ancestors_count.saturating_sub(1);
-                    parents.remove(next_id);
+                    let removed_ids: HashSet<_> = removed
+                        .iter()
+                        .map(|entry| entry.proposal_short_id())
+                        .collect();
+                    parents.retain(|id| !removed_ids.contains(id));
+                    ancestors_count = self
+                        .links
+                        .calc_relation_ids(parents.clone(), Relation::Parents)
+                        .len()
+                        + 1;
                     evicted.extend(removed);
                 } else {
                     break;
@@ -631,9 +639,6 @@ impl PoolMap {
         let ancestors = self
             .links
             .calc_relation_ids(parents.clone(), Relation::Parents);
-
-        // we can assume the number now is less than `max_ancestors_count`
-        assert!(ancestors.len() < self.max_ancestors_count);
 
         self._record_ancestors(entry, ancestors, parents);
         Ok(evicted)

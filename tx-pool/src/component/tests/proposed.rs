@@ -695,6 +695,55 @@ fn test_max_ancestors_with_dep() {
     assert_eq!(pool.edges.inputs_len(), 1);
 }
 
+// external cell
+//    ^ cell_dep
+//    |
+//  parent tx  ---> child tx
+//    ^             ^
+//    |             |
+//    +--- all use external as cell_dep
+
+// spender tx use external cell
+#[test]
+fn test_cascading_cell_ref_eviction_cleans_all_removed_parents() {
+    let external: Byte32 = h256!("0x100").into();
+    let parent_input: Byte32 = h256!("0x200").into();
+    let parent = build_tx_with_dep(vec![(&parent_input, 0)], vec![(&external, 0)], 1);
+    let child = build_tx_with_dep(vec![(&parent.hash(), 0)], vec![(&external, 0)], 1);
+    let spender = build_tx(vec![(&external, 0)], 1);
+
+    let parent_entry = TxEntry::new(
+        dummy_resolve(parent, |_| Some(Bytes::new())),
+        1,
+        Capacity::shannons(1),
+        10,
+    );
+    let child_entry = TxEntry::new(
+        dummy_resolve(child, |_| Some(Bytes::new())),
+        1,
+        Capacity::shannons(100),
+        10,
+    );
+    let spender_entry = TxEntry::new(
+        dummy_resolve(spender.clone(), |_| Some(Bytes::new())),
+        1,
+        Capacity::shannons(1000),
+        10,
+    );
+
+    let mut pool = PoolMap::new(2);
+    pool.add_entry(parent_entry.clone(), Status::Proposed)
+        .unwrap();
+    pool.add_entry(child_entry.clone(), Status::Proposed)
+        .unwrap();
+
+    let (succ, evicts) = pool.add_entry(spender_entry, Status::Proposed).unwrap();
+    assert!(succ);
+    assert_eq!(evicts, HashSet::from_iter([parent_entry, child_entry]));
+    assert_eq!(pool.size(), 1);
+    assert!(pool.contains_key(&spender.proposal_short_id()));
+}
+
 #[test]
 fn test_container_bench_add_limits() {
     use rand::Rng;
