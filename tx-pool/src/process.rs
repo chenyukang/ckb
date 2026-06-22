@@ -22,7 +22,7 @@ use ckb_types::core::error::OutPointError;
 use ckb_types::{
     core::{
         BlockView, Capacity, Cycle, EstimateMode, FeeRate, HeaderView, TransactionView,
-        cell::ResolvedTransaction,
+        cell::ResolvedTransaction, tx_pool::get_transaction_weight,
     },
     packed::{Byte32, ProposalShortId},
 };
@@ -746,6 +746,18 @@ impl TxPoolService {
                 Err(Reject::DeclaredWrongCycles(declared, verified.cycles)),
                 snapshot,
             ));
+        }
+
+        let weight = get_transaction_weight(tx_size, verified.cycles);
+        let min_fee = self.tx_pool_config.min_fee_rate.fee(weight);
+        if fee < min_fee {
+            let reject = Reject::LowFeeRate(
+                self.tx_pool_config.min_fee_rate,
+                min_fee.as_u64(),
+                fee.as_u64(),
+            );
+            ckb_logger::debug!("Reject tx {}", reject);
+            return Some((Err(reject), snapshot));
         }
 
         let entry = TxEntry::new(rtx, verified.cycles, fee, tx_size);
