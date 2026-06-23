@@ -579,12 +579,30 @@ impl PoolMap {
         );
     }
 
+    fn calc_ancestors_excluding(
+        &self,
+        mut parents: HashSet<ProposalShortId>,
+        excluded: &HashSet<ProposalShortId>,
+    ) -> HashSet<ProposalShortId> {
+        let mut ancestors = HashSet::with_capacity(parents.len());
+        while let Some(id) = parents.iter().next().cloned() {
+            parents.remove(&id);
+            if !ancestors.insert(id.clone()) {
+                continue;
+            }
+
+            if let Some(tx_links) = self.links.inner.get(&id) {
+                for parent in &tx_links.parents {
+                    if !excluded.contains(parent) && !ancestors.contains(parent) {
+                        parents.insert(parent.clone());
+                    }
+                }
+            }
+        }
+        ancestors
+    }
+
     /// Check ancestors and record for entry
-    // FIXME: In the scenario that a transaction passed all RBF rules, and then removed the conflicted
-    // transaction in txpool, then failed with max ancestor limits, we now need to rollback the removing.
-    // this is not an issue currently, because RBF have a rule that not allow any unknown inputs except
-    // the conflicted inputs, so the new transaction can not be in a long transaction chain.
-    // but it's still safer to report an error before any writing kind of operation.
     fn check_and_record_ancestors(
         &mut self,
         entry: &mut TxEntry,
@@ -612,16 +630,38 @@ impl PoolMap {
                 .map(|x| x.id.clone())
                 .collect();
 
-            let mut iter = evict_candidates.iter();
+            // Plan cascading evictions before mutating the pool.
+            let mut planned_roots = Vec::new();
+            let mut planned_removed = HashSet::new();
+            let mut planned_parents = parents.clone();
+            let mut iter = evict_candidates.into_iter();
             while ancestors_count > self.max_ancestors_count {
                 if let Some(next_id) = iter.next() {
-                    let removed = self.remove_entry_and_descendants(next_id);
-                    ancestors_count = ancestors_count.saturating_sub(1);
-                    parents.remove(next_id);
-                    evicted.extend(removed);
+                    if planned_removed.contains(&next_id) {
+                        continue;
+                    }
+
+                    let mut removed_ids = self.calc_descendants(&next_id);
+                    removed_ids.insert(next_id.clone());
+                    planned_removed.extend(removed_ids);
+                    planned_parents.retain(|id| !planned_removed.contains(id));
+                    ancestors_count = self
+                        .calc_ancestors_excluding(planned_parents.clone(), &planned_removed)
+                        .len()
+                        + 1;
+                    planned_roots.push(next_id);
                 } else {
                     break;
                 }
+            }
+
+            if ancestors_count > self.max_ancestors_count {
+                return Err(Reject::ExceededMaximumAncestorsCount);
+            }
+
+            parents = planned_parents;
+            for id in planned_roots {
+                evicted.extend(self.remove_entry_and_descendants(&id));
             }
         } else {
             return Err(Reject::ExceededMaximumAncestorsCount);
@@ -633,7 +673,7 @@ impl PoolMap {
             .calc_relation_ids(parents.clone(), Relation::Parents);
 
         // we can assume the number now is less than `max_ancestors_count`
-        assert!(ancestors.len() < self.max_ancestors_count);
+        debug_assert!(ancestors.len() < self.max_ancestors_count);
 
         self._record_ancestors(entry, ancestors, parents);
         Ok(evicted)
