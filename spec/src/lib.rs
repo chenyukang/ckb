@@ -12,7 +12,7 @@
 
 use crate::consensus::{
     Consensus, ConsensusBuilder, SATOSHI_CELL_OCCUPIED_RATIO, SATOSHI_PUBKEY_HASH,
-    TESTNET_ACTIVATION_THRESHOLD, TYPE_ID_CODE_HASH, build_genesis_dao_data,
+    TESTNET_ACTIVATION_THRESHOLD, TYPE_ID_CODE_HASH, TreasuryConfig, build_genesis_dao_data,
     build_genesis_epoch_ext,
 };
 use crate::versionbits::{ActiveMode, Deployment, DeploymentPos};
@@ -243,11 +243,26 @@ pub struct Params {
     /// See [`starting_block_limiting_dao_withdrawing_lock`](consensus/struct.Consensus.html#structfield.starting_block_limiting_dao_withdrawing_lock)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub starting_block_limiting_dao_withdrawing_lock: Option<u64>,
+    /// Optional Treasury Cell issuance parameters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub treasury: Option<TreasuryParams>,
     /// The parameters for hard fork features.
     ///
     /// See [`hardfork_switch`](consensus/struct.Consensus.html#structfield.hardfork_switch)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hardfork: Option<HardForkConfig>,
+}
+
+/// Serializable chain-spec parameters for Treasury Cell issuance.
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TreasuryParams {
+    /// First target block included in treasury issuance.
+    pub activation_block_number: BlockNumber,
+    /// Number of target blocks aggregated into one Treasury Cell.
+    pub emission_interval: BlockNumber,
+    /// Consensus-defined Treasury Cell lock script.
+    pub lock: Script,
 }
 
 impl Params {
@@ -591,7 +606,26 @@ impl ChainSpec {
             .starting_block_limiting_dao_withdrawing_lock(
                 self.params.starting_block_limiting_dao_withdrawing_lock(),
             )
+            .treasury(
+                self.params
+                    .treasury
+                    .as_ref()
+                    .map(|treasury| TreasuryConfig {
+                        activation_block_number: treasury.activation_block_number,
+                        emission_interval: treasury.emission_interval,
+                        lock: treasury.lock.clone().into(),
+                    }),
+            )
             .hardfork_switch(hardfork_switch);
+
+        if let Some(treasury) = self.params.treasury.as_ref() {
+            if treasury.activation_block_number == 0 {
+                return Err("treasury activation_block_number must be greater than zero".into());
+            }
+            if treasury.emission_interval == 0 {
+                return Err("treasury emission_interval must be greater than zero".into());
+            }
+        }
 
         if let Some(deployments) = self.softfork_deployments() {
             builder = builder.softfork_deployments(deployments);

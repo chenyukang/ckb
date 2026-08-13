@@ -1,7 +1,7 @@
 use crate::StoreSnapshot;
 use crate::cache::StoreCache;
 use crate::cell::attach_block_cell;
-use crate::store::ChainStore;
+use crate::store::{ChainStore, DaoTreasuryState};
 use crate::transaction::StoreTransaction;
 use crate::write_batch::StoreWriteBatch;
 use ckb_app_config::StoreConfig;
@@ -14,7 +14,7 @@ use ckb_db_schema::{CHAIN_SPEC_HASH_KEY, Col, MIGRATION_VERSION_KEY};
 use ckb_error::{Error, InternalErrorKind};
 use ckb_freezer::Freezer;
 use ckb_types::{
-    core::{BlockExt, EpochExt, HeaderView, TransactionView},
+    core::{BlockExt, Capacity, EpochExt, HeaderView, ScriptHashType, TransactionView},
     packed,
     prelude::*,
     utilities::merkle_mountain_range::ChainRootMMR,
@@ -188,6 +188,28 @@ impl ChainDB {
 
         db_txn.insert_block(genesis)?;
         db_txn.insert_block_ext(&genesis_hash, &ext)?;
+        let mut dao_deposit_capacity = Capacity::zero();
+        for transaction in genesis.transactions() {
+            for (output, data) in transaction.outputs_with_data_iter() {
+                let is_dao_deposit = output.type_().to_opt().is_some_and(|script| {
+                    Into::<u8>::into(script.hash_type()) == Into::<u8>::into(ScriptHashType::Type)
+                        && script.code_hash() == consensus.dao_type_hash()
+                }) && data.as_ref() == [0u8; 8];
+                if is_dao_deposit {
+                    let capacity: Capacity = output.capacity().into();
+                    let occupied = output.occupied_capacity(Capacity::bytes(data.len())?)?;
+                    dao_deposit_capacity =
+                        dao_deposit_capacity.safe_add(capacity.safe_sub(occupied)?)?;
+                }
+            }
+        }
+        db_txn.insert_dao_treasury_state(
+            &genesis_hash,
+            DaoTreasuryState {
+                dao_deposit_capacity,
+                ..Default::default()
+            },
+        )?;
         db_txn.insert_tip_header(&genesis.header())?;
         db_txn.insert_current_epoch_ext(epoch)?;
         db_txn.insert_block_epoch_index(&genesis_hash, &last_block_hash_in_previous_epoch)?;

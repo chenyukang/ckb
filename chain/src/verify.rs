@@ -1,6 +1,8 @@
 use crate::{GlobalIndex, TruncateRequest, VerifyResult, utils::forkchanges::ForkChanges};
 use crate::{UnverifiedBlock, delete_unverified_block};
 use ckb_channel::{Receiver, Request, select};
+use ckb_dao::{DaoCalculator, secondary_issuance_breakdown};
+use ckb_dao_utils::DaoError;
 use ckb_error::{Error, InternalErrorKind, is_internal_db_error};
 use ckb_logger::Level::Trace;
 use ckb_logger::internal::{log_enabled, trace};
@@ -9,7 +11,9 @@ use ckb_merkle_mountain_range::leaf_index_to_mmr_size;
 use ckb_proposal_table::ProposalTable;
 use ckb_shared::Shared;
 use ckb_shared::block_status::BlockStatus;
-use ckb_store::{ChainStore, StoreTransaction, attach_block_cell, detach_block_cell};
+use ckb_store::{
+    ChainStore, DaoTreasuryState, StoreTransaction, attach_block_cell, detach_block_cell,
+};
 use ckb_systemtime::unix_time_as_millis;
 use ckb_tx_pool::TxPoolController;
 use ckb_types::H256;
@@ -18,6 +22,7 @@ use ckb_types::core::cell::{
 };
 use ckb_types::core::{BlockExt, BlockNumber, BlockView, Cycle, HeaderView};
 use ckb_types::packed::Byte32;
+use ckb_types::prelude::*;
 use ckb_types::utilities::merkle_mountain_range::ChainRootMMR;
 use ckb_verification::InvalidParentError;
 use ckb_verification::cache::Completed;
@@ -625,16 +630,20 @@ impl ConsumeUnverifiedBlockProcessor {
         let mmr_size = leaf_index_to_mmr_size(start_block_header.number() - 1);
         trace!("light-client: new chain root MMR with size = {}", mmr_size);
         let mut mmr = ChainRootMMR::new(mmr_size, txn.as_ref());
+        let verify_context = VerifyContext::new(Arc::clone(&txn), consensus);
 
         let verified_len = fork.verified_len();
         for b in fork.attached_blocks().iter().take(verified_len) {
+            if txn.get_dao_treasury_state(&b.hash()).is_none() {
+                let resolved = self.resolve_block_transactions(&txn, b, &verify_context)?;
+                let treasury_state = self.calculate_dao_treasury_state(&txn, b, &resolved)?;
+                txn.insert_dao_treasury_state(&b.hash(), treasury_state)?;
+            }
             txn.attach_block(b)?;
             attach_block_cell(&txn, b)?;
             mmr.push(b.digest())
                 .map_err(|e| InternalErrorKind::MMR.other(e))?;
         }
-
-        let verify_context = VerifyContext::new(Arc::clone(&txn), consensus);
 
         let mut found_error = None;
         for (ext, b) in fork
@@ -672,6 +681,8 @@ impl ConsumeUnverifiedBlockProcessor {
                             };
                             match verified {
                                 Ok((cycles, cache_entries)) => {
+                                    let treasury_state =
+                                        self.calculate_dao_treasury_state(&txn, b, &resolved)?;
                                     let txs_sizes = resolved
                                         .iter()
                                         .map(|rtx| {
@@ -680,6 +691,10 @@ impl ConsumeUnverifiedBlockProcessor {
                                         .collect();
                                     txn.attach_block(b)?;
                                     attach_block_cell(&txn, b)?;
+                                    txn.insert_dao_treasury_state(
+                                        &b.header().hash(),
+                                        treasury_state,
+                                    )?;
                                     mmr.push(b.digest())
                                         .map_err(|e| InternalErrorKind::MMR.other(e))?;
 
@@ -716,8 +731,11 @@ impl ConsumeUnverifiedBlockProcessor {
                     self.insert_failure_ext(&txn, &b.header().hash(), ext.clone())?;
                 }
             } else {
+                let resolved = self.resolve_block_transactions(&txn, b, &verify_context)?;
+                let treasury_state = self.calculate_dao_treasury_state(&txn, b, &resolved)?;
                 txn.attach_block(b)?;
                 attach_block_cell(&txn, b)?;
+                txn.insert_dao_treasury_state(&b.header().hash(), treasury_state)?;
                 mmr.push(b.digest())
                     .map_err(|e| InternalErrorKind::MMR.other(e))?;
                 self.insert_ok_ext(&txn, &b.header().hash(), ext.clone(), None, None)?;
@@ -753,6 +771,80 @@ impl ConsumeUnverifiedBlockProcessor {
             })
             .collect::<Result<Vec<Arc<ResolvedTransaction>>, _>>()?;
         Ok(resolved)
+    }
+
+    fn calculate_dao_treasury_state(
+        &self,
+        txn: &StoreTransaction,
+        block: &BlockView,
+        resolved: &[Arc<ResolvedTransaction>],
+    ) -> Result<DaoTreasuryState, Error> {
+        let parent_hash = block.data().header().raw().parent_hash();
+        let parent_state = txn.get_dao_treasury_state(&parent_hash).ok_or_else(|| {
+            InternalErrorKind::Other.other(format!(
+                "missing DAO treasury state for parent block {parent_hash:#x}; the chain database must be backfilled before treasury activation"
+            ))
+        })?;
+        let data_loader = txn.borrow_as_data_loader();
+        let change = DaoCalculator::new(self.shared.consensus(), &data_loader)
+            .dao_deposit_capacity_change(resolved.iter().map(AsRef::as_ref))?;
+        let dao_deposit_capacity = parent_state
+            .dao_deposit_capacity
+            .safe_add(change.added)
+            .and_then(|capacity| capacity.safe_sub(change.removed))
+            .map_err(DaoError::from)?;
+
+        let mut state = DaoTreasuryState {
+            dao_deposit_capacity,
+            pending_treasury: parent_state.pending_treasury,
+            treasury_emission: ckb_types::core::Capacity::zero(),
+        };
+        let Some(config) = self.shared.consensus().treasury() else {
+            return Ok(state);
+        };
+        if block.number() < config.activation_block_number {
+            return Ok(state);
+        }
+
+        let epoch = txn
+            .get_block_epoch_index(&block.hash())
+            .and_then(|index| txn.get_epoch_ext(&index))
+            .ok_or_else(|| InternalErrorKind::Other.other("missing epoch for treasury target"))?;
+        let secondary = epoch.secondary_block_issuance(
+            block.number(),
+            self.shared.consensus().secondary_epoch_reward(),
+        )?;
+        let (_, parent_c, _, parent_u) = ckb_dao_utils::extract_dao_data(
+            txn.get_block_header(&parent_hash)
+                .ok_or_else(|| InternalErrorKind::Other.other("missing treasury target parent"))?
+                .dao(),
+        );
+        let treasury = secondary_issuance_breakdown(
+            secondary,
+            parent_c,
+            parent_u,
+            parent_state.dao_deposit_capacity,
+        )?
+        .treasury;
+        state.pending_treasury = state.pending_treasury.safe_add(treasury)?;
+
+        let interval_position = block
+            .number()
+            .checked_sub(config.activation_block_number)
+            .and_then(|number| number.checked_add(1))
+            .ok_or(DaoError::Overflow)?;
+        if interval_position % config.emission_interval == 0 {
+            let output = ckb_types::packed::CellOutput::new_builder()
+                .capacity(state.pending_treasury)
+                .lock(config.lock.clone())
+                .build();
+            if !output.is_lack_of_capacity(ckb_types::core::Capacity::zero())? {
+                state.treasury_emission = state.pending_treasury;
+                state.pending_treasury = ckb_types::core::Capacity::zero();
+            }
+        }
+
+        Ok(state)
     }
 
     fn insert_ok_ext(

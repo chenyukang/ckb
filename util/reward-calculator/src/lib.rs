@@ -59,6 +59,23 @@ impl<'a, CS: ChainStore> RewardCalculator<'a, CS> {
         self.block_reward_internal(&target, parent)
     }
 
+    /// Returns the Treasury Cell capacity emitted for the finalized target block.
+    pub fn treasury_reward_to_finalize(&self, parent: &HeaderView) -> Result<Capacity, DaoError> {
+        let block_number = parent.number().checked_add(1).ok_or(DaoError::Overflow)?;
+        let target_number = self
+            .consensus
+            .finalize_target(block_number)
+            .expect("block number checked before involving finalize_target");
+        let target = self
+            .store
+            .get_block_hash(target_number)
+            .ok_or(DaoError::InvalidHeader)?;
+        self.store
+            .get_dao_treasury_state(&target)
+            .map(|state| state.treasury_emission)
+            .ok_or(DaoError::InvalidHeader)
+    }
+
     /// Returns the `target` block miner's lock and total block reward.
     pub fn block_reward_for_target(
         &self,
@@ -75,6 +92,14 @@ impl<'a, CS: ChainStore> RewardCalculator<'a, CS> {
             .and_then(|hash| self.store.get_block_header(&hash))
             .expect("block hash checked before involving get_ancestor");
         self.block_reward_internal(target, &parent)
+    }
+
+    /// Returns the Treasury Cell capacity emitted when `target` is finalized.
+    pub fn treasury_reward_for_target(&self, target: &HeaderView) -> Result<Capacity, DaoError> {
+        self.store
+            .get_dao_treasury_state(&target.hash())
+            .map(|state| state.treasury_emission)
+            .ok_or(DaoError::InvalidHeader)
     }
 
     /// Calculates the block reward and returns the reward distribution as well as the lock script

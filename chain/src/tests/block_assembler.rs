@@ -1,7 +1,7 @@
 use crate::ChainServiceScope;
 use crate::tests::util::dummy_network;
 use ckb_app_config::BlockAssemblerConfig;
-use ckb_chain_spec::consensus::Consensus;
+use ckb_chain_spec::consensus::{Consensus, TreasuryConfig};
 use ckb_dao_utils::genesis_dao_data;
 use ckb_jsonrpc_types::ScriptHashType;
 use ckb_shared::{ChainServicesBuilder, Shared, SharedBuilder, Snapshot};
@@ -14,7 +14,7 @@ use ckb_types::{
         TransactionBuilder, TransactionView,
     },
     h256,
-    packed::{Block, CellInput, CellOutput, CellOutputBuilder, CellbaseWitness, OutPoint},
+    packed::{Block, CellInput, CellOutput, CellOutputBuilder, CellbaseWitness, OutPoint, Script},
     prelude::*,
 };
 use ckb_verification::{BlockVerifier, HeaderVerifier};
@@ -80,6 +80,126 @@ fn test_get_block_template() {
 
     let block_verify = BlockVerifier::new(shared.consensus());
     assert!(block_verify.verify(&block).is_ok());
+}
+
+#[test]
+fn test_block_template_emits_finalized_treasury_cell() {
+    let treasury_lock = Script::new_builder()
+        .code_hash([42u8; 32])
+        .hash_type(ckb_types::core::ScriptHashType::Data)
+        .build();
+    let consensus = Consensus {
+        treasury: Some(TreasuryConfig {
+            activation_block_number: 1,
+            emission_interval: 2,
+            lock: treasury_lock.clone(),
+        }),
+        ..Default::default()
+    };
+    let (chain, shared) = start_chain(Some(consensus));
+    let chain_controller = chain.chain_controller();
+
+    assert_eq!(
+        shared
+            .snapshot()
+            .get_dao_treasury_state(&shared.snapshot().get_block_hash(0).unwrap())
+            .unwrap(),
+        ckb_store::DaoTreasuryState::default()
+    );
+
+    for expected_number in 1..=13 {
+        let template = loop {
+            let template = shared
+                .get_block_template(None, None, None)
+                .unwrap()
+                .unwrap();
+            if template.number == expected_number.into() {
+                break template;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        };
+        let block: Block = template.into();
+        let block = block.as_advanced_builder().build();
+        let cellbase = block.transaction(0).unwrap();
+        if expected_number < 12 {
+            assert!(cellbase.outputs().is_empty());
+        } else if expected_number == 12 {
+            assert_eq!(cellbase.outputs().len(), 1);
+            let first_target_hash = shared.snapshot().get_block_hash(1).unwrap();
+            let first_target_state = shared
+                .snapshot()
+                .get_dao_treasury_state(&first_target_hash)
+                .unwrap();
+            assert_ne!(first_target_state.pending_treasury, Capacity::zero());
+            assert_eq!(first_target_state.treasury_emission, Capacity::zero());
+        } else {
+            assert_eq!(cellbase.outputs().len(), 2);
+            assert_eq!(cellbase.output(1).unwrap().lock(), treasury_lock);
+            let target_hash = shared.snapshot().get_block_hash(2).unwrap();
+            assert_ne!(
+                shared
+                    .snapshot()
+                    .get_dao_treasury_state(&target_hash)
+                    .unwrap()
+                    .treasury_emission,
+                Capacity::zero()
+            );
+        }
+        chain_controller
+            .blocking_process_block(Arc::new(block))
+            .expect("process generated treasury block");
+    }
+}
+
+#[test]
+fn test_dao_treasury_state_is_fork_aware() {
+    let consensus = Consensus {
+        treasury: Some(TreasuryConfig {
+            activation_block_number: 1,
+            emission_interval: 100,
+            lock: Script::default(),
+        }),
+        ..Default::default()
+    };
+    let (chain, shared) = start_chain(Some(consensus));
+    let chain_controller = chain.chain_controller();
+    let genesis = shared.consensus().genesis_block().header();
+    let epoch = shared.consensus().genesis_epoch_ext();
+    let build_child = |parent: &HeaderView, nonce: u128| {
+        BlockBuilder::default()
+            .parent_hash(parent.hash())
+            .number(parent.number() + 1)
+            .timestamp(parent.timestamp() + 1)
+            .compact_target(epoch.compact_target())
+            .epoch(epoch.number_with_fraction(parent.number() + 1))
+            .dao(parent.dao())
+            .nonce(nonce)
+            .build()
+    };
+
+    let branch_a = build_child(&genesis, 1);
+    let branch_b = build_child(&genesis, 2);
+    chain_controller
+        .blocking_process_block_with_switch(Arc::new(branch_a.clone()), Switch::DISABLE_ALL)
+        .unwrap();
+    chain_controller
+        .blocking_process_block_with_switch(Arc::new(branch_b.clone()), Switch::DISABLE_ALL)
+        .unwrap();
+
+    let branch_b_child = build_child(&branch_b.header(), 3);
+    chain_controller
+        .blocking_process_block_with_switch(Arc::new(branch_b_child.clone()), Switch::DISABLE_ALL)
+        .unwrap();
+
+    let snapshot = shared.snapshot();
+    assert_eq!(snapshot.tip_hash(), branch_b_child.hash());
+    let state_a = snapshot.get_dao_treasury_state(&branch_a.hash()).unwrap();
+    let state_b = snapshot.get_dao_treasury_state(&branch_b.hash()).unwrap();
+    let state_b_child = snapshot
+        .get_dao_treasury_state(&branch_b_child.hash())
+        .unwrap();
+    assert_eq!(state_a, state_b);
+    assert!(state_b_child.pending_treasury > state_b.pending_treasury);
 }
 
 fn gen_block(parent_header: &HeaderView, nonce: u128, epoch: &EpochExt) -> BlockView {

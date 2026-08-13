@@ -8,7 +8,7 @@ use ckb_types::{
     bytes::Bytes,
     core::{
         Capacity, CapacityResult, EpochExt, HeaderView, ScriptHashType,
-        cell::{CellMeta, ResolvedTransaction},
+        cell::{CellMeta, CellMetaBuilder, ResolvedTransaction},
     },
     packed::{Byte32, CellOutput, Script, WitnessArgs},
     prelude::*,
@@ -25,7 +25,150 @@ pub struct DaoCalculator<'a, DL> {
     data_loader: &'a DL,
 }
 
+/// Secondary issuance allocated for one block.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SecondaryIssuanceBreakdown {
+    /// The complete secondary issuance baseline for the block.
+    pub total: Capacity,
+    /// Compensation for occupied capacity, paid to the block miner.
+    pub miner: Capacity,
+    /// Secondary issuance reserved for live Nervos DAO deposits.
+    pub nervos_dao: Capacity,
+    /// Future would-be-burned issuance made available to the treasury.
+    pub treasury: Capacity,
+}
+
+/// Changes to the counted capacity of live Nervos DAO deposit cells.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DaoDepositCapacityChange {
+    /// Counted capacity entering the DAO deposit phase.
+    pub added: Capacity,
+    /// Counted capacity leaving the DAO deposit phase.
+    pub removed: Capacity,
+}
+
+/// Splits one block's secondary issuance while preserving the issuance baseline exactly.
+///
+/// Both the miner and treasury shares are rounded down. Any rounding remainder is retained
+/// in the Nervos DAO reserve, so all three shares always sum to `secondary`.
+pub fn secondary_issuance_breakdown(
+    secondary: Capacity,
+    total_issuance: Capacity,
+    occupied_capacity: Capacity,
+    dao_deposit_capacity: Capacity,
+) -> Result<SecondaryIssuanceBreakdown, DaoError> {
+    if total_issuance == Capacity::zero() {
+        return Err(DaoError::ZeroC);
+    }
+
+    let liquid_capacity = total_issuance
+        .safe_sub(occupied_capacity)
+        .and_then(|capacity| capacity.safe_sub(dao_deposit_capacity))
+        .map_err(|_| DaoError::InvalidTreasuryState)?;
+    let proportional_share = |capacity: Capacity| -> Result<Capacity, DaoError> {
+        let value = u128::from(secondary.as_u64()) * u128::from(capacity.as_u64())
+            / u128::from(total_issuance.as_u64());
+        Ok(Capacity::shannons(
+            u64::try_from(value).map_err(|_| DaoError::Overflow)?,
+        ))
+    };
+
+    let miner = proportional_share(occupied_capacity)?;
+    let treasury = proportional_share(liquid_capacity)?;
+    let nervos_dao = secondary
+        .safe_sub(miner)?
+        .safe_sub(treasury)
+        .map_err(DaoError::from)?;
+
+    Ok(SecondaryIssuanceBreakdown {
+        total: secondary,
+        miner,
+        nervos_dao,
+        treasury,
+    })
+}
+
 impl<'a, DL: CellDataProvider + HeaderProvider> DaoCalculator<'a, DL> {
+    fn is_dao_deposit_cell(&self, cell_meta: &CellMeta) -> bool {
+        let is_dao_type_script = cell_meta
+            .cell_output
+            .type_()
+            .to_opt()
+            .map(|type_script| {
+                Into::<u8>::into(type_script.hash_type()) == Into::<u8>::into(ScriptHashType::Type)
+                    && type_script.code_hash() == self.consensus.dao_type_hash()
+            })
+            .unwrap_or(false);
+
+        is_dao_type_script
+            && self
+                .data_loader
+                .load_cell_data(cell_meta)
+                .map(|data| data.as_ref() == [0u8; 8])
+                .unwrap_or(false)
+    }
+
+    fn counted_capacity(&self, cell_meta: &CellMeta) -> Result<Capacity, DaoError> {
+        let occupied = cell_meta.occupied_capacity()?;
+        let total: Capacity = cell_meta.cell_output.capacity().into();
+        total.safe_sub(occupied).map_err(Into::into)
+    }
+
+    /// Calculates how this set of transactions changes live DAO deposit capacity.
+    pub fn dao_deposit_capacity_change(
+        &self,
+        mut rtxs: impl Iterator<Item = &'a ResolvedTransaction> + Clone,
+    ) -> Result<DaoDepositCapacityChange, DaoError> {
+        let removed = rtxs.clone().try_fold(Capacity::zero(), |total, rtx| {
+            rtx.resolved_inputs.iter().try_fold(total, |total, input| {
+                if self.is_dao_deposit_cell(input) {
+                    total
+                        .safe_add(self.counted_capacity(input)?)
+                        .map_err(Into::into)
+                } else {
+                    Ok::<_, DaoError>(total)
+                }
+            })
+        })?;
+
+        let added = rtxs.try_fold(Capacity::zero(), |total, rtx| {
+            rtx.transaction
+                .outputs_with_data_iter()
+                .try_fold(total, |total, (output, data)| {
+                    let cell_meta = CellMetaBuilder::from_cell_output(output, data).build();
+                    if self.is_dao_deposit_cell(&cell_meta) {
+                        total
+                            .safe_add(self.counted_capacity(&cell_meta)?)
+                            .map_err(Into::into)
+                    } else {
+                        Ok::<_, DaoError>(total)
+                    }
+                })
+        })?;
+
+        Ok(DaoDepositCapacityChange { added, removed })
+    }
+
+    fn treasury_issuance(
+        &self,
+        mut rtxs: impl Iterator<Item = &'a ResolvedTransaction>,
+    ) -> Capacity {
+        let Some(config) = self.consensus.treasury() else {
+            return Capacity::zero();
+        };
+        let Some(cellbase) = rtxs.next().filter(|rtx| rtx.transaction.is_cellbase()) else {
+            return Capacity::zero();
+        };
+
+        cellbase
+            .transaction
+            .outputs()
+            .get(1)
+            .filter(|output| output.lock() == config.lock)
+            .map(|output| output.capacity().into())
+            .unwrap_or_else(Capacity::zero)
+    }
+
     /// Returns the total transactions fee of `rtx`.
     pub fn transaction_fee(&self, rtx: &ResolvedTransaction) -> Result<Capacity, DaoError> {
         let maximum_withdraw = self.transaction_maximum_withdraw(rtx)?;
@@ -221,6 +364,7 @@ impl<'a, DL: CellDataProvider + EpochProvider + HeaderProvider> DaoCalculator<'a
                     .and_then(|c| capacities.safe_add(c))
             })?;
         let added_occupied_capacities = self.added_occupied_capacities(rtxs.clone())?;
+        let treasury_issuance = self.treasury_issuance(rtxs.clone());
         let withdrawed_interests = self.withdrawed_interests(rtxs)?;
 
         let (parent_ar, parent_c, parent_s, parent_u) = extract_dao_data(parent.dao());
@@ -253,7 +397,8 @@ impl<'a, DL: CellDataProvider + EpochProvider + HeaderProvider> DaoCalculator<'a
             .and_then(|u| u.safe_sub(freed_occupied_capacities))?;
         let current_s = parent_s
             .safe_add(nervosdao_issuance)
-            .and_then(|s| s.safe_sub(withdrawed_interests))?;
+            .and_then(|s| s.safe_sub(withdrawed_interests))
+            .and_then(|s| s.safe_sub(treasury_issuance))?;
 
         let ar_increase128 =
             u128::from(parent_ar) * u128::from(current_g2.as_u64()) / u128::from(parent_c.as_u64());

@@ -199,6 +199,35 @@ pub fn test_block_with_one_cellbase_at_first() {
 }
 
 #[test]
+pub fn test_treasury_cellbase_allows_two_outputs() {
+    let cellbase = TransactionBuilder::default()
+        .input(CellInput::new_cellbase_input(1))
+        .output(
+            CellOutputBuilder::default()
+                .capacity(capacity_bytes!(100))
+                .build(),
+        )
+        .output_data(Bytes::new())
+        .output(
+            CellOutputBuilder::default()
+                .capacity(capacity_bytes!(100))
+                .build(),
+        )
+        .output_data(Bytes::new())
+        .witness(Script::default().into_witness())
+        .build();
+    let block = BlockBuilder::new_with_number(1)
+        .transaction(cellbase)
+        .build();
+
+    assert!(CellbaseVerifier::with_max_outputs(2).verify(&block).is_ok());
+    assert_error_eq!(
+        CellbaseVerifier::new().verify(&block).unwrap_err(),
+        CellbaseError::InvalidOutputQuantity,
+    );
+}
+
+#[test]
 pub fn test_block_with_correct_cellbase_number() {
     let block = BlockBuilder::new_with_number(2)
         .transaction(create_cellbase_transaction_with_block_number(2))

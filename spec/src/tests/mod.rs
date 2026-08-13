@@ -3,7 +3,7 @@ use ckb_types::{H256, core::Capacity, packed, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::{ChainSpec, Params, build_genesis_epoch_ext};
+use crate::{ChainSpec, Params, TreasuryParams, build_genesis_epoch_ext};
 
 mod consensus;
 mod versionbits;
@@ -285,5 +285,29 @@ fn test_mainnet_limits_dao_withdrawing_lock_from_10000000() {
     assert_eq!(
         consensus.starting_block_limiting_dao_withdrawing_lock(),
         10000000
+    );
+}
+
+#[test]
+fn test_treasury_parameters_reject_genesis_activation_and_zero_interval() {
+    let mut chain_spec = load_spec_by_name("ckb_dev");
+    chain_spec.params.treasury = Some(TreasuryParams {
+        activation_block_number: 0,
+        emission_interval: 100,
+        lock: Default::default(),
+    });
+    assert_eq!(
+        chain_spec.build_consensus().unwrap_err().to_string(),
+        "treasury activation_block_number must be greater than zero"
+    );
+
+    chain_spec.params.treasury = Some(TreasuryParams {
+        activation_block_number: 1,
+        emission_interval: 0,
+        lock: Default::default(),
+    });
+    assert_eq!(
+        chain_spec.build_consensus().unwrap_err().to_string(),
+        "treasury emission_interval must be greater than zero"
     );
 }

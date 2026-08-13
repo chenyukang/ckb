@@ -16,12 +16,32 @@ use ckb_freezer::Freezer;
 use ckb_types::{
     bytes::Bytes,
     core::{
-        BlockExt, BlockNumber, BlockView, EpochExt, EpochNumber, HeaderView, TransactionInfo,
-        TransactionView, UncleBlockVecView, cell::CellMeta,
+        BlockExt, BlockNumber, BlockView, Capacity, EpochExt, EpochNumber, HeaderView,
+        TransactionInfo, TransactionView, UncleBlockVecView, cell::CellMeta,
     },
     packed::{self, OutPoint},
     prelude::*,
 };
+
+const DAO_TREASURY_STATE_KEY_PREFIX: &[u8] = b"dao-treasury-state:";
+
+pub(crate) fn dao_treasury_state_key(block_hash: &packed::Byte32) -> Vec<u8> {
+    let mut key = Vec::with_capacity(DAO_TREASURY_STATE_KEY_PREFIX.len() + 32);
+    key.extend_from_slice(DAO_TREASURY_STATE_KEY_PREFIX);
+    key.extend_from_slice(block_hash.as_slice());
+    key
+}
+
+/// Deterministic treasury accounting derived for one block.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DaoTreasuryState {
+    /// Counted capacity of live Nervos DAO deposit-phase cells.
+    pub dao_deposit_capacity: Capacity,
+    /// Treasury issuance carried into a later emission boundary.
+    pub pending_treasury: Capacity,
+    /// Treasury issuance materialized when this block becomes a finalized reward target.
+    pub treasury_emission: Capacity,
+}
 
 /// The `ChainStore` trait provides chain data store interface
 pub trait ChainStore: Send + Sync + Sized {
@@ -36,6 +56,24 @@ pub trait ChainStore: Send + Sync + Sized {
     /// Return the borrowed data loader wrapper
     fn borrow_as_data_loader(&self) -> BorrowedDataLoaderWrapper<'_, Self> {
         BorrowedDataLoaderWrapper::new(self)
+    }
+
+    /// Returns deterministic DAO treasury accounting for this block.
+    fn get_dao_treasury_state(&self, block_hash: &packed::Byte32) -> Option<DaoTreasuryState> {
+        let key = dao_treasury_state_key(block_hash);
+        self.get(COLUMN_BLOCK_EXT, &key).map(|raw| {
+            let values = packed::Uint64VecReader::from_slice_should_be_ok(raw.as_ref());
+            assert_eq!(
+                values.len(),
+                3,
+                "stored DAO treasury state has three fields"
+            );
+            DaoTreasuryState {
+                dao_deposit_capacity: Capacity::shannons(values.get(0).unwrap().into()),
+                pending_treasury: Capacity::shannons(values.get(1).unwrap().into()),
+                treasury_emission: Capacity::shannons(values.get(2).unwrap().into()),
+            }
+        })
     }
 
     /// Get block by block header hash

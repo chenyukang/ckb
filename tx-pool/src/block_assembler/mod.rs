@@ -534,9 +534,14 @@ impl BlockAssembler {
         let cellbase_witness = Self::build_cellbase_witness(config, snapshot);
 
         let tx = {
-            let (target_lock, block_reward) = block_in_place(|| {
-                RewardCalculator::new(snapshot.consensus(), snapshot).block_reward_to_finalize(tip)
-            })?;
+            let reward_calculator = RewardCalculator::new(snapshot.consensus(), snapshot);
+            let (target_lock, block_reward) =
+                block_in_place(|| reward_calculator.block_reward_to_finalize(tip))?;
+            let treasury_reward = if snapshot.consensus().treasury().is_some() {
+                block_in_place(|| reward_calculator.treasury_reward_to_finalize(tip))?
+            } else {
+                Capacity::zero()
+            };
             let input = CellInput::new_cellbase_input(candidate_number);
             let output = CellOutput::new_builder()
                 .capacity(block_reward.total)
@@ -546,15 +551,29 @@ impl BlockAssembler {
             let witness = cellbase_witness.as_bytes();
             let no_finalization_target =
                 candidate_number <= snapshot.consensus().finalization_delay_length();
-            let tx_builder = TransactionBuilder::default().input(input).witness(witness);
+            let mut tx_builder = TransactionBuilder::default().input(input).witness(witness);
             let insufficient_reward_to_create_cell = output.is_lack_of_capacity(Capacity::zero())?;
             if no_finalization_target || insufficient_reward_to_create_cell {
                 tx_builder.build()
             } else {
-                tx_builder
-                    .output(output)
-                    .output_data(Bytes::default())
-                    .build()
+                tx_builder = tx_builder.output(output).output_data(Bytes::default());
+                if treasury_reward != Capacity::zero() {
+                    let treasury_output = CellOutput::new_builder()
+                        .capacity(treasury_reward)
+                        .lock(
+                            snapshot
+                                .consensus()
+                                .treasury()
+                                .expect("treasury reward requires treasury config")
+                                .lock
+                                .clone(),
+                        )
+                        .build();
+                    tx_builder = tx_builder
+                        .output(treasury_output)
+                        .output_data(Bytes::default());
+                }
+                tx_builder.build()
             }
         };
 

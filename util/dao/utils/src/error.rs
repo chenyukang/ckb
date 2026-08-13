@@ -39,6 +39,9 @@ pub enum DaoError {
     /// ZeroC
     #[error("ZeroC")]
     ZeroC,
+    /// The tracked Nervos DAO deposits and occupied capacity exceed total issuance.
+    #[error("InvalidTreasuryState")]
+    InvalidTreasuryState,
 }
 
 impl From<DaoError> for Error {

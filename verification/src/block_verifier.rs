@@ -41,7 +41,11 @@ impl<'a> Verifier for BlockVerifier<'a> {
         let max_block_bytes = self.consensus.max_block_bytes();
         BlockProposalsLimitVerifier::new(max_block_proposals_limit).verify(target)?;
         BlockBytesVerifier::new(max_block_bytes).verify(target)?;
-        CellbaseVerifier::new().verify(target)?;
+        if self.consensus.treasury().is_some() {
+            CellbaseVerifier::with_max_outputs(2).verify(target)?;
+        } else {
+            CellbaseVerifier::new().verify(target)?;
+        }
         DuplicateVerifier::new().verify(target)?;
         MerkleRootVerifier::new().verify(target)
     }
@@ -50,17 +54,24 @@ impl<'a> Verifier for BlockVerifier<'a> {
 /// Cellbase verifier
 ///
 /// First transaction must be cellbase, the rest must not be.
-/// Cellbase outputs/outputs_data len must le 1, and outputs len must equal to outputs_data len.
+/// Cellbase outputs/outputs_data len must not exceed the consensus limit, and their lengths match.
 /// Cellbase output data must be empty
 /// Cellbase output type_ must be empty
 /// Cellbase has only one dummy input. The input's `since` field must be equal to the block number.
 #[derive(Clone)]
-pub struct CellbaseVerifier {}
+pub struct CellbaseVerifier {
+    max_outputs: usize,
+}
 
 impl CellbaseVerifier {
     /// Constructs a CellbaseVerifier
     pub fn new() -> Self {
-        CellbaseVerifier {}
+        CellbaseVerifier { max_outputs: 1 }
+    }
+
+    /// Constructs a CellbaseVerifier with a consensus-specific output limit.
+    pub fn with_max_outputs(max_outputs: usize) -> Self {
+        CellbaseVerifier { max_outputs }
     }
 
     pub fn verify(&self, block: &BlockView) -> Result<(), Error> {
@@ -86,8 +97,8 @@ impl CellbaseVerifier {
         }
 
         // cellbase outputs/outputs_data len must le 1, and outputs len must equal to outputs_data len
-        if cellbase_transaction.outputs().len() > 1
-            || cellbase_transaction.outputs_data().len() > 1
+        if cellbase_transaction.outputs().len() > self.max_outputs
+            || cellbase_transaction.outputs_data().len() > self.max_outputs
             || cellbase_transaction.outputs().len() != cellbase_transaction.outputs_data().len()
         {
             return Err((CellbaseError::InvalidOutputQuantity).into());

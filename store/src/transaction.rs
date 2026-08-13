@@ -1,5 +1,5 @@
 use crate::cache::StoreCache;
-use crate::store::ChainStore;
+use crate::store::{ChainStore, DaoTreasuryState, dao_treasury_state_key};
 use ckb_chain_spec::versionbits::VersionbitsIndexer;
 use ckb_db::{
     DBPinnableSlice, RocksDBTransaction, RocksDBTransactionSnapshot,
@@ -168,6 +168,29 @@ impl StoreTransaction {
         self.insert_raw(COLUMN_META, META_TIP_HEADER_KEY, h.hash().as_slice())
     }
 
+    /// Stores deterministic DAO treasury accounting for a block hash.
+    pub fn insert_dao_treasury_state(
+        &self,
+        block_hash: &packed::Byte32,
+        state: DaoTreasuryState,
+    ) -> Result<(), Error> {
+        let key = dao_treasury_state_key(block_hash);
+        let values = packed::Uint64Vec::new_builder()
+            .set(vec![
+                state.dao_deposit_capacity.as_u64().into(),
+                state.pending_treasury.as_u64().into(),
+                state.treasury_emission.as_u64().into(),
+            ])
+            .build();
+        self.insert_raw(COLUMN_BLOCK_EXT, &key, values.as_slice())
+    }
+
+    /// Deletes deterministic DAO treasury accounting for a block hash.
+    pub fn delete_dao_treasury_state(&self, block_hash: &packed::Byte32) -> Result<(), Error> {
+        let key = dao_treasury_state_key(block_hash);
+        self.delete(COLUMN_BLOCK_EXT, &key)
+    }
+
     /// Inserts a block into the store.
     pub fn insert_block(&self, block: &BlockView) -> Result<(), Error> {
         let hash = block.hash();
@@ -213,6 +236,7 @@ impl StoreTransaction {
     pub fn delete_block(&self, block: &BlockView) -> Result<(), Error> {
         let hash = block.hash();
         let txs_len = block.transactions().len();
+        self.delete_dao_treasury_state(&hash)?;
         self.delete(COLUMN_BLOCK_HEADER, hash.as_slice())?;
         self.delete(COLUMN_BLOCK_UNCLE, hash.as_slice())?;
         self.delete(COLUMN_BLOCK_EXTENSION, hash.as_slice())?;

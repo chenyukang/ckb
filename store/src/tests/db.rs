@@ -2,10 +2,15 @@ use ckb_chain_spec::consensus::ConsensusBuilder;
 use ckb_db::RocksDB;
 use ckb_db_schema::{COLUMN_BLOCK_HEADER, COLUMNS};
 use ckb_freezer::Freezer;
-use ckb_types::{core::BlockExt, packed, prelude::*};
+use ckb_types::{
+    bytes::Bytes,
+    core::{BlockExt, Capacity, ScriptHashType, TransactionBuilder},
+    packed::{self, CellOutput, Script},
+    prelude::*,
+};
 use tempfile::TempDir;
 
-use crate::{db::ChainDB, store::ChainStore};
+use crate::{DaoTreasuryState, db::ChainDB, store::ChainStore};
 
 #[test]
 fn save_and_get_block() {
@@ -69,6 +74,29 @@ fn save_and_get_block_ext() {
 }
 
 #[test]
+fn save_and_get_dao_treasury_state() {
+    let tmp_dir = TempDir::new().unwrap();
+    let db = RocksDB::open_in(&tmp_dir, COLUMNS);
+    let store = ChainDB::new(db, Default::default());
+    let hash = packed::Byte32::new([42u8; 32]);
+    let expected = DaoTreasuryState {
+        dao_deposit_capacity: Capacity::shannons(1_000),
+        pending_treasury: Capacity::shannons(200),
+        treasury_emission: Capacity::shannons(300),
+    };
+
+    let txn = store.begin_transaction();
+    txn.insert_dao_treasury_state(&hash, expected).unwrap();
+    txn.commit().unwrap();
+    assert_eq!(store.get_dao_treasury_state(&hash), Some(expected));
+
+    let txn = store.begin_transaction();
+    txn.delete_dao_treasury_state(&hash).unwrap();
+    txn.commit().unwrap();
+    assert_eq!(store.get_dao_treasury_state(&hash), None);
+}
+
+#[test]
 fn index_store() {
     let tmp_dir = TempDir::new().unwrap();
     let db = RocksDB::open_in(&tmp_dir, COLUMNS);
@@ -87,6 +115,46 @@ fn index_store() {
     assert_eq!(block.number(), store.get_block_number(&hash).unwrap());
 
     assert_eq!(block.header(), store.get_tip_header().unwrap());
+}
+
+#[test]
+fn init_counts_genesis_dao_deposits() {
+    let base = ConsensusBuilder::default().build();
+    let dao_type = Script::new_builder()
+        .code_hash(base.dao_type_hash())
+        .hash_type(ScriptHashType::Type)
+        .build();
+    let output = CellOutput::new_builder()
+        .capacity(Capacity::bytes(1_000).unwrap())
+        .type_(Some(dao_type).pack())
+        .build();
+    let data = Bytes::from(vec![0; 8]);
+    let expected = Capacity::from(output.capacity())
+        .safe_sub(
+            output
+                .occupied_capacity(Capacity::bytes(data.len()).unwrap())
+                .unwrap(),
+        )
+        .unwrap();
+    let deposit = TransactionBuilder::default()
+        .output(output)
+        .output_data(data.pack())
+        .build();
+    let genesis = base
+        .genesis_block()
+        .as_advanced_builder()
+        .transaction(deposit)
+        .build();
+    let consensus = ConsensusBuilder::default().genesis_block(genesis).build();
+
+    let tmp_dir = TempDir::new().unwrap();
+    let db = RocksDB::open_in(&tmp_dir, COLUMNS);
+    let store = ChainDB::new(db, Default::default());
+    store.init(&consensus).unwrap();
+    let state = store
+        .get_dao_treasury_state(&consensus.genesis_hash())
+        .unwrap();
+    assert_eq!(state.dao_deposit_capacity, expected);
 }
 
 #[test]

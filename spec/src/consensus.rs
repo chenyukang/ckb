@@ -158,6 +158,17 @@ pub struct ConsensusBuilder {
     inner: Consensus,
 }
 
+/// Consensus parameters for materializing future treasury issuance.
+#[derive(Clone, Debug)]
+pub struct TreasuryConfig {
+    /// The first target block whose would-be-burned issuance belongs to the treasury.
+    pub activation_block_number: BlockNumber,
+    /// Number of consecutive target blocks aggregated into one Treasury Cell.
+    pub emission_interval: BlockNumber,
+    /// Consensus-defined lock script for Treasury Cells.
+    pub lock: Script,
+}
+
 // Dummy consensus, difficulty can not be zero
 impl Default for ConsensusBuilder {
     fn default() -> Self {
@@ -300,6 +311,7 @@ impl ConsensusBuilder {
                 versionbits_caches: VersionbitsCache::default(),
                 starting_block_limiting_dao_withdrawing_lock:
                     STARTING_BLOCK_LIMITING_DAO_WITHDRAWING_LOCK,
+                treasury: None,
             },
         }
     }
@@ -396,6 +408,13 @@ impl ConsensusBuilder {
     #[must_use]
     pub fn secondary_epoch_reward(mut self, secondary_epoch_reward: Capacity) -> Self {
         self.inner.secondary_epoch_reward = secondary_epoch_reward;
+        self
+    }
+
+    /// Sets the optional treasury issuance parameters.
+    #[must_use]
+    pub fn treasury(mut self, treasury: Option<TreasuryConfig>) -> Self {
+        self.inner.treasury = treasury;
         self
     }
 
@@ -587,6 +606,8 @@ pub struct Consensus {
     pub versionbits_caches: VersionbitsCache,
     /// Starting block where DAO withdrawing lock is limited in size
     pub starting_block_limiting_dao_withdrawing_lock: u64,
+    /// Optional hardfork-gated Treasury Cell issuance parameters.
+    pub treasury: Option<TreasuryConfig>,
 }
 
 // genesis difficulty should not be zero
@@ -707,6 +728,11 @@ impl Consensus {
     /// [token-issuance](https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0015-ckb-cryptoeconomics/0015-ckb-cryptoeconomics.md#token-issuance)
     pub fn secondary_epoch_reward(&self) -> Capacity {
         self.secondary_epoch_reward
+    }
+
+    /// Returns the optional treasury issuance parameters.
+    pub fn treasury(&self) -> Option<&TreasuryConfig> {
+        self.treasury.as_ref()
     }
 
     /// The expected orphan_rate

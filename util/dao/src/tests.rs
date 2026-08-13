@@ -19,7 +19,130 @@ use ckb_types::{
 };
 use tempfile::TempDir;
 
-use crate::DaoCalculator;
+use crate::{DaoCalculator, secondary_issuance_breakdown};
+
+#[test]
+fn secondary_issuance_breakdown_preserves_baseline_and_assigns_rounding_to_dao() {
+    let breakdown = secondary_issuance_breakdown(
+        Capacity::shannons(101),
+        Capacity::shannons(1_000),
+        Capacity::shannons(600),
+        Capacity::shannons(350),
+    )
+    .unwrap();
+
+    assert_eq!(breakdown.miner, Capacity::shannons(60));
+    assert_eq!(breakdown.treasury, Capacity::shannons(5));
+    assert_eq!(breakdown.nervos_dao, Capacity::shannons(36));
+    assert_eq!(
+        breakdown
+            .miner
+            .safe_add(breakdown.nervos_dao)
+            .and_then(|capacity| capacity.safe_add(breakdown.treasury))
+            .unwrap(),
+        breakdown.total
+    );
+}
+
+#[test]
+fn secondary_issuance_breakdown_rejects_inconsistent_state() {
+    let result = secondary_issuance_breakdown(
+        Capacity::shannons(100),
+        Capacity::shannons(1_000),
+        Capacity::shannons(700),
+        Capacity::shannons(301),
+    );
+
+    assert_eq!(result.unwrap_err(), DaoError::InvalidTreasuryState);
+}
+
+#[test]
+fn secondary_issuance_breakdown_tracks_epoch_block_rounding() {
+    let epoch = EpochExt::new_builder()
+        .number(1)
+        .start_number(100)
+        .length(3)
+        .build();
+    let epoch_reward = Capacity::shannons(1_000);
+    let totals = (100..103)
+        .map(|number| {
+            let secondary = epoch
+                .secondary_block_issuance(number, epoch_reward)
+                .unwrap();
+            secondary_issuance_breakdown(
+                secondary,
+                Capacity::shannons(1_000),
+                Capacity::shannons(600),
+                Capacity::shannons(350),
+            )
+            .unwrap()
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        totals.iter().map(|value| value.total.as_u64()).sum::<u64>(),
+        epoch_reward.as_u64()
+    );
+    assert_eq!(totals[0].total, Capacity::shannons(334));
+    assert_eq!(totals[2].total, Capacity::shannons(333));
+    assert!(totals.iter().all(|value| {
+        value
+            .miner
+            .safe_add(value.nervos_dao)
+            .and_then(|capacity| capacity.safe_add(value.treasury))
+            .unwrap()
+            == value.total
+    }));
+}
+
+#[test]
+fn dao_deposit_capacity_change_only_tracks_deposit_phase() {
+    let consensus = Consensus::default();
+    let dao_type = Script::new_builder()
+        .code_hash(consensus.dao_type_hash())
+        .hash_type(ScriptHashType::Type)
+        .build();
+    let deposit_output = CellOutput::new_builder()
+        .capacity(capacity_bytes!(1_000))
+        .type_(Some(dao_type.clone()).pack())
+        .build();
+    let withdrawing_output = deposit_output.clone();
+    let deposit_data = Bytes::from(vec![0u8; 8]);
+    let withdrawing_data = Bytes::from(42u64.to_le_bytes().to_vec());
+    let spent_deposit =
+        CellMetaBuilder::from_cell_output(deposit_output.clone(), deposit_data.clone()).build();
+    let spent_withdrawing =
+        CellMetaBuilder::from_cell_output(withdrawing_output.clone(), withdrawing_data.clone())
+            .build();
+    let tx = TransactionBuilder::default()
+        .output(withdrawing_output)
+        .output_data(withdrawing_data)
+        .output(deposit_output.clone())
+        .output_data(deposit_data)
+        .build();
+    let rtx = ResolvedTransaction {
+        transaction: tx,
+        resolved_cell_deps: vec![],
+        resolved_inputs: vec![spent_deposit, spent_withdrawing],
+        resolved_dep_groups: vec![],
+    };
+
+    let parent = HeaderBuilder::default()
+        .number(1_000)
+        .epoch(EpochNumberWithFraction::new(1, 0, 1_000))
+        .build();
+    let (_tmp_dir, store, _) = prepare_store(&parent, Some(0));
+    let data_loader = store.borrow_as_data_loader();
+    let change = DaoCalculator::new(&consensus, &data_loader)
+        .dao_deposit_capacity_change([rtx].iter())
+        .unwrap();
+    let occupied = deposit_output
+        .occupied_capacity(Capacity::bytes(8).unwrap())
+        .unwrap();
+    let expected = capacity_bytes!(1_000).safe_sub(occupied).unwrap();
+    assert_eq!(change.added, expected);
+    assert_eq!(change.removed, expected);
+}
 
 fn prepare_store(
     parent: &HeaderView,

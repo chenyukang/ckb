@@ -64,6 +64,11 @@ impl<CS: ChainStore + VersionbitsIndexer> VerifyContext<CS> {
     ) -> Result<(Script, BlockReward), DaoError> {
         RewardCalculator::new(&self.consensus, self.store.as_ref()).block_reward_to_finalize(parent)
     }
+
+    fn finalize_treasury_reward(&self, parent: &HeaderView) -> Result<Capacity, DaoError> {
+        RewardCalculator::new(&self.consensus, self.store.as_ref())
+            .treasury_reward_to_finalize(parent)
+    }
 }
 
 impl<CS: ChainStore> HeaderProvider for VerifyContext<CS> {
@@ -240,34 +245,45 @@ impl<'a, 'b, CS: ChainStore + VersionbitsIndexer> RewardVerifier<'a, 'b, CS> {
         let no_finalization_target =
             (self.parent.number() + 1) <= self.context.consensus.finalization_delay_length();
 
-        let (target_lock, block_reward) = self.context.finalize_block_reward(self.parent)?;
-        let output = CellOutput::new_builder()
-            .capacity(block_reward.total)
-            .lock(target_lock.clone())
-            .build();
-        let insufficient_reward_to_create_cell = output.is_lack_of_capacity(Capacity::zero())?;
-
-        if no_finalization_target || insufficient_reward_to_create_cell {
-            let ret = if cellbase.transaction.outputs().is_empty() {
+        if no_finalization_target {
+            return if cellbase.transaction.outputs().is_empty() {
                 Ok(())
             } else {
                 Err((CellbaseError::InvalidRewardTarget).into())
             };
-            return ret;
         }
 
-        if !insufficient_reward_to_create_cell {
-            if cellbase.transaction.outputs_capacity()? != block_reward.total {
+        let (target_lock, block_reward) = self.context.finalize_block_reward(self.parent)?;
+        let miner_output = CellOutput::new_builder()
+            .capacity(block_reward.total)
+            .lock(target_lock)
+            .build();
+        let mut expected_outputs = Vec::with_capacity(2);
+        if !miner_output.is_lack_of_capacity(Capacity::zero())? {
+            expected_outputs.push(miner_output);
+        }
+
+        if let Some(config) = self.context.consensus.treasury() {
+            let treasury_reward = self.context.finalize_treasury_reward(self.parent)?;
+            if treasury_reward != Capacity::zero() {
+                expected_outputs.push(
+                    CellOutput::new_builder()
+                        .capacity(treasury_reward)
+                        .lock(config.lock.clone())
+                        .build(),
+                );
+            }
+        }
+
+        let actual_outputs = cellbase.transaction.outputs();
+        if actual_outputs.len() != expected_outputs.len() {
+            return Err((CellbaseError::InvalidRewardTarget).into());
+        }
+        for (actual, expected) in actual_outputs.into_iter().zip(expected_outputs) {
+            if actual.capacity() != expected.capacity() {
                 return Err((CellbaseError::InvalidRewardAmount).into());
             }
-            if cellbase
-                .transaction
-                .outputs()
-                .get(0)
-                .expect("cellbase should have output")
-                .lock()
-                != target_lock
-            {
+            if actual.lock() != expected.lock() {
                 return Err((CellbaseError::InvalidRewardTarget).into());
             }
         }
