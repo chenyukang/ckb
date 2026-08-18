@@ -104,12 +104,12 @@ impl CellbaseVerifier {
             return Err((CellbaseError::InvalidOutputQuantity).into());
         }
 
-        // cellbase output data must be empty
-        if !cellbase_transaction
+        // Every cellbase output data item must be empty, including the optional
+        // Treasury output introduced when max_outputs is two.
+        if cellbase_transaction
             .outputs_data()
-            .get(0)
-            .map(|data| data.is_empty())
-            .unwrap_or(true)
+            .into_iter()
+            .any(|data| !data.is_empty())
         {
             return Err((CellbaseError::InvalidOutputData).into());
         }
