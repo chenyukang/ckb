@@ -1092,16 +1092,18 @@ impl SyncShared {
     // Update the block_status_map
     // Update the shared_best_header if need
     // Update the peer's best_known_header
-    pub fn insert_valid_header(&self, peer: PeerIndex, header: &core::HeaderView) {
+    //
+    // Returns `None` when the parent header is no longer available. That can
+    // happen when a concurrent orphan cleanup removes the parent view between
+    // header verification and insertion, so callers should treat it as a
+    // recoverable condition instead of panicking.
+    pub fn insert_valid_header(&self, peer: PeerIndex, header: &core::HeaderView) -> Option<()> {
         let tip_number = self.active_chain().tip_number();
         let store_first = tip_number >= header.number();
         // We don't use header#parent_hash clone here because it will hold the arc counter of the SendHeaders message
         // which will cause the 2000 headers to be held in memory for a long time
-        let parent_hash = Byte32::from_slice(header.data().raw().parent_hash().as_slice())
-            .expect("checked slice length");
-        let parent_header_index = self
-            .get_header_index_view(&parent_hash, store_first)
-            .expect("parent should be verified");
+        let parent_hash = Byte32::from_slice(header.data().raw().parent_hash().as_slice()).ok()?;
+        let parent_header_index = self.get_header_index_view(&parent_hash, store_first)?;
         let mut header_view = HeaderIndexView::new(
             header.hash(),
             header.number(),
@@ -1139,6 +1141,7 @@ impl SyncShared {
             );
         }
         self.state.may_set_shared_best_header(header_view);
+        Some(())
     }
 
     pub(crate) fn get_header_index_view(
@@ -1798,27 +1801,26 @@ impl ActiveChain {
             .get_ancestor(tip_number, number, get_header_view_fn, fast_scanner_fn)
     }
 
-    pub fn get_locator(&self, start: BlockNumberAndHash) -> Vec<Byte32> {
+    pub fn get_locator(&self, start: BlockNumberAndHash) -> Option<Vec<Byte32>> {
         let mut step = 1;
         let mut locator = Vec::with_capacity(32);
         let mut index = start.number();
         let mut base = start.hash();
 
         loop {
-            let header_hash = self
-                .get_ancestor(&base, index)
-                .unwrap_or_else(|| {
-                    panic!(
-                        "index calculated in get_locator: \
-                         start: {:?}, base: {}, step: {}, locators({}): {:?}.",
-                        start,
-                        base,
-                        step,
-                        locator.len(),
-                        locator,
-                    )
-                })
-                .hash();
+            let Some(ancestor) = self.get_ancestor(&base, index) else {
+                warn!(
+                    "failed to build getheaders locator, some ancestor header is missing: \
+                     start: {:?}, base: {}, step: {}, locators({}): {:?}.",
+                    start,
+                    base,
+                    step,
+                    locator.len(),
+                    locator,
+                );
+                return None;
+            };
+            let header_hash = ancestor.hash();
             locator.push(header_hash.clone());
 
             if locator.len() >= 10 {
@@ -1848,7 +1850,7 @@ impl ActiveChain {
             index -= step;
             base = header_hash;
         }
-        locator
+        Some(locator)
     }
 
     pub fn last_common_ancestor(
@@ -1890,18 +1892,21 @@ impl ActiveChain {
             return None;
         }
 
-        let locator_hash = locator.last().expect("empty checked");
+        let locator_hash = locator.last()?;
         if locator_hash != &self.sync_shared.consensus().genesis_hash() {
             return None;
         }
 
         // iterator are lazy
-        let (index, latest_common) = locator
+        let Some((index, latest_common)) = locator
             .iter()
             .enumerate()
             .map(|(index, hash)| (index, self.snapshot.get_block_number(hash)))
             .find(|(_index, number)| number.is_some())
-            .expect("locator last checked");
+        else {
+            debug!("locator does not contain any known block");
+            return None;
+        };
 
         if index == 0 || latest_common == Some(0) {
             return latest_common;
@@ -1977,17 +1982,20 @@ impl ActiveChain {
                 );
             }
         }
+        let block_hash = block_number_and_hash.hash();
+        let Some(locator_hash) = self.get_locator(block_number_and_hash) else {
+            warn!(
+                "failed to send getheaders to peer={}, hash={}: the locator can not be built",
+                peer, block_hash
+            );
+            return;
+        };
         self.state()
             .pending_get_headers
             .write()
-            .put((peer, block_number_and_hash.hash()), Instant::now());
+            .put((peer, block_hash.clone()), Instant::now());
 
-        debug!(
-            "send_getheaders_to_peer peer={}, hash={}",
-            peer,
-            block_number_and_hash.hash()
-        );
-        let locator_hash = self.get_locator(block_number_and_hash);
+        debug!("send_getheaders_to_peer peer={}, hash={}", peer, block_hash);
         let content = packed::GetHeaders::new_builder()
             .block_locator_hashes(locator_hash)
             .hash_stop(packed::Byte32::zero())

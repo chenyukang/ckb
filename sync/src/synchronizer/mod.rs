@@ -620,19 +620,25 @@ impl Synchronizer {
                             eviction.push(*peer);
                         }
                     } else {
-                        state.chain_sync.sent_getheaders = true;
-                        state.chain_sync.timeout =
-                            now.saturating_add(EVICTION_HEADERS_RESPONSE_TIME);
-                        active_chain.send_getheaders_to_peer(
-                            nc,
-                            *peer,
-                            state
-                                .chain_sync
-                                .work_header
-                                .as_ref()
-                                .expect("work_header be assigned")
-                                .into(),
-                        );
+                        match state.chain_sync.work_header.clone() {
+                            Some(work_header) => {
+                                state.chain_sync.sent_getheaders = true;
+                                state.chain_sync.timeout =
+                                    now.saturating_add(EVICTION_HEADERS_RESPONSE_TIME);
+                                active_chain.send_getheaders_to_peer(
+                                    nc,
+                                    *peer,
+                                    (&work_header).into(),
+                                );
+                            }
+                            None => {
+                                // This should not happen because `timeout` and
+                                // `work_header` are set together, evict the
+                                // peer instead of panicking.
+                                warn!("work_header is missing for peer={}, evict it", peer);
+                                eviction.push(*peer);
+                            }
+                        }
                     }
                 }
             }

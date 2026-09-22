@@ -172,7 +172,8 @@ fn test_locator() {
     let locator = synchronizer
         .shared
         .active_chain()
-        .get_locator(shared.snapshot().tip_header().into());
+        .get_locator(shared.snapshot().tip_header().into())
+        .unwrap();
 
     let mut expect = Vec::new();
 
@@ -183,6 +184,22 @@ fn test_locator() {
     expect.push(shared.genesis_hash());
 
     assert_eq!(expect, locator);
+}
+
+#[test]
+fn test_get_locator_with_unknown_header() {
+    let (_chain, _shared, synchronizer) = start_chain(None);
+
+    // Building a locator for a header that is not stored anywhere must return
+    // None instead of panicking.
+    let unknown_header = packed::Header::default().into_view();
+    assert!(
+        synchronizer
+            .shared
+            .active_chain()
+            .get_locator((&unknown_header).into())
+            .is_none()
+    );
 }
 
 #[test]
@@ -204,7 +221,8 @@ fn test_locate_latest_common_block() {
     let locator1 = synchronizer1
         .shared
         .active_chain()
-        .get_locator(shared1.snapshot().tip_header().into());
+        .get_locator(shared1.snapshot().tip_header().into())
+        .unwrap();
 
     let latest_common = synchronizer2
         .shared
@@ -279,7 +297,8 @@ fn test_locate_latest_common_block2() {
     let locator1 = synchronizer1
         .shared
         .active_chain()
-        .get_locator(shared1.snapshot().tip_header().into());
+        .get_locator(shared1.snapshot().tip_header().into())
+        .unwrap();
 
     let latest_common = synchronizer2
         .shared
@@ -635,7 +654,8 @@ fn test_sync_process() {
     let locator1 = synchronizer1
         .shared
         .active_chain()
-        .get_locator(shared1.snapshot().tip_header().into());
+        .get_locator(shared1.snapshot().tip_header().into())
+        .unwrap();
 
     for i in 1..=num {
         let j = if i > 192 { i + 1 } else { i };

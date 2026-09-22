@@ -390,12 +390,11 @@ impl NetworkState {
     }
 
     pub(crate) fn can_dial(&self, addr: &Multiaddr) -> bool {
-        let peer_id = extract_peer_id(addr);
-        if peer_id.is_none() {
+        let Some(peer_id) = extract_peer_id(addr) else {
             error!("Do not dial addr without peer id, addr: {}", addr);
             return false;
-        }
-        let peer_id = peer_id.as_ref().unwrap();
+        };
+        let peer_id = &peer_id;
 
         if self.local_peer_id() == peer_id {
             trace!("Do not dial self: {:?}, {}", peer_id, addr);
@@ -473,13 +472,15 @@ impl NetworkState {
         if !self.can_dial(&addr) {
             return Err(Error::Dial(format!("ignore dialing addr {addr}")));
         }
+        let Some(peer_id) = extract_peer_id(&addr) else {
+            return Err(Error::Dial(format!(
+                "ignore dialing addr without peer id {addr}"
+            )));
+        };
 
         debug!("Dialing {addr}");
         p2p_control.dial(addr.clone(), target)?;
-        self.dialing_addrs.write().insert(
-            extract_peer_id(&addr).expect("verified addr"),
-            Instant::now(),
-        );
+        self.dialing_addrs.write().insert(peer_id, Instant::now());
         Ok(())
     }
 
