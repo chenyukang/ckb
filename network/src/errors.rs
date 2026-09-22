@@ -62,6 +62,8 @@ pub enum PeerError {
     SessionExists(SessionId),
     /// Peer id exist
     PeerIdExists(PeerId),
+    /// The address of an opened session has no peer id
+    AddressWithoutPeerId,
     /// Non-reserved peers
     NonReserved,
     /// Peer is banned

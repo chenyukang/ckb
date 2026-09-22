@@ -10,15 +10,24 @@ impl BlockTransactionsVerifier {
         transactions: &[core::TransactionView],
     ) -> Status {
         let block_short_ids = block.block_short_ids();
-        let missing_short_ids: Vec<packed::ProposalShortId> = indexes
-            .iter()
-            .filter_map(|index| {
-                block_short_ids
-                    .get(*index as usize)
-                    .expect("should never outbound")
-                    .clone()
-            })
-            .collect();
+        let mut missing_short_ids: Vec<packed::ProposalShortId> = Vec::with_capacity(indexes.len());
+        for index in indexes {
+            // `pending_compact_blocks` is keyed by block hash and keeps the
+            // first compact block, while the missing indexes are recorded per
+            // peer. Another peer may have recorded indexes against a longer
+            // compact block that shares the same header, so an index can be
+            // out of range for the stored compact block here. Reject such a
+            // message instead of panicking.
+            let Some(short_id) = block_short_ids.get(*index as usize) else {
+                return StatusCode::ProtocolMessageIsMalformed.with_context(format!(
+                    "transaction index {index} is out of range for the pending compact block ({})",
+                    block_short_ids.len(),
+                ));
+            };
+            if let Some(short_id) = short_id {
+                missing_short_ids.push(short_id.clone());
+            }
+        }
 
         if missing_short_ids.len() != transactions.len() {
             return StatusCode::BlockTransactionsLengthIsUnmatchedWithPendingCompactBlock

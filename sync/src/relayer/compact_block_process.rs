@@ -76,7 +76,23 @@ impl<'a> CompactBlockProcess<'a> {
         // The new arrived has greater difficulty than local best known chain
         attempt!(CompactBlockVerifier::verify(&compact_block));
         // Header has been verified ok, update state
-        shared.insert_valid_header(self.peer, &header);
+        if shared.insert_valid_header(self.peer, &header).is_none() {
+            // The parent header was removed concurrently, ask the peer for
+            // headers again instead of panicking.
+            debug_target!(
+                crate::LOG_TARGET_RELAY,
+                "UnknownParent: {}, send_getheaders_to_peer({})",
+                block_hash,
+                self.peer,
+            );
+            active_chain.send_getheaders_to_peer(
+                &self.nc,
+                self.peer,
+                (&active_chain.tip_header()).into(),
+            );
+            return StatusCode::CompactBlockRequiresParent
+                .with_context(format!("{} parent header is missing", block_hash,));
+        }
 
         // Request proposal
         let proposals: Vec<_> = compact_block.proposals().into_iter().collect();
@@ -241,17 +257,27 @@ async fn contextual_check(
     let status = active_chain.get_block_status(&block_hash);
     if status.contains(BlockStatus::BLOCK_STORED) {
         // update last common header and best known
-        let parent = shared
-            .get_header_index_view(&compact_block_header.data().raw().parent_hash(), true)
-            .expect("parent block must exist");
-
-        let header_index = HeaderIndex::new(
-            compact_block_header.number(),
-            block_hash.clone(),
-            parent.total_difficulty() + compact_block_header.difficulty(),
-        );
-        let state = shared.state().peers();
-        state.may_set_best_known_header(peer, header_index);
+        match shared.get_header_index_view(&compact_block_header.data().raw().parent_hash(), true) {
+            Some(parent) => {
+                let header_index = HeaderIndex::new(
+                    compact_block_header.number(),
+                    block_hash.clone(),
+                    parent.total_difficulty() + compact_block_header.difficulty(),
+                );
+                let state = shared.state().peers();
+                state.may_set_best_known_header(peer, header_index);
+            }
+            None => {
+                // The parent header may be removed by a concurrent orphan
+                // cleanup; the block is already stored, so skip updating the
+                // best known header instead of panicking.
+                debug_target!(
+                    crate::LOG_TARGET_RELAY,
+                    "stored block {}, but its parent header is missing, skip updating best known header",
+                    block_hash,
+                );
+            }
+        }
 
         return StatusCode::CompactBlockAlreadyStored.with_context(block_hash);
     } else if status.contains(BlockStatus::BLOCK_RECEIVED) {

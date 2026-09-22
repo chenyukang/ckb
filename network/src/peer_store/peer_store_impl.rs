@@ -49,10 +49,11 @@ impl PeerStore {
     /// this method will assume peer is connected, which implies address is "verified".
     pub fn add_connected_peer(&mut self, addr: Multiaddr, session_type: SessionType) {
         let now_ms = ckb_systemtime::unix_time_as_millis();
-        match self
-            .connected_peers
-            .entry(extract_peer_id(&addr).expect("connected addr should have peer id"))
-        {
+        let Some(peer_id) = extract_peer_id(&addr) else {
+            ckb_logger::warn!("ignore connected peer without peer id, addr: {}", addr);
+            return;
+        };
+        match self.connected_peers.entry(peer_id) {
             Entry::Occupied(mut entry) => {
                 let peer = entry.get_mut();
                 peer.connected_addr = addr;

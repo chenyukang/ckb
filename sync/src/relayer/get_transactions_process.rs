@@ -62,17 +62,19 @@ impl<'a> GetTransactionsProcess<'a> {
 
             let fetch_txs_with_cycles = tx_pool.fetch_txs_with_cycles(tx_hashes_set).await;
 
-            if let Err(e) = fetch_txs_with_cycles {
-                debug_target!(
-                    crate::LOG_TARGET_RELAY,
-                    "relayer tx_pool_controller send fetch_txs_with_cycles error: {:?}",
-                    e,
-                );
-                return Status::ok();
+            let fetch_txs_with_cycles = match fetch_txs_with_cycles {
+                Ok(fetch_txs_with_cycles) => fetch_txs_with_cycles,
+                Err(e) => {
+                    debug_target!(
+                        crate::LOG_TARGET_RELAY,
+                        "relayer tx_pool_controller send fetch_txs_with_cycles error: {:?}",
+                        e,
+                    );
+                    return Status::ok();
+                }
             };
 
             fetch_txs_with_cycles
-                .unwrap()
                 .into_iter()
                 .map(|(tx, cycles)| {
                     packed::RelayTransaction::new_builder()

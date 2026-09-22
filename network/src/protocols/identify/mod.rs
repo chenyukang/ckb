@@ -115,10 +115,13 @@ impl<T: Callback> IdentifyProtocol<T> {
 
     fn check_duplicate(&mut self, context: &mut ProtocolContextMutRef) -> MisbehaveResult {
         let session = context.session;
-        let info = self
-            .remote_infos
-            .get_mut(&session.id)
-            .expect("RemoteInfo must exists");
+        let Some(info) = self.remote_infos.get_mut(&session.id) else {
+            debug!(
+                "IdentifyProtocol received message before remote info was registered, session: {:?}",
+                session.id,
+            );
+            return MisbehaveResult::Continue;
+        };
 
         if info.has_received {
             self.callback
@@ -135,14 +138,9 @@ impl<T: Callback> IdentifyProtocol<T> {
         listens: Vec<Multiaddr>,
     ) -> MisbehaveResult {
         let session = context.session;
-        let info = self
-            .remote_infos
-            .get_mut(&session.id)
-            .expect("RemoteInfo must exists");
-
         if listens.len() > MAX_ADDRS {
             self.callback
-                .misbehave(&info.session, Misbehavior::TooManyAddresses(listens.len()))
+                .misbehave(session, Misbehavior::TooManyAddresses(listens.len()))
         } else {
             let global_ip_only = self.global_ip_only;
             let reachable_addrs = listens
@@ -166,11 +164,7 @@ impl<T: Callback> IdentifyProtocol<T> {
         );
 
         let session = context.session;
-        let info = self
-            .remote_infos
-            .get_mut(&session.id)
-            .expect("RemoteInfo must exists");
-        self.callback.add_observed_addr(observed, info.session.id);
+        self.callback.add_observed_addr(observed, session.id);
         MisbehaveResult::Continue
     }
 }
@@ -243,9 +237,12 @@ impl<T: Callback> ServiceProtocol for IdentifyProtocol<T> {
     }
 
     async fn disconnected(&mut self, context: ProtocolContextMutRef<'_>) {
-        self.remote_infos
-            .remove(&context.session.id)
-            .expect("RemoteInfo must exists");
+        if self.remote_infos.remove(&context.session.id).is_none() {
+            debug!(
+                "IdentifyProtocol disconnected without remote info, session: {:?}",
+                context.session
+            );
+        }
         debug!(
             "IdentifyProtocol disconnected, session: {:?}",
             context.session
@@ -304,13 +301,9 @@ impl<T: Callback> ServiceProtocol for IdentifyProtocol<T> {
                 }
             }
             None => {
-                let info = self
-                    .remote_infos
-                    .get(&session.id)
-                    .expect("RemoteInfo must exists");
                 if self
                     .callback
-                    .misbehave(&info.session, Misbehavior::InvalidData)
+                    .misbehave(session, Misbehavior::InvalidData)
                     .is_disconnect()
                 {
                     let _ = context.disconnect(session.id).await;
