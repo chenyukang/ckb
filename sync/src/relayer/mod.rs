@@ -386,11 +386,11 @@ impl Relayer {
 
         if !short_ids_set.is_empty() {
             let tx_pool = self.shared.shared().tx_pool_controller();
-            let fetch_txs = tx_pool.fetch_txs(short_ids_set).await;
-            if let Err(e) = fetch_txs {
-                return ReconstructionResult::Error(StatusCode::TxPool.with_context(e));
-            }
-            txs_map.extend(fetch_txs.unwrap());
+            let fetch_txs = match tx_pool.fetch_txs(short_ids_set).await {
+                Ok(fetch_txs) => fetch_txs,
+                Err(e) => return ReconstructionResult::Error(StatusCode::TxPool.with_context(e)),
+            };
+            txs_map.extend(fetch_txs);
         }
 
         let txs_len = compact_block.txs_len();
@@ -559,16 +559,17 @@ impl Relayer {
                     .collect(),
             )
             .await;
-        if let Err(err) = fetch_txs {
-            debug_target!(
-                crate::LOG_TARGET_RELAY,
-                "relayer prune_tx_proposal_request internal error: {:?}",
-                err,
-            );
-            return;
-        }
-
-        let txs = fetch_txs.unwrap();
+        let txs = match fetch_txs {
+            Ok(txs) => txs,
+            Err(err) => {
+                debug_target!(
+                    crate::LOG_TARGET_RELAY,
+                    "relayer prune_tx_proposal_request internal error: {:?}",
+                    err,
+                );
+                return;
+            }
+        };
 
         let mut peer_txs = HashMap::new();
         for (id, peer_indices) in get_block_proposals.into_iter() {
@@ -969,7 +970,12 @@ impl CKBProtocolHandler for Relayer {
             TX_PROPOSAL_TOKEN => self.prune_tx_proposal_request(&nc).await,
             ASK_FOR_TXS_TOKEN => self.ask_for_txs(&nc).await,
             TX_HASHES_TOKEN => self.send_bulk_of_tx_hashes(&nc).await,
-            _ => unreachable!(),
+            _ => {
+                warn_target!(
+                    crate::LOG_TARGET_RELAY,
+                    "ignore unknown notify token: {token}"
+                );
+            }
         }
         trace_target!(
             crate::LOG_TARGET_RELAY,
