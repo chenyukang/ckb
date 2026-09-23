@@ -1801,26 +1801,27 @@ impl ActiveChain {
             .get_ancestor(tip_number, number, get_header_view_fn, fast_scanner_fn)
     }
 
-    pub fn get_locator(&self, start: BlockNumberAndHash) -> Option<Vec<Byte32>> {
+    pub fn get_locator(&self, start: BlockNumberAndHash) -> Vec<Byte32> {
         let mut step = 1;
         let mut locator = Vec::with_capacity(32);
         let mut index = start.number();
         let mut base = start.hash();
 
         loop {
-            let Some(ancestor) = self.get_ancestor(&base, index) else {
-                warn!(
-                    "failed to build getheaders locator, some ancestor header is missing: \
-                     start: {:?}, base: {}, step: {}, locators({}): {:?}.",
-                    start,
-                    base,
-                    step,
-                    locator.len(),
-                    locator,
-                );
-                return None;
-            };
-            let header_hash = ancestor.hash();
+            let header_hash = self
+                .get_ancestor(&base, index)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "index calculated in get_locator: \
+                         start: {:?}, base: {}, step: {}, locators({}): {:?}.",
+                        start,
+                        base,
+                        step,
+                        locator.len(),
+                        locator,
+                    )
+                })
+                .hash();
             locator.push(header_hash.clone());
 
             if locator.len() >= 10 {
@@ -1850,7 +1851,7 @@ impl ActiveChain {
             index -= step;
             base = header_hash;
         }
-        Some(locator)
+        locator
     }
 
     pub fn last_common_ancestor(
@@ -1974,20 +1975,17 @@ impl ActiveChain {
                 );
             }
         }
-        let block_hash = block_number_and_hash.hash();
-        let Some(locator_hash) = self.get_locator(block_number_and_hash) else {
-            warn!(
-                "failed to send getheaders to peer={}, hash={}: the locator can not be built",
-                peer, block_hash
-            );
-            return;
-        };
         self.state()
             .pending_get_headers
             .write()
-            .put((peer, block_hash.clone()), Instant::now());
+            .put((peer, block_number_and_hash.hash()), Instant::now());
 
-        debug!("send_getheaders_to_peer peer={}, hash={}", peer, block_hash);
+        debug!(
+            "send_getheaders_to_peer peer={}, hash={}",
+            peer,
+            block_number_and_hash.hash()
+        );
+        let locator_hash = self.get_locator(block_number_and_hash);
         let content = packed::GetHeaders::new_builder()
             .block_locator_hashes(locator_hash)
             .hash_stop(packed::Byte32::zero())

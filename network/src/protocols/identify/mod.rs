@@ -113,23 +113,23 @@ impl<T: Callback> IdentifyProtocol<T> {
         self
     }
 
-    fn check_duplicate(&mut self, context: &mut ProtocolContextMutRef) -> MisbehaveResult {
+    fn check_duplicate(&mut self, context: &mut ProtocolContextMutRef) -> Option<MisbehaveResult> {
         let session = context.session;
         let Some(info) = self.remote_infos.get_mut(&session.id) else {
             debug!(
                 "IdentifyProtocol received message before remote info was registered, session: {:?}",
                 session.id,
             );
-            return MisbehaveResult::Continue;
+            return None;
         };
 
-        if info.has_received {
+        Some(if info.has_received {
             self.callback
                 .misbehave(&info.session, Misbehavior::DuplicateReceived)
         } else {
             info.has_received = true;
             MisbehaveResult::Continue
-        }
+        })
     }
 
     fn process_listens(
@@ -252,6 +252,14 @@ impl<T: Callback> ServiceProtocol for IdentifyProtocol<T> {
 
     async fn received(&mut self, mut context: ProtocolContextMutRef<'_>, data: Bytes) {
         let session = context.session;
+        if !self.remote_infos.contains_key(&session.id) {
+            debug!(
+                "IdentifyProtocol ignored message without remote info, session: {:?}",
+                session.id,
+            );
+            return;
+        }
+
         match IdentifyMessage::decode(&data) {
             Some(message) => {
                 trace!(
@@ -260,7 +268,10 @@ impl<T: Callback> ServiceProtocol for IdentifyProtocol<T> {
                 );
 
                 // Interrupt processing if error, avoid pollution
-                if let MisbehaveResult::Disconnect = self.check_duplicate(&mut context) {
+                let Some(duplicate_result) = self.check_duplicate(&mut context) else {
+                    return;
+                };
+                if let MisbehaveResult::Disconnect = duplicate_result {
                     error!(
                         "Disconnect IdentifyProtocol session {:?} due to duplication.",
                         session
