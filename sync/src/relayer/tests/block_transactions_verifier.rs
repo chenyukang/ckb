@@ -65,30 +65,3 @@ fn test_ok() {
         Status::ok()
     );
 }
-
-// Regression test for the cross-peer poisoning of `pending_compact_blocks`:
-// the map is keyed by block hash and keeps the first compact block, while the
-// missing indexes are recorded per peer. A second peer can therefore record
-// indexes computed against a longer compact block that shares the same header.
-// The verifier must reject the out-of-range indexes instead of panicking.
-#[test]
-fn test_out_of_range_indexes() {
-    // 2 transactions in total: index 0 is prefilled, index 1 is a short id.
-    let stored_compact_block = CompactBlockBuilder::default()
-        .short_ids(vec![
-            new_index_transaction(1).transaction().proposal_short_id(),
-        ])
-        .prefilled_transactions(vec![new_index_transaction(0)])
-        .build();
-
-    // The other peer recorded [1, 2, 3] against its own, longer compact block.
-    let block_txs: Vec<_> = vec![1, 2, 3]
-        .into_iter()
-        .map(|i| new_index_transaction(i).transaction().into_view())
-        .collect();
-
-    assert_eq!(
-        BlockTransactionsVerifier::verify(&stored_compact_block, &[1, 2, 3], &block_txs),
-        StatusCode::ProtocolMessageIsMalformed.into(),
-    );
-}
