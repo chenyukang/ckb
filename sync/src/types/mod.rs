@@ -977,15 +977,21 @@ impl Peers {
     }
 }
 
-// <CompactBlockHash, (CompactBlock, <PeerIndex, (Vec<TransactionsIndex>, Vec<UnclesIndex>)>, timestamp)>
-pub(crate) type PendingCompactBlockMap = HashMap<
-    Byte32,
-    (
-        packed::CompactBlock,
-        HashMap<PeerIndex, (Vec<u32>, Vec<u32>)>,
-        u64,
-    ),
->;
+/// The pending compact block and requested missing indexes recorded for one peer.
+///
+/// The compact block is stored per peer because different peers may announce
+/// different layouts (short-ids and prefilled transactions) for the same block
+/// hash. The recorded indexes are only meaningful for the layout that produced
+/// them, so keep them together with that layout.
+pub(crate) struct PendingCompactBlock {
+    pub(crate) compact_block: packed::CompactBlock,
+    pub(crate) missing_transactions: Vec<u32>,
+    pub(crate) missing_uncles: Vec<u32>,
+}
+
+// <CompactBlockHash, (<PeerIndex, PendingCompactBlock>, timestamp)>
+pub(crate) type PendingCompactBlockMap =
+    HashMap<Byte32, (HashMap<PeerIndex, PendingCompactBlock>, u64)>;
 
 /// Sync state shared between sync and relayer protocol
 #[derive(Clone)]
@@ -1369,11 +1375,11 @@ impl SyncState {
         pending.is_empty()
             || pending
                 .get(hash)
-                .map(|(_, _, time)| now.saturating_sub(*time) > 2000)
+                .map(|(_, time)| now.saturating_sub(*time) > 2000)
                 .unwrap_or(true)
     }
 
-    pub async fn pending_compact_blocks(
+    pub(crate) async fn pending_compact_blocks(
         &self,
     ) -> tokio::sync::MutexGuard<'_, PendingCompactBlockMap> {
         self.pending_compact_blocks.lock().await

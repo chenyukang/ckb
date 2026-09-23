@@ -65,3 +65,15 @@ fn test_ok() {
         Status::ok()
     );
 }
+
+// An out-of-range index can only come from local state that no longer matches
+// the compact block, so it must not panic and must not ban the responding
+// peer.
+#[test]
+fn test_out_of_range_index_is_not_bannable() {
+    let block = build_compact_block();
+
+    let status = BlockTransactionsVerifier::verify(&block, &[6], &[]);
+    assert_eq!(status, StatusCode::CompactBlockStateMismatch.into());
+    assert!(status.should_ban().is_none());
+}

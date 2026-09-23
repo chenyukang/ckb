@@ -68,9 +68,9 @@ impl<'a> BlockTransactionsProcess<'a> {
             .await
             .entry(block_hash.clone())
         {
-            let (compact_block, peers_map, _) = pending.get_mut();
+            let (peers_map, _) = pending.get_mut();
             if let Entry::Occupied(mut value) = peers_map.entry(self.peer) {
-                let (expected_transaction_indexes, expected_uncle_indexes) = value.get_mut();
+                let peer_pending = value.get_mut();
                 ckb_logger::info!(
                     "relayer receive BLOCKTXN of {}, peer: {}",
                     block_hash,
@@ -78,13 +78,13 @@ impl<'a> BlockTransactionsProcess<'a> {
                 );
 
                 attempt!(BlockTransactionsVerifier::verify(
-                    compact_block,
-                    expected_transaction_indexes,
+                    &peer_pending.compact_block,
+                    &peer_pending.missing_transactions,
                     &received_transactions,
                 ));
                 attempt!(BlockUnclesVerifier::verify(
-                    compact_block,
-                    expected_uncle_indexes,
+                    &peer_pending.compact_block,
+                    &peer_pending.missing_uncles,
                     &received_uncles,
                 ));
 
@@ -92,9 +92,9 @@ impl<'a> BlockTransactionsProcess<'a> {
                     .relayer
                     .reconstruct_block(
                         &active_chain,
-                        compact_block,
+                        &peer_pending.compact_block,
                         received_transactions,
-                        expected_uncle_indexes,
+                        &peer_pending.missing_uncles,
                         &received_uncles,
                     )
                     .await;
@@ -109,7 +109,7 @@ impl<'a> BlockTransactionsProcess<'a> {
                         &self.nc,
                         self.peer,
                         (
-                            compact_block.header().into_view().number(),
+                            peer_pending.compact_block.header().into_view().number(),
                             block_hash.clone(),
                         )
                             .into(),
@@ -137,19 +137,20 @@ impl<'a> BlockTransactionsProcess<'a> {
                         missing_transactions = transactions
                             .into_iter()
                             .map(|i| i as u32)
-                            .chain(expected_transaction_indexes.iter().copied())
+                            .chain(peer_pending.missing_transactions.iter().copied())
                             .collect();
                         missing_uncles = uncles
                             .into_iter()
                             .map(|i| i as u32)
-                            .chain(expected_uncle_indexes.iter().copied())
+                            .chain(peer_pending.missing_uncles.iter().copied())
                             .collect();
 
                         missing_transactions.sort_unstable();
                         missing_uncles.sort_unstable();
                     }
                     ReconstructionResult::Collided => {
-                        missing_transactions = compact_block
+                        missing_transactions = peer_pending
+                            .compact_block
                             .short_id_indexes()
                             .into_iter()
                             .map(|i| i as u32)
@@ -174,8 +175,9 @@ impl<'a> BlockTransactionsProcess<'a> {
                 let _ignore = async_send_message_to(&self.nc, self.peer, &message).await;
 
                 let _ignore_prev_value =
-                    mem::replace(expected_transaction_indexes, missing_transactions);
-                let _ignore_prev_value = mem::replace(expected_uncle_indexes, missing_uncles);
+                    mem::replace(&mut peer_pending.missing_transactions, missing_transactions);
+                let _ignore_prev_value =
+                    mem::replace(&mut peer_pending.missing_uncles, missing_uncles);
 
                 if collision {
                     return StatusCode::CompactBlockMeetsShortIdsCollision.with_context(block_hash);

@@ -1,7 +1,7 @@
 use crate::SyncShared;
 use crate::relayer::compact_block_verifier::CompactBlockVerifier;
 use crate::relayer::{ReconstructionResult, Relayer};
-use crate::types::ActiveChain;
+use crate::types::{ActiveChain, PendingCompactBlock};
 use crate::utils::async_send_message_to;
 use crate::{Status, StatusCode, attempt};
 use ckb_chain_spec::consensus::Consensus;
@@ -126,10 +126,14 @@ impl<'a> CompactBlockProcess<'a> {
                 //
                 // use epoch as the judgment condition because we accept
                 // all block in current epoch as uncle block
-                pending_compact_blocks.retain(|_, (v, _, _)| {
-                    Into::<EpochNumberWithFraction>::into(v.header().as_reader().raw().epoch())
+                pending_compact_blocks.retain(|_, (peers_map, _)| {
+                    peers_map.values().any(|pending| {
+                        Into::<EpochNumberWithFraction>::into(
+                            pending.compact_block.header().as_reader().raw().epoch(),
+                        )
                         .number()
-                        >= block.epoch().number()
+                            >= block.epoch().number()
+                    })
                 });
                 shrink_to_fit!(pending_compact_blocks, 20);
                 self.relayer
@@ -311,7 +315,7 @@ async fn contextual_check(
     let pending_compact_blocks = shared.state().pending_compact_blocks().await;
     if pending_compact_blocks
         .get(&block_hash)
-        .map(|(_, peers_map, _)| peers_map.contains_key(&peer))
+        .map(|(peers_map, _)| peers_map.contains_key(&peer))
         .unwrap_or(false)
     {
         return StatusCode::CompactBlockIsAlreadyPending.with_context(block_hash);
@@ -322,8 +326,9 @@ async fn contextual_check(
         |block_hash| {
             pending_compact_blocks
                 .get(&block_hash)
-                .map(|(compact_block, _, _)| {
-                    let header = compact_block.header().into_view();
+                .and_then(|(peers_map, _)| peers_map.values().next())
+                .map(|pending| {
+                    let header = pending.compact_block.header().into_view();
                     HeaderFields {
                         hash: header.hash(),
                         number: header.number(),
@@ -420,9 +425,16 @@ async fn missing_or_collided_post_process(
         .pending_compact_blocks()
         .await
         .entry(block_hash.clone())
-        .or_insert_with(|| (compact_block, HashMap::default(), unix_time_as_millis()))
-        .1
-        .insert(peer, (missing_transactions.clone(), missing_uncles.clone()));
+        .or_insert_with(|| (HashMap::default(), unix_time_as_millis()))
+        .0
+        .insert(
+            peer,
+            PendingCompactBlock {
+                compact_block,
+                missing_transactions: missing_transactions.clone(),
+                missing_uncles: missing_uncles.clone(),
+            },
+        );
 
     let content = packed::GetBlockTransactions::new_builder()
         .block_hash(block_hash)

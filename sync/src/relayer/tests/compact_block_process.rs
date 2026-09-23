@@ -2,6 +2,7 @@ use crate::relayer::compact_block_process::CompactBlockProcess;
 use crate::relayer::tests::helper::{
     MockProtocolContext, build_chain, gen_block, new_header_builder,
 };
+use crate::types::PendingCompactBlock;
 use crate::{Status, StatusCode};
 use ckb_chain::ChainServiceScope;
 use ckb_network::{PeerIndex, SupportProtocols};
@@ -784,8 +785,14 @@ fn test_accept_block() {
         pending_compact_blocks.insert(
             mock_block_1.header().hash(),
             (
-                mock_compact_block_1,
-                HashMap::from_iter(vec![(1.into(), (vec![1], vec![0]))]),
+                HashMap::from_iter(vec![(
+                    1.into(),
+                    PendingCompactBlock {
+                        compact_block: mock_compact_block_1,
+                        missing_transactions: vec![1],
+                        missing_uncles: vec![0],
+                    },
+                )]),
                 ckb_systemtime::unix_time_as_millis(),
             ),
         );
@@ -793,8 +800,14 @@ fn test_accept_block() {
         pending_compact_blocks.insert(
             mock_block_2.header().hash(),
             (
-                mock_compact_block_2,
-                HashMap::from_iter(vec![(1.into(), (vec![1], vec![0]))]),
+                HashMap::from_iter(vec![(
+                    1.into(),
+                    PendingCompactBlock {
+                        compact_block: mock_compact_block_2,
+                        missing_transactions: vec![1],
+                        missing_uncles: vec![0],
+                    },
+                )]),
                 ckb_systemtime::unix_time_as_millis(),
             ),
         );

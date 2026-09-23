@@ -1,5 +1,7 @@
 use crate::relayer::block_transactions_process::BlockTransactionsProcess;
-use crate::relayer::tests::helper::{MockProtocolContext, build_chain};
+use crate::relayer::compact_block_process::CompactBlockProcess;
+use crate::relayer::tests::helper::{MockProtocolContext, build_chain, gen_block};
+use crate::types::PendingCompactBlock;
 use crate::{Status, StatusCode};
 use ckb_network::{PeerIndex, SupportProtocols};
 use ckb_store::ChainStore;
@@ -43,8 +45,14 @@ fn test_missing_requested_uncle_response_is_rejected() {
         pending_compact_blocks.insert(
             block_hash.clone(),
             (
-                compact_block,
-                HashMap::from_iter(vec![(peer_index, (vec![], vec![0]))]),
+                HashMap::from_iter(vec![(
+                    peer_index,
+                    PendingCompactBlock {
+                        compact_block,
+                        missing_transactions: vec![],
+                        missing_uncles: vec![0],
+                    },
+                )]),
                 ckb_systemtime::unix_time_as_millis(),
             ),
         );
@@ -119,10 +127,23 @@ fn test_accept_block() {
         pending_compact_blocks.insert(
             hash.clone(),
             (
-                compact_block,
                 HashMap::from_iter(vec![
-                    (peer_index, (vec![1], vec![0])),
-                    (other_peer_index, (vec![1], vec![])),
+                    (
+                        peer_index,
+                        PendingCompactBlock {
+                            compact_block: compact_block.clone(),
+                            missing_transactions: vec![1],
+                            missing_uncles: vec![0],
+                        },
+                    ),
+                    (
+                        other_peer_index,
+                        PendingCompactBlock {
+                            compact_block,
+                            missing_transactions: vec![1],
+                            missing_uncles: vec![],
+                        },
+                    ),
                 ]),
                 ckb_systemtime::unix_time_as_millis(),
             ),
@@ -193,8 +214,14 @@ fn test_unknown_request() {
         pending_compact_blocks.insert(
             compact_block.header().calc_header_hash(),
             (
-                compact_block,
-                HashMap::from_iter(vec![(foo_peer_index, (vec![1], vec![]))]),
+                HashMap::from_iter(vec![(
+                    foo_peer_index,
+                    PendingCompactBlock {
+                        compact_block,
+                        missing_transactions: vec![1],
+                        missing_uncles: vec![],
+                    },
+                )]),
                 ckb_systemtime::unix_time_as_millis(),
             ),
         );
@@ -263,8 +290,14 @@ fn test_invalid_transaction_root() {
         pending_compact_blocks.insert(
             block_hash.clone(),
             (
-                compact_block,
-                HashMap::from_iter(vec![(peer_index, (vec![1], vec![]))]),
+                HashMap::from_iter(vec![(
+                    peer_index,
+                    PendingCompactBlock {
+                        compact_block,
+                        missing_transactions: vec![1],
+                        missing_uncles: vec![],
+                    },
+                )]),
                 ckb_systemtime::unix_time_as_millis(),
             ),
         );
@@ -364,8 +397,16 @@ fn test_collision_and_send_missing_indexes() {
         pending_compact_blocks.insert(
             hash.clone(),
             (
-                compact_block,
-                vec![(peer_index, (vec![1], vec![]))].into_iter().collect(),
+                vec![(
+                    peer_index,
+                    PendingCompactBlock {
+                        compact_block,
+                        missing_transactions: vec![1],
+                        missing_uncles: vec![],
+                    },
+                )]
+                .into_iter()
+                .collect(),
                 ckb_systemtime::unix_time_as_millis(),
             ),
         );
@@ -404,14 +445,10 @@ fn test_collision_and_send_missing_indexes() {
     // update cached missing_index
     {
         let pending_compact_blocks = rt.block_on(relayer.shared.state().pending_compact_blocks());
-        assert_eq!(
-            pending_compact_blocks
-                .get(&hash)
-                .unwrap()
-                .1
-                .get(&peer_index),
-            Some(&(vec![1, 2], vec![]))
-        );
+        let (peers_map, _) = pending_compact_blocks.get(&hash).unwrap();
+        let peer_pending = peers_map.get(&peer_index).unwrap();
+        assert_eq!(peer_pending.missing_transactions, vec![1, 2]);
+        assert!(peer_pending.missing_uncles.is_empty());
     }
 
     // resend BlockTransactions with all the transactions without prefilled
@@ -484,8 +521,14 @@ fn test_missing() {
         pending_compact_blocks.insert(
             compact_block.header().calc_header_hash(),
             (
-                compact_block,
-                HashMap::from_iter(vec![(peer_index, (vec![1], vec![]))]),
+                HashMap::from_iter(vec![(
+                    peer_index,
+                    PendingCompactBlock {
+                        compact_block,
+                        missing_transactions: vec![1],
+                        missing_uncles: vec![],
+                    },
+                )]),
                 ckb_systemtime::unix_time_as_millis(),
             ),
         );
@@ -523,4 +566,129 @@ fn test_missing() {
         peer_index,
         message.as_bytes()
     ));
+}
+
+// Regression test for the cross-session compact-block reconstruction panic.
+//
+// Two peers announce different compact block layouts (different short-id
+// counts) under the same header hash. The pending record used to keep the
+// first peer's compact block while recording each later peer's missing
+// indexes, so a response from the second peer was verified against the first
+// peer's layout and an out-of-range index panicked the relay task. The
+// compact block is now stored together with the indexes of the peer that
+// produced them, so every response is verified against its own layout.
+#[test]
+fn test_peer_response_is_verified_against_its_own_compact_block_layout() {
+    let (_chain, relayer, _) = build_chain(5);
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+
+    let peer_a: PeerIndex = 200.into();
+    let peer_b: PeerIndex = 201.into();
+
+    let parent = relayer.shared.active_chain().tip_header();
+    let tx2 = TransactionBuilder::default()
+        .output(
+            CellOutputBuilder::default()
+                .capacity(Capacity::bytes(1).unwrap())
+                .build(),
+        )
+        .output_data(Bytes::new())
+        .build();
+    let tx3 = TransactionBuilder::default()
+        .output(
+            CellOutputBuilder::default()
+                .capacity(Capacity::bytes(2).unwrap())
+                .build(),
+        )
+        .output_data(Bytes::new())
+        .build();
+    let block = gen_block(&parent, relayer.shared.shared(), 0, 1, None)
+        .as_advanced_builder()
+        .transaction(tx2.clone())
+        .transaction(tx3.clone())
+        .build();
+
+    let prefilled = vec![0usize].into_iter().collect();
+    // Peer B announces both non-cellbase transactions as short ids.
+    let compact_block_b = CompactBlock::build_from_block(&block, &prefilled);
+    assert_eq!(compact_block_b.short_ids().len(), 2);
+    // Peer A announces the same header with a shorter layout: only the first
+    // short id, so peer A's indexes can not describe peer B's positions.
+    let compact_block_a = compact_block_b
+        .clone()
+        .as_builder()
+        .short_ids(vec![tx2.proposal_short_id()])
+        .build();
+    let block_hash = compact_block_b.header().calc_header_hash();
+
+    let mock_protocol_context = MockProtocolContext::new(SupportProtocols::RelayV3);
+    let nc = Arc::new(mock_protocol_context);
+
+    // Peer A registers the pending entry first, with the shorter layout.
+    let status_a = rt.block_on(
+        CompactBlockProcess::new(
+            compact_block_a.as_reader(),
+            &relayer,
+            Arc::<MockProtocolContext>::clone(&nc),
+            peer_a,
+        )
+        .execute(),
+    );
+    assert_eq!(
+        status_a,
+        StatusCode::CompactBlockRequiresFreshTransactions.into()
+    );
+
+    // Peer B announces the longer layout for the same header.
+    let status_b = rt.block_on(
+        CompactBlockProcess::new(
+            compact_block_b.as_reader(),
+            &relayer,
+            Arc::<MockProtocolContext>::clone(&nc),
+            peer_b,
+        )
+        .execute(),
+    );
+    assert_eq!(
+        status_b,
+        StatusCode::CompactBlockRequiresFreshTransactions.into()
+    );
+
+    {
+        let pending_compact_blocks = rt.block_on(relayer.shared.state().pending_compact_blocks());
+        let (peers_map, _) = pending_compact_blocks.get(&block_hash).unwrap();
+        let pending_a = peers_map.get(&peer_a).unwrap();
+        assert_eq!(
+            pending_a.compact_block.as_slice(),
+            compact_block_a.as_slice()
+        );
+        assert_eq!(pending_a.missing_transactions, vec![1]);
+        let pending_b = peers_map.get(&peer_b).unwrap();
+        assert_eq!(
+            pending_b.compact_block.as_slice(),
+            compact_block_b.as_slice()
+        );
+        assert_eq!(pending_b.missing_transactions, vec![1, 2]);
+    }
+
+    // Peer B answers the request with exactly the transactions of its own
+    // layout. This used to index peer A's two-position short-id table with
+    // index 2 and panic; now it verifies and reconstructs successfully.
+    let block_transactions = packed::BlockTransactions::new_builder()
+        .block_hash(block_hash.clone())
+        .transactions(vec![tx2.data(), tx3.data()])
+        .build();
+    let process = BlockTransactionsProcess::new(
+        block_transactions.as_reader(),
+        &relayer,
+        Arc::<MockProtocolContext>::clone(&nc),
+        peer_b,
+    );
+    assert_eq!(rt.block_on(process.execute()), Status::ok());
+
+    let pending_compact_blocks = rt.block_on(relayer.shared.state().pending_compact_blocks());
+    assert!(pending_compact_blocks.get(&block_hash).is_none());
 }

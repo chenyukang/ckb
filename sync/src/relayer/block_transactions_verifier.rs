@@ -10,15 +10,22 @@ impl BlockTransactionsVerifier {
         transactions: &[core::TransactionView],
     ) -> Status {
         let block_short_ids = block.block_short_ids();
-        let missing_short_ids: Vec<packed::ProposalShortId> = indexes
-            .iter()
-            .filter_map(|index| {
-                block_short_ids
-                    .get(*index as usize)
-                    .expect("should never outbound")
-                    .clone()
-            })
-            .collect();
+        let mut missing_short_ids: Vec<packed::ProposalShortId> = Vec::with_capacity(indexes.len());
+        for index in indexes {
+            // The indexes are recorded together with the compact block of the
+            // peer that produced them, so they are expected to reference a
+            // short id. Keep the guard anyway: never panic on a state that
+            // remote messages can influence, and report a mismatch as a
+            // non-bannable local state error instead of blaming the
+            // responding peer.
+            let Some(Some(short_id)) = block_short_ids.get(*index as usize) else {
+                return StatusCode::CompactBlockStateMismatch.with_context(format!(
+                    "index {index} does not reference a short id, block short ids len({})",
+                    block_short_ids.len(),
+                ));
+            };
+            missing_short_ids.push(short_id.clone());
+        }
 
         if missing_short_ids.len() != transactions.len() {
             return StatusCode::BlockTransactionsLengthIsUnmatchedWithPendingCompactBlock

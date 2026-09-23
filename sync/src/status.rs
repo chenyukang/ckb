@@ -116,6 +116,10 @@ pub enum StatusCode {
     TxPool = 501,
     /// Errors returned from the network layer
     Network = 502,
+    /// The pending compact block layout does not match the recorded missing
+    /// indexes. This is a local state mismatch instead of a peer fault, so it
+    /// must not ban the responding peer.
+    CompactBlockStateMismatch = 503,
 }
 
 impl StatusCode {
