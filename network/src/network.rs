@@ -479,7 +479,7 @@ impl NetworkState {
         };
 
         debug!("Dialing {addr}");
-        p2p_control.dial(addr.clone(), target)?;
+        p2p_control.dial(addr, target)?;
         self.dialing_addrs.write().insert(peer_id, Instant::now());
         Ok(())
     }
