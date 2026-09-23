@@ -245,6 +245,70 @@ fn test_unknown_request() {
 }
 
 #[test]
+fn test_state_mismatch_is_not_bannable() {
+    let (_chain, relayer, _) = build_chain(5);
+    let peer_index: PeerIndex = 100.into();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+
+    let tx1 = TransactionBuilder::default().build();
+    let tx2 = TransactionBuilder::default()
+        .output(
+            CellOutputBuilder::default()
+                .capacity(Capacity::bytes(1).unwrap())
+                .build(),
+        )
+        .output_data(Bytes::new())
+        .build();
+
+    let block = BlockBuilder::default().transactions(vec![tx1, tx2]).build();
+    let prefilled = vec![0usize].into_iter().collect();
+    let compact_block = CompactBlock::build_from_block(&block, &prefilled);
+    let block_hash = compact_block.header().calc_header_hash();
+
+    {
+        let mut pending_compact_blocks =
+            rt.block_on(relayer.shared.state().pending_compact_blocks());
+        pending_compact_blocks.insert(
+            block_hash.clone(),
+            (
+                HashMap::from_iter(vec![(
+                    peer_index,
+                    PendingCompactBlock {
+                        compact_block,
+                        // 6 is out of range for this compact block short-ids table.
+                        missing_transactions: vec![6],
+                        missing_uncles: vec![],
+                    },
+                )]),
+                ckb_systemtime::unix_time_as_millis(),
+            ),
+        );
+    }
+
+    let block_transactions: BlockTransactions = packed::BlockTransactions::new_builder()
+        .block_hash(block_hash)
+        .transactions(Vec::<packed::Transaction>::new())
+        .build();
+
+    let mock_protocol_context = MockProtocolContext::new(SupportProtocols::RelayV3);
+    let nc = Arc::new(mock_protocol_context);
+
+    let process = BlockTransactionsProcess::new(
+        block_transactions.as_reader(),
+        &relayer,
+        Arc::<MockProtocolContext>::clone(&nc),
+        peer_index,
+    );
+
+    let status = rt.block_on(process.execute());
+    assert_eq!(status, StatusCode::CompactBlockStateMismatch.into());
+    assert!(status.should_ban().is_none());
+}
+
+#[test]
 fn test_invalid_transaction_root() {
     let (_chain, relayer, _) = build_chain(5);
     let peer_index: PeerIndex = 100.into();
