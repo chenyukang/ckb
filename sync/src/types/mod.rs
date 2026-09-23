@@ -1888,28 +1888,20 @@ impl ActiveChain {
         _hash_stop: &Byte32,
         locator: &[Byte32],
     ) -> Option<BlockNumber> {
-        if locator.is_empty() {
-            return None;
-        }
-
         let locator_hash = locator.last()?;
         if locator_hash != &self.sync_shared.consensus().genesis_hash() {
             return None;
         }
 
         // iterator are lazy
-        let Some((index, latest_common)) = locator
-            .iter()
-            .enumerate()
-            .map(|(index, hash)| (index, self.snapshot.get_block_number(hash)))
-            .find(|(_index, number)| number.is_some())
-        else {
-            debug!("locator does not contain any known block");
-            return None;
-        };
+        let (index, latest_common) = locator.iter().enumerate().find_map(|(index, hash)| {
+            self.snapshot
+                .get_block_number(hash)
+                .map(|number| (index, number))
+        })?;
 
-        if index == 0 || latest_common == Some(0) {
-            return latest_common;
+        if index == 0 || latest_common == 0 {
+            return Some(latest_common);
         }
 
         if let Some(header) = locator
@@ -1919,7 +1911,7 @@ impl ActiveChain {
             let mut block_hash = header.data().raw().parent_hash();
             loop {
                 let block_header = match self.sync_shared.store().get_block_header(&block_hash) {
-                    None => break latest_common,
+                    None => break Some(latest_common),
                     Some(block_header) => block_header,
                 };
 
@@ -1930,7 +1922,7 @@ impl ActiveChain {
                 block_hash = block_header.data().raw().parent_hash();
             }
         } else {
-            latest_common
+            Some(latest_common)
         }
     }
 
