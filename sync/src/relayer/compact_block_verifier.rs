@@ -19,7 +19,7 @@ pub struct PrefilledVerifier {}
 
 impl PrefilledVerifier {
     pub(crate) fn verify(block: &packed::CompactBlock) -> Status {
-        let prefilled_transactions = &block.prefilled_transactions();
+        let prefilled_transactions = block.prefilled_transactions();
         let short_ids = &block.short_ids();
         let txs_len = prefilled_transactions.len() + short_ids.len();
 
@@ -44,19 +44,12 @@ impl PrefilledVerifier {
         }
 
         // Check indices order of prefilled transactions
-        let mut previous_index: Option<usize> = None;
-        for i in 0..prefilled_transactions.len() {
-            let Some(prefilled) = prefilled_transactions.get(i) else {
-                return StatusCode::ProtocolMessageIsMalformed
-                    .with_context("prefilled transaction index out of range");
-            };
-            let index: usize = prefilled.index().into();
-            if let Some(previous_index) = previous_index
-                && previous_index >= index
-            {
-                return StatusCode::CompactBlockHasOutOfOrderPrefilledTransactions.into();
-            }
-            previous_index = Some(index);
+        if !prefilled_transactions
+            .into_iter()
+            .map(|tx| usize::from(tx.index()))
+            .is_sorted_by(|a, b| a < b)
+        {
+            return StatusCode::CompactBlockHasOutOfOrderPrefilledTransactions.into();
         }
 
         Status::ok()
