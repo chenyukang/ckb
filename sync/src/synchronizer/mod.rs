@@ -620,16 +620,12 @@ impl Synchronizer {
                             eviction.push(*peer);
                         }
                     } else {
-                        match state.chain_sync.work_header.clone() {
+                        match state.chain_sync.work_header.as_ref() {
                             Some(work_header) => {
                                 state.chain_sync.sent_getheaders = true;
                                 state.chain_sync.timeout =
                                     now.saturating_add(EVICTION_HEADERS_RESPONSE_TIME);
-                                active_chain.send_getheaders_to_peer(
-                                    nc,
-                                    *peer,
-                                    (&work_header).into(),
-                                );
+                                active_chain.send_getheaders_to_peer(nc, *peer, work_header.into());
                             }
                             None => {
                                 // This should not happen because `timeout` and
