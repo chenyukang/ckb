@@ -93,9 +93,7 @@ impl PeerRegistry {
         if self.peers.contains_key(&session_id) {
             return Err(PeerError::SessionExists(session_id).into());
         }
-        let Some(peer_id) = extract_peer_id(&remote_addr) else {
-            return Err(PeerError::AddressWithoutPeerId.into());
-        };
+        let peer_id = extract_peer_id(&remote_addr).ok_or(PeerError::AddressWithoutPeerId)?;
         if self.get_key_by_peer_id(&peer_id).is_some() {
             return Err(PeerError::PeerIdExists(peer_id).into());
         }
