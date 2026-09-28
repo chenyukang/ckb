@@ -238,7 +238,7 @@ impl<T: Callback> ServiceProtocol for IdentifyProtocol<T> {
 
     async fn disconnected(&mut self, context: ProtocolContextMutRef<'_>) {
         if self.remote_infos.remove(&context.session.id).is_none() {
-            debug!(
+            warn!(
                 "IdentifyProtocol disconnected without remote info, session: {:?}",
                 context.session
             );
