@@ -261,8 +261,7 @@ impl<T: Callback> ServiceProtocol for IdentifyProtocol<T> {
                 );
 
                 // Interrupt processing if error, avoid pollution
-                let duplicate_result = self.check_duplicate(&mut context);
-                if let MisbehaveResult::Disconnect = duplicate_result {
+                if let MisbehaveResult::Disconnect = self.check_duplicate(&mut context) {
                     error!(
                         "Disconnect IdentifyProtocol session {:?} due to duplication.",
                         session
