@@ -105,9 +105,26 @@ impl HeaderDigest for packed::HeaderDigest {
                 return Err(errmsg);
             } else {
                 // Sum all blocks difficulties to check total difficulty.
-                let blocks_count = end_number - start_number + 1;
+                //
+                // A digest is handed to `verify` before its fields are
+                // validated elsewhere, so neither the block count nor the
+                // difficulty product can assume small values.
+                let blocks_count = end_number
+                    .checked_sub(start_number)
+                    .and_then(|count| count.checked_add(1))
+                    .ok_or_else(|| {
+                        format!(
+                            "failed since the block count overflows ([{start_number},{end_number}])"
+                        )
+                    })?;
                 let block_difficulty = compact_to_difficulty(start_compact_target);
-                let total_difficulty_calculated = block_difficulty * blocks_count;
+                let total_difficulty_calculated = block_difficulty
+                    .checked_mul(&U256::from(blocks_count))
+                    .ok_or_else(|| {
+                        format!(
+                            "failed since the total difficulty overflows during epochs ([{start_epoch:#},{end_epoch:#}])"
+                        )
+                    })?;
                 if total_difficulty != total_difficulty_calculated {
                     let errmsg = format!(
                         "failed since total difficulty is {total_difficulty} but the calculated is {total_difficulty_calculated} \
@@ -135,16 +152,14 @@ impl Merge for MergeHeaderDigest {
             hash
         };
 
-        let total_difficulty = {
-            let l: U256 = lhs.total_difficulty().into();
-            let r: U256 = rhs.total_difficulty().into();
-            l + r
-        };
-
         // 1. Check block numbers.
+        //
+        // `checked_add` rather than `saturating_add`: saturating would make
+        // `u64::MAX + 1 == u64::MAX`, so a digest ending at `u64::MAX` followed
+        // by one starting at `u64::MAX` would wrongly pass this check.
         let lhs_end_number: BlockNumber = lhs.end_number().into();
         let rhs_start_number: BlockNumber = rhs.start_number().into();
-        if lhs_end_number + 1 != rhs_start_number {
+        if lhs_end_number.checked_add(1) != Some(rhs_start_number) {
             let errmsg = format!(
                 "failed since the blocks isn't continuous ([-,{lhs_end_number}], [{rhs_start_number},-])"
             );
@@ -160,6 +175,23 @@ impl Merge for MergeHeaderDigest {
             );
             return Err(MMRError::MergeError(errmsg));
         }
+
+        // 3. Merge total difficulties.
+        //
+        // The values being added are not necessarily canonical: digests are
+        // merged as part of proof verification, before their contents have been
+        // checked, so each `total_difficulty` can be any `U256`. Release builds
+        // enable overflow checks, so use checked arithmetic and report an error
+        // rather than aborting.
+        let total_difficulty = {
+            let l: U256 = lhs.total_difficulty().into();
+            let r: U256 = rhs.total_difficulty().into();
+            l.checked_add(&r).ok_or_else(|| {
+                MMRError::MergeError(format!(
+                    "failed since the total difficulty overflows ({l} + {r})"
+                ))
+            })?
+        };
 
         Ok(Self::Item::new_builder()
             .children_hash(children_hash)
