@@ -1092,16 +1092,18 @@ impl SyncShared {
     // Update the block_status_map
     // Update the shared_best_header if need
     // Update the peer's best_known_header
-    pub fn insert_valid_header(&self, peer: PeerIndex, header: &core::HeaderView) {
+    //
+    // Returns `None` when the parent header is no longer available. That can
+    // happen when a concurrent orphan cleanup removes the parent view between
+    // header verification and insertion, so callers should treat it as a
+    // recoverable condition instead of panicking.
+    pub fn insert_valid_header(&self, peer: PeerIndex, header: &core::HeaderView) -> Option<()> {
         let tip_number = self.active_chain().tip_number();
         let store_first = tip_number >= header.number();
         // We don't use header#parent_hash clone here because it will hold the arc counter of the SendHeaders message
         // which will cause the 2000 headers to be held in memory for a long time
-        let parent_hash = Byte32::from_slice(header.data().raw().parent_hash().as_slice())
-            .expect("checked slice length");
-        let parent_header_index = self
-            .get_header_index_view(&parent_hash, store_first)
-            .expect("parent should be verified");
+        let parent_hash = Byte32::from_slice(header.data().raw().parent_hash().as_slice()).ok()?;
+        let parent_header_index = self.get_header_index_view(&parent_hash, store_first)?;
         let mut header_view = HeaderIndexView::new(
             header.hash(),
             header.number(),
@@ -1139,6 +1141,7 @@ impl SyncShared {
             );
         }
         self.state.may_set_shared_best_header(header_view);
+        Some(())
     }
 
     pub(crate) fn get_header_index_view(
@@ -1886,25 +1889,20 @@ impl ActiveChain {
         _hash_stop: &Byte32,
         locator: &[Byte32],
     ) -> Option<BlockNumber> {
-        if locator.is_empty() {
-            return None;
-        }
-
-        let locator_hash = locator.last().expect("empty checked");
+        let locator_hash = locator.last()?;
         if locator_hash != &self.sync_shared.consensus().genesis_hash() {
             return None;
         }
 
         // iterator are lazy
-        let (index, latest_common) = locator
-            .iter()
-            .enumerate()
-            .map(|(index, hash)| (index, self.snapshot.get_block_number(hash)))
-            .find(|(_index, number)| number.is_some())
-            .expect("locator last checked");
+        let (index, latest_common) = locator.iter().enumerate().find_map(|(index, hash)| {
+            self.snapshot
+                .get_block_number(hash)
+                .map(|number| (index, number))
+        })?;
 
-        if index == 0 || latest_common == Some(0) {
-            return latest_common;
+        if index == 0 || latest_common == 0 {
+            return Some(latest_common);
         }
 
         if let Some(header) = locator
@@ -1914,7 +1912,7 @@ impl ActiveChain {
             let mut block_hash = header.data().raw().parent_hash();
             loop {
                 let block_header = match self.sync_shared.store().get_block_header(&block_hash) {
-                    None => break latest_common,
+                    None => break Some(latest_common),
                     Some(block_header) => block_header,
                 };
 
@@ -1925,7 +1923,7 @@ impl ActiveChain {
                 block_hash = block_header.data().raw().parent_hash();
             }
         } else {
-            latest_common
+            Some(latest_common)
         }
     }
 

@@ -21,16 +21,19 @@ impl AddrManager {
     /// Add an address information to address manager
     pub fn add(&mut self, mut addr_info: AddrInfo) {
         if let Some(&id) = self.addr_to_id.get(&addr_info.addr) {
-            let (exist_last_connected_at_ms, random_id_pos) = {
-                let info = self.id_to_info.get(&id).expect("must exists");
-                (info.last_connected_at_ms, info.random_id_pos)
-            };
-            // Get time earlier than record time, return directly
-            if addr_info.last_connected_at_ms >= exist_last_connected_at_ms {
-                addr_info.random_id_pos = random_id_pos;
-                self.id_to_info.insert(id, addr_info);
+            if let Some(info) = self.id_to_info.get(&id) {
+                let (exist_last_connected_at_ms, random_id_pos) =
+                    (info.last_connected_at_ms, info.random_id_pos);
+                // Get time earlier than record time, return directly
+                if addr_info.last_connected_at_ms >= exist_last_connected_at_ms {
+                    addr_info.random_id_pos = random_id_pos;
+                    self.id_to_info.insert(id, addr_info);
+                }
+                return;
             }
-            return;
+            // The index entry has no matching info, drop it and add the address
+            // again below instead of panicking.
+            self.addr_to_id.remove(&addr_info.addr);
         }
 
         let id = self.next_id;
@@ -55,7 +58,13 @@ impl AddrManager {
             // https://en.wikipedia.org/wiki/Fisher%E2%80%93Yates_shuffle
             let j = rng.gen_range(i..self.random_ids.len());
             self.swap_random_id(j, i);
-            let addr_info: AddrInfo = self.id_to_info[&self.random_ids[i]].to_owned();
+            let Some(addr_info) = self.id_to_info.get(&self.random_ids[i]).cloned() else {
+                debug!(
+                    "address id {} has no matching info, skip it",
+                    self.random_ids[i]
+                );
+                continue;
+            };
             match multiaddr_to_socketaddr(&addr_info.addr) {
                 Some(socket_addr) => {
                     let ip = socket_addr.ip();
@@ -110,10 +119,17 @@ impl AddrManager {
     pub fn remove(&mut self, addr: &Multiaddr) -> Option<AddrInfo> {
         let base_addr = base_addr(addr);
         self.addr_to_id.remove(&base_addr).and_then(|id| {
-            let random_id_pos = self.id_to_info.get(&id).expect("exists").random_id_pos;
-            // swap with last index, then remove the last index
-            self.swap_random_id(random_id_pos, self.random_ids.len() - 1);
-            self.random_ids.pop();
+            let random_id_pos = self.id_to_info.get(&id)?.random_id_pos;
+            if random_id_pos < self.random_ids.len() {
+                // swap with last index, then remove the last index
+                self.swap_random_id(random_id_pos, self.random_ids.len() - 1);
+                self.random_ids.pop();
+            } else {
+                debug!(
+                    "address id {} has out-of-range random id position {}, skip swapping",
+                    id, random_id_pos
+                );
+            }
             self.id_to_info.remove(&id)
         })
     }
@@ -142,14 +158,19 @@ impl AddrManager {
         if i == j {
             return;
         }
-        self.id_to_info
-            .get_mut(&self.random_ids[i])
-            .expect("exists")
-            .random_id_pos = j;
-        self.id_to_info
-            .get_mut(&self.random_ids[j])
-            .expect("exists")
-            .random_id_pos = i;
+        let (Some(&id_i), Some(&id_j)) = (self.random_ids.get(i), self.random_ids.get(j)) else {
+            debug!(
+                "random id positions {}, {} are out of range, skip swapping",
+                i, j
+            );
+            return;
+        };
+        if let Some(info) = self.id_to_info.get_mut(&id_i) {
+            info.random_id_pos = j;
+        }
+        if let Some(info) = self.id_to_info.get_mut(&id_j) {
+            info.random_id_pos = i;
+        }
         self.random_ids.swap(i, j);
     }
 }

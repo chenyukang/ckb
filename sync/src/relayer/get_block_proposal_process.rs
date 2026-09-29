@@ -59,15 +59,17 @@ impl<'a> GetBlockProposalProcess<'a> {
         let fetched_transactions = {
             let tx_pool = self.relayer.shared.shared().tx_pool_controller();
             let fetch_txs = tx_pool.fetch_txs(proposals.clone()).await;
-            if let Err(e) = fetch_txs {
-                debug_target!(
-                    crate::LOG_TARGET_RELAY,
-                    "relayer tx_pool_controller send fetch_txs error: {:?}",
-                    e
-                );
-                return Status::ok();
+            match fetch_txs {
+                Ok(fetch_txs) => fetch_txs,
+                Err(e) => {
+                    debug_target!(
+                        crate::LOG_TARGET_RELAY,
+                        "relayer tx_pool_controller send fetch_txs error: {:?}",
+                        e
+                    );
+                    return Status::ok();
+                }
             }
-            fetch_txs.unwrap()
         };
         // Transactions that do not exist on this node
         let not_exist_proposals: Vec<packed::ProposalShortId> = proposals

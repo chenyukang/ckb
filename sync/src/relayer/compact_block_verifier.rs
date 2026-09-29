@@ -62,38 +62,37 @@ pub struct PrefilledVerifier {}
 
 impl PrefilledVerifier {
     pub(crate) fn verify(block: &packed::CompactBlock) -> Status {
-        let prefilled_transactions = &block.prefilled_transactions();
+        let prefilled_transactions = block.prefilled_transactions();
         let short_ids = &block.short_ids();
         let txs_len = prefilled_transactions.len() + short_ids.len();
 
         // Check the prefilled_transactions appears to have included the cellbase
-        if prefilled_transactions.is_empty() {
+        let Some(first_prefilled) = prefilled_transactions.get(0) else {
             return StatusCode::CompactBlockHasNotPrefilledCellbase.into();
-        } else {
-            // Check first prefilled index is zero
-            let index: usize = prefilled_transactions.get(0).unwrap().index().into();
-            if index != 0 {
-                return StatusCode::CompactBlockHasNotPrefilledCellbase.into();
-            }
+        };
+        // Check first prefilled index is zero
+        let index: usize = first_prefilled.index().into();
+        if index != 0 {
+            return StatusCode::CompactBlockHasNotPrefilledCellbase.into();
+        }
 
-            // Check highest prefilled index is less than length of block transactions
-            let index: usize = prefilled_transactions
-                .get(prefilled_transactions.len() - 1)
-                .unwrap()
-                .index()
-                .into();
-            if index >= txs_len {
-                return StatusCode::CompactBlockHasOutOfIndexPrefilledTransactions.into();
-            }
+        // Check highest prefilled index is less than length of block transactions
+        let Some(last_prefilled) = prefilled_transactions.get(prefilled_transactions.len() - 1)
+        else {
+            return StatusCode::CompactBlockHasNotPrefilledCellbase.into();
+        };
+        let index: usize = last_prefilled.index().into();
+        if index >= txs_len {
+            return StatusCode::CompactBlockHasOutOfIndexPrefilledTransactions.into();
         }
 
         // Check indices order of prefilled transactions
-        for i in 0..(prefilled_transactions.len() - 1) {
-            let idx0: usize = prefilled_transactions.get(i).unwrap().index().into();
-            let idx1: usize = prefilled_transactions.get(i + 1).unwrap().index().into();
-            if idx0 >= idx1 {
-                return StatusCode::CompactBlockHasOutOfOrderPrefilledTransactions.into();
-            }
+        if !prefilled_transactions
+            .into_iter()
+            .map(|tx| usize::from(tx.index()))
+            .is_sorted_by(|a, b| a < b)
+        {
+            return StatusCode::CompactBlockHasOutOfOrderPrefilledTransactions.into();
         }
 
         Status::ok()
