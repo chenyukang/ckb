@@ -1,5 +1,5 @@
 use crate::Status;
-use crate::relayer::Relayer;
+use crate::relayer::{MAX_RELAY_TXS_NUM_PER_BATCH, Relayer};
 use ckb_logger::error;
 use ckb_network::{CKBProtocolContext, PeerIndex};
 use ckb_types::{
@@ -7,10 +7,26 @@ use ckb_types::{
     packed,
     prelude::*,
 };
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
 const DEFAULT_BAN_TIME: Duration = Duration::from_secs(3600 * 24 * 3);
+
+/// A compliant responder fetches each requested hash at most once (see
+/// `GetTransactionsProcess`), so a `RelayTransactions` response must not carry
+/// two bodies for the same hash. The caller's filter is evaluated per body and
+/// the known marker is applied only after the whole response is collected, so
+/// repeated bodies would otherwise each become a separate `submit_remote_tx`
+/// tx-pool call. Keep the first body per hash and drop the rest.
+pub(crate) fn dedup_transactions(
+    txs: Vec<(TransactionView, Cycle)>,
+) -> Vec<(TransactionView, Cycle)> {
+    let mut seen = HashSet::with_capacity(txs.len());
+    txs.into_iter()
+        .filter(|(tx, _)| seen.insert(tx.hash()))
+        .collect()
+}
 
 pub struct TransactionsProcess<'a> {
     message: packed::RelayTransactionsReader<'a>,
@@ -36,6 +52,18 @@ impl<'a> TransactionsProcess<'a> {
 
     pub fn execute(self) -> Status {
         let shared_state = self.relayer.shared().state();
+
+        // A response is bounded by the relay batch size; reject an oversized
+        // body list before doing any per-body work. A compliant responder
+        // cannot exceed this because it batches by `MAX_RELAY_TXS_BYTES_PER_BATCH`
+        // and every relaid transaction is a real in-pool transaction.
+        let response_len = self.message.transactions().len();
+        if response_len > MAX_RELAY_TXS_NUM_PER_BATCH {
+            return crate::StatusCode::ProtocolMessageIsMalformed.with_context(format!(
+                "Transactions count({response_len}) > MAX_RELAY_TXS_NUM_PER_BATCH({MAX_RELAY_TXS_NUM_PER_BATCH})",
+            ));
+        }
+
         let txs: Vec<(TransactionView, Cycle)> = {
             // ignore the tx if it's already known or it has never been requested before
             let mut tx_filter = shared_state.tx_filter();
@@ -55,6 +83,8 @@ impl<'a> TransactionsProcess<'a> {
                 })
                 .collect()
         };
+
+        let txs = dedup_transactions(txs);
 
         if txs.is_empty() {
             return Status::ok();
